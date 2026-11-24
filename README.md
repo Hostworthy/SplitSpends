@@ -26,11 +26,13 @@ SplitSpends keeps track of who paid what and who owes whom, so shared costs neve
 ## Features
 
 - **Every split**: equal, exact, percent, shares, adjustment and itemized; multiple payers; recurring expenses.
-- **Groups and friends**: trips, homes and couples, expenses outside groups, people added by name or email, balances per currency.
+- **Groups and friends**: trips, homes and couples, expenses outside groups, people added by name or email. Invite with a link or QR code.
+- **Less typing**: each group has its own currency and an optional default split (rent 60/40), plus your own categories.
 - **Clear money**: amounts are stored as exact integers, so balances always add up to the cent.
-- **Everything else**: comments, activity feed, email notifications, search, charts, CSV export, undo delete, backup and restore, dark mode.
+- **Nudges**: email and push notifications (web and Android, no Google account needed) and one-tap reminders to settle up.
+- **Everything else**: comments, activity feed, search, charts, CSV export, undo delete, backup and restore, dark mode.
 - **Works offline**: on-device mode needs no network; connected mode queues changes and syncs when you are back online.
-- **Optional AI**: snap a receipt to split it line by line, or type "dinner 60 paid by me split with Sam". Works with Claude or any OpenAI-compatible server, including local models.
+- **Optional AI**: snap a receipt to split it line by line (receipts from abroad are converted to the group's currency), or type "dinner 60 paid by me split with Sam". Works with Claude or any OpenAI-compatible server, including local models.
 - **AI assistants**: a built-in MCP server lets assistants such as Claude check balances and add expenses for you.
 - **Small and portable**: one Go binary and PostgreSQL. Runs on a home server, a VPS, Render, Google Cloud Run or AWS Lambda.
 
