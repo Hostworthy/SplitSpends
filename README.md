@@ -9,7 +9,12 @@ Self-hosted expense splitting for friends, flatmates and trips. Everything you w
 - **Passwordless login** with one-time codes sent from any SMTP provider (Gmail, Microsoft 365, SES, Postmark...).
 - **AI, if you want it**: snap a receipt and split it item by item, or type "dinner 60 paid by me split with Sam". Works with Claude or any OpenAI-compatible server, including local models. Off by default.
 - **MCP server** so assistants like Claude can check balances and add expenses for you.
+- **No account needed**: use it entirely on your phone or in your browser. Connect a server only when you want sync, sharing and emails.
 - **One app** for iOS, Android and the web (Flutter), backed by a small Go server and PostgreSQL.
+
+## Hosting
+
+Home lab, any VPS, Render (one click), Google Cloud Run or AWS Lambda, including free options: see [docs/HOSTING.md](docs/HOSTING.md).
 
 ## Quick Start (Docker)
 
@@ -34,6 +39,7 @@ The Flutter app in [`app/`](app/README.md) builds for iOS and Android. On first 
 | HTTP API contract | [docs/API.md](docs/API.md) |
 | MCP server | [docs/MCP.md](docs/MCP.md) |
 | Splitwise study and feature parity | [docs/FEATURES.md](docs/FEATURES.md) |
+| Hosting options and security checklist | [docs/HOSTING.md](docs/HOSTING.md) |
 | Architecture decisions | [docs/adr/README.md](docs/adr/README.md) |
 
 ## License

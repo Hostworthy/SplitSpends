@@ -1,0 +1,14 @@
+project_id   = "my-project"
+region       = "us-central1"
+# Free option: a Neon or Supabase database. Or create_database = true for Cloud SQL.
+database_url = "postgres://user:password@ep-example.us-east-2.aws.neon.tech/splitspends?sslmode=require"
+
+smtp = {
+  host     = "smtp.gmail.com"
+  username = "you@gmail.com"
+  password = "app-password"
+  from     = "SplitSpends <you@gmail.com>"
+}
+
+# Set after pushing the image (see README.md):
+# image = "us-central1-docker.pkg.dev/my-project/splitspends/app:v1"

@@ -1,0 +1,28 @@
+# ADR-007: Local-First App with Optional Server
+
+## Status
+
+Accepted
+
+## Context
+
+Many people want to split costs without creating an account or running a server. An account should add sync, sharing and email, not be the price of entry.
+
+## Decision
+
+- The app has two modes. **Local-only**: data lives on the device (a pure-Dart store backed by IndexedDB on the web and files on mobile), people are plain contacts, and the split and balance rules run in Dart. **Connected**: the server is the source of truth; the app caches data for offline reading and queues changes in an outbox.
+- The Dart split and balance code mirrors `internal/core` and is tested against the same examples, so both modes agree to the minor unit.
+- Every object the device creates gets a UUID on the device. The server accepts these ids, and repeating a create with the same id returns the existing object, so the outbox can retry safely.
+- Moving from local-only to an account uses `POST /api/v1/import`: one transaction, no emails. Contacts with an email resolve to existing or invited users; contacts without one become `placeholder` people who keep their device id and can be given an email later.
+- Onboarding presents both modes as equal choices and says plainly what an account is for. No dark patterns: no nagging, no pre-selected sign-up, no hidden skip.
+
+## Consequences
+
+### Positive
+
+- Works with zero infrastructure; a server becomes an upgrade, not a requirement.
+
+### Negative
+
+- Split and balance rules exist in Go and Dart; shared test vectors keep them aligned.
+- Conflict handling is simple: the server wins, and offline edits are replayed in order.

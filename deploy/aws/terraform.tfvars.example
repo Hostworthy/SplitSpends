@@ -1,0 +1,13 @@
+# cp terraform.tfvars.example terraform.tfvars, fill in, then see README.md.
+region       = "us-east-1"
+database_url = "postgres://user:password@ep-example.us-east-1.aws.neon.tech/splitspends?sslmode=require"
+signup_mode  = "invite"
+
+smtp = {
+  host     = "smtp.gmail.com"
+  username = "you@gmail.com"
+  password = "app-password"
+  from     = "SplitSpends <you@gmail.com>"
+}
+
+# ai = { provider = "anthropic", api_key = "sk-ant-..." }

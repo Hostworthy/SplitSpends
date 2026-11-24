@@ -10,3 +10,5 @@ Each ADR records why a choice was made. Copy [000-template.md](000-template.md) 
 | [004](004-mcp-server.md) | MCP server as an API client |
 | [005](005-money-and-ledger.md) | Money, the ledger and debt simplification |
 | [006](006-ai-providers.md) | Optional, pluggable AI |
+| [007](007-local-first.md) | Local-first app with optional server |
+| [008](008-hosting-targets.md) | Hosting targets: container, serverless and free tiers |

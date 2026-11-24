@@ -1,4 +1,4 @@
-.PHONY: help setup dev api web check test test-integration lint fmt build docker
+.PHONY: help setup dev api web check test test-integration lint fmt build docker web-build lambda
 
 .DEFAULT_GOAL := help
 TEST_DATABASE_URL ?= postgres://splitspends:splitspends@localhost:5432/splitspends_test?sslmode=disable
@@ -13,6 +13,8 @@ help:
 	@echo "  test-integration  Database tests (needs TEST_DATABASE_URL)"
 	@echo "  build             Build server and MCP binaries into bin/"
 	@echo "  docker            Build the production image"
+	@echo "  web-build         Build the Flutter web app into app/build/web"
+	@echo "  lambda            Build the arm64 Lambda bundle for deploy/aws"
 
 setup:
 	cp -n backend/.env.example backend/.env 2>/dev/null || true
@@ -55,3 +57,12 @@ build:
 
 docker:
 	docker build -t splitspends:latest .
+
+web-build:
+	cd app && flutter build web --release
+
+lambda:
+	mkdir -p deploy/aws/build/lambda
+	cd backend && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ../deploy/aws/build/lambda/splitspends ./cmd/server
+	printf '#!/bin/sh\nexec ./splitspends\n' > deploy/aws/build/lambda/run.sh
+	chmod +x deploy/aws/build/lambda/run.sh
