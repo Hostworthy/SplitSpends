@@ -7,6 +7,8 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Tx runs fn inside a single database transaction. Repositories called with
@@ -15,17 +17,25 @@ type Tx interface {
 	Do(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
-// Notifier delivers user-facing messages (email today). Implementations should
-// not block the caller on slow delivery for non-critical messages.
+// Notifier delivers user-facing messages by email and push. Implementations
+// should not block the caller on slow delivery for non-critical messages.
 type Notifier interface {
 	LoginCode(ctx context.Context, to, code string, ttl time.Duration) error
 	Invite(ctx context.Context, to, inviterName string) error
 	Notify(ctx context.Context, n Notification)
 }
 
-// Notification is a fan-out message about something that happened.
+// Notification is a fan-out message about something that happened. Each
+// channel is used only when its address is set, so callers pick channels by
+// filling To, UserID or both (user.User.Notice does that from preferences).
 type Notification struct {
-	To      string
+	// To is the email address; empty sends no email.
+	To string
+	// UserID is the recipient for push; uuid.Nil sends no push.
+	UserID uuid.UUID
+	// Kind is the preference key the notification belongs to, for example
+	// "expenseAdded". Informational for adapters.
+	Kind    string
 	Name    string
 	Subject string
 	Lines   []string

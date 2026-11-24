@@ -370,11 +370,12 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	if err != nil {
 		return nil, err
 	}
-	if to := people[in.To]; !ports.IsQuiet(ctx) && to.ID != actor && to.Status == user.StatusActive && to.Notifications.PaymentReceived {
-		s.notifier.Notify(ctx, ports.Notification{To: to.Email, Name: to.Name,
-			Subject: people[in.From].Name + " paid you " + money.Format(e.Total, e.Currency),
-			Lines:   []string{people[in.From].Name + " recorded a payment of " + money.Format(e.Total, e.Currency) + " to you."},
-			Link:    s.baseURL})
+	if to := people[in.To]; !ports.IsQuiet(ctx) && to.ID != actor {
+		n, ok := to.Notice(user.PaymentReceived, people[in.From].Name+" paid you "+money.Format(e.Total, e.Currency),
+			[]string{people[in.From].Name + " recorded a payment of " + money.Format(e.Total, e.Currency) + " to you."}, s.baseURL)
+		if ok {
+			s.notifier.Notify(ctx, n)
+		}
 	}
 	return e, nil
 }
@@ -398,15 +399,12 @@ func (s *Service) notify(ctx context.Context, actor uuid.UUID, e *Expense, g *gr
 		where = " in " + g.Name
 	}
 	for _, u := range people {
-		if u.ID == actor || u.Status != user.StatusActive {
+		if u.ID == actor {
 			continue
 		}
-		if (updated && !u.Notifications.ExpenseUpdated) || (!updated && !u.Notifications.ExpenseAdded) {
-			continue
-		}
-		verb := "added"
+		verb, kind := "added", user.ExpenseAdded
 		if updated {
-			verb = "updated"
+			verb, kind = "updated", user.ExpenseUpdated
 		}
 		net := e.Net(u.ID)
 		line := "You are settled on this one."
@@ -415,10 +413,12 @@ func (s *Service) notify(ctx context.Context, actor uuid.UUID, e *Expense, g *gr
 		} else if net > 0 {
 			line = "You get back " + money.Format(net, e.Currency) + "."
 		}
-		s.notifier.Notify(ctx, ports.Notification{To: u.Email, Name: u.Name,
-			Subject: actorName + " " + verb + " “" + e.Description + "”" + where,
-			Lines:   []string{actorName + " " + verb + " “" + e.Description + "” (" + money.Format(e.Total, e.Currency) + ")" + where + ".", line},
-			Link:    s.baseURL})
+		n, ok := u.Notice(kind, actorName+" "+verb+" “"+e.Description+"”"+where,
+			[]string{actorName + " " + verb + " “" + e.Description + "” (" + money.Format(e.Total, e.Currency) + ")" + where + ".", line},
+			s.baseURL)
+		if ok {
+			s.notifier.Notify(ctx, n)
+		}
 	}
 }
 

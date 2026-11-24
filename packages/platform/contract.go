@@ -52,12 +52,35 @@ type User struct {
 	Status          string  `json:"status"`
 }
 
-// Notifications are email preferences.
-type Notifications struct {
+// NotificationSwitches turn one channel on or off per notification kind.
+type NotificationSwitches struct {
 	ExpenseAdded    bool `json:"expenseAdded"`
 	ExpenseUpdated  bool `json:"expenseUpdated"`
 	PaymentReceived bool `json:"paymentReceived"`
 	AddedToGroup    bool `json:"addedToGroup"`
+}
+
+// Notifications are the caller's preferences. The top-level switches are
+// email (unchanged from before push existed); push has the same keys.
+type Notifications struct {
+	NotificationSwitches
+	Push NotificationSwitches `json:"push"`
+}
+
+// NotificationSwitchesPatch changes some switches; omitted keys keep their
+// value.
+type NotificationSwitchesPatch struct {
+	ExpenseAdded    *bool `json:"expenseAdded,omitempty"`
+	ExpenseUpdated  *bool `json:"expenseUpdated,omitempty"`
+	PaymentReceived *bool `json:"paymentReceived,omitempty"`
+	AddedToGroup    *bool `json:"addedToGroup,omitempty"`
+}
+
+// NotificationsPatch changes some preferences: top-level keys are email,
+// push the push channel.
+type NotificationsPatch struct {
+	NotificationSwitchesPatch
+	Push *NotificationSwitchesPatch `json:"push,omitempty"`
 }
 
 // Me is the caller's own profile.
@@ -69,11 +92,46 @@ type Me struct {
 
 // MePatch updates the caller's profile.
 type MePatch struct {
-	Name            *string        `json:"name,omitempty"`
-	DefaultCurrency *string        `json:"defaultCurrency,omitempty"`
-	Timezone        *string        `json:"timezone,omitempty"`
-	AvatarColor     *string        `json:"avatarColor,omitempty"`
-	Notifications   *Notifications `json:"notifications,omitempty"`
+	Name            *string             `json:"name,omitempty"`
+	DefaultCurrency *string             `json:"defaultCurrency,omitempty"`
+	Timezone        *string             `json:"timezone,omitempty"`
+	AvatarColor     *string             `json:"avatarColor,omitempty"`
+	Notifications   *NotificationsPatch `json:"notifications,omitempty"`
+}
+
+// PushKeys are a device's message encryption keys, base64url encoded, as
+// PushSubscription.toJSON() returns them in browsers.
+type PushKeys struct {
+	P256dh string `json:"p256dh"`
+	Auth   string `json:"auth"`
+}
+
+// PushSubscriptionCreate registers (or refreshes) a device for push.
+type PushSubscriptionCreate struct {
+	Endpoint string   `json:"endpoint"`
+	Keys     PushKeys `json:"keys"`
+	// Platform is "web" (default) or "unifiedpush".
+	Platform string `json:"platform"`
+	// Label names the device for the caller, for example "Firefox on Linux".
+	Label string `json:"label"`
+}
+
+// PushSubscription is one of the caller's devices.
+type PushSubscription struct {
+	ID            string  `json:"id"`
+	Platform      string  `json:"platform"`
+	Label         string  `json:"label"`
+	Endpoint      string  `json:"endpoint"`
+	CreatedAt     string  `json:"createdAt"`
+	LastSuccessAt *string `json:"lastSuccessAt"`
+	Failures      int     `json:"failures"`
+}
+
+// PushTest reports a test notification.
+type PushTest struct {
+	Sent    int `json:"sent"`
+	Failed  int `json:"failed"`
+	Removed int `json:"removed"`
 }
 
 // MyBalances are totals across everything.
@@ -106,6 +164,11 @@ type Config struct {
 	SignupMode string     `json:"signupMode"`
 	Currencies []Currency `json:"currencies"`
 	Categories []Category `json:"categories"`
+	// PushEnabled is true when the server sends Web Push notifications.
+	PushEnabled bool `json:"pushEnabled"`
+	// VAPIDPublicKey is the application server key (base64url) devices
+	// subscribe with; empty when push is off.
+	VAPIDPublicKey string `json:"vapidPublicKey"`
 }
 
 // OTPRequest asks for a login code.

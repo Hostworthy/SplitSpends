@@ -13,6 +13,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/friend"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/stats"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/transfer"
@@ -38,6 +39,9 @@ type Services struct {
 	Assist   *assist.Service
 	Stats    *stats.Service
 	Transfer *transfer.Service
+	Push     *push.Service
+
+	notifier *fanout
 }
 
 // Runtime is a fully wired application.
@@ -97,12 +101,28 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 		log.Info("bootstrap.ai.enabled", "provider", cfg.AIProvider)
 	}
 
+	sender := pushSender(ctx, db, cfg, log)
 	return &Runtime{Config: cfg, Log: log, db: db, notifier: notifier,
-		Services: Wire(db, notifier, blobs, reader, clock.System{}, cfg)}, nil
+		Services: WireWithPush(db, notifier, blobs, reader, sender, clock.System{}, cfg, log)}, nil
 }
 
-// Wire builds services from adapters. Tests call it with fakes.
+// Wire builds services from adapters, without push. Tests call it with
+// fakes.
 func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reader ports.ReceiptReader, c clock.Clock, cfg *Config) *Services {
+	return WireWithPush(db, notifier, blobs, reader, nil, c, cfg, slog.New(slog.DiscardHandler))
+}
+
+// WireWithPush builds services and sends notifications by email (notifier)
+// and Web Push (sender, nil to disable push).
+func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, reader ports.ReceiptReader, sender push.Sender,
+	c clock.Clock, cfg *Config, log *slog.Logger) *Services {
+	pushes := push.NewService(repositories.NewPushSubscriptions(db), sender, c,
+		push.Settings{PublicKey: cfg.VAPIDPublicKey, AppName: cfg.AppName, Link: cfg.BaseURL})
+	var p pusher
+	if pushes.Enabled() {
+		p = pushes
+	}
+	notifier := newFanout(email, p, log, cfg.Serverless)
 	tx := database.NewTx(db)
 	userRepo := repositories.NewUsers(db)
 	groupRepo := repositories.NewGroups(db)
@@ -136,6 +156,8 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 		Receipts: receipts,
 		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, c),
 		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users),
+		Push:     pushes,
+		notifier: notifier,
 	}
 }
 
@@ -183,6 +205,7 @@ func (rt *Runtime) Ping(ctx context.Context) error { return rt.db.Pool.Ping(ctx)
 
 // Close releases resources.
 func (rt *Runtime) Close() {
+	rt.Services.notifier.Close()
 	rt.notifier.Close()
 	rt.db.Pool.Close()
 }
