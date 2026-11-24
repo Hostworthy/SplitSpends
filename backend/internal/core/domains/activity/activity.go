@@ -42,11 +42,11 @@ type Activity struct {
 
 // Filter narrows a feed query.
 type Filter struct {
-	UserID  uuid.UUID
+	UserID    uuid.UUID
 	GroupID   *uuid.UUID
 	ExpenseID *uuid.UUID
 	Limit     int
-	Offset  int
+	Offset    int
 }
 
 // Repository persists activity.
