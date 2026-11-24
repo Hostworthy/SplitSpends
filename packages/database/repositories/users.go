@@ -19,13 +19,13 @@ type Users struct{ db *database.DB }
 // NewUsers builds Users.
 func NewUsers(db *database.DB) *Users { return &Users{db: db} }
 
-const userColumns = `id, created_at, updated_at, email, name, default_currency, avatar_color, timezone, status, notifications, created_by`
+const userColumns = `id, created_at, updated_at, email, name, default_currency, avatar_color, timezone, status, notifications, created_by, gravatar`
 
 func scanUser(row pgx.Row) (*user.User, error) {
 	var u user.User
 	var notif []byte
 	var email *string
-	if err := row.Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt, &email, &u.Name, &u.DefaultCurrency, &u.AvatarColor, &u.Timezone, &u.Status, &notif, &u.CreatedBy); err != nil {
+	if err := row.Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt, &email, &u.Name, &u.DefaultCurrency, &u.AvatarColor, &u.Timezone, &u.Status, &notif, &u.CreatedBy, &u.Gravatar); err != nil {
 		return nil, err
 	}
 	if email != nil {
@@ -64,8 +64,8 @@ func (r *Users) List(ctx context.Context, ids []uuid.UUID) ([]*user.User, error)
 
 func (r *Users) Create(ctx context.Context, u *user.User) error {
 	notif, _ := json.Marshal(u.Notifications)
-	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO users (`+userColumns+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		u.ID, u.CreatedAt, u.UpdatedAt, nullable(u.Email), u.Name, u.DefaultCurrency, u.AvatarColor, u.Timezone, u.Status, notif, u.CreatedBy)
+	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO users (`+userColumns+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		u.ID, u.CreatedAt, u.UpdatedAt, nullable(u.Email), u.Name, u.DefaultCurrency, u.AvatarColor, u.Timezone, u.Status, notif, u.CreatedBy, u.Gravatar)
 	if database.IsUniqueViolation(err) {
 		return errs.Conflict("A user with that email already exists.")
 	}
@@ -74,8 +74,8 @@ func (r *Users) Create(ctx context.Context, u *user.User) error {
 
 func (r *Users) Update(ctx context.Context, u *user.User) error {
 	notif, _ := json.Marshal(u.Notifications)
-	_, err := r.db.Q(ctx).Exec(ctx, `UPDATE users SET updated_at=$2, name=$3, default_currency=$4, avatar_color=$5, timezone=$6, status=$7, notifications=$8, email=$9 WHERE id=$1`,
-		u.ID, u.UpdatedAt, u.Name, u.DefaultCurrency, u.AvatarColor, u.Timezone, u.Status, notif, nullable(u.Email))
+	_, err := r.db.Q(ctx).Exec(ctx, `UPDATE users SET updated_at=$2, name=$3, default_currency=$4, avatar_color=$5, timezone=$6, status=$7, notifications=$8, email=$9, gravatar=$10 WHERE id=$1`,
+		u.ID, u.UpdatedAt, u.Name, u.DefaultCurrency, u.AvatarColor, u.Timezone, u.Status, notif, nullable(u.Email), u.Gravatar)
 	if database.IsUniqueViolation(err) {
 		return errs.Conflict("A user with that email already exists.")
 	}

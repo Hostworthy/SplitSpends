@@ -21,7 +21,8 @@ Several of these sit behind Splitwise Pro today (receipt scanning, itemization, 
 | ---------- | --------- | ----------- |
 | Email login without passwords | Password or social | Email one-time code |
 | Add people by email before they join | Yes | Yes, they keep their history on first login |
-| Groups with types, emoji and colour | Yes | Yes |
+| Groups with types, emoji and colour | Yes | Yes, about 200 icons in categories, or any emoji you type |
+| Profile pictures | Yes, uploaded | Initials with a colour, or your Gravatar picture if you opt in |
 | Simplify debts per group | Yes | Yes (greedy minimum transfers, per currency) |
 | Non-group expenses with friends | Yes | Yes |
 | Multiple payers | Yes | Yes |

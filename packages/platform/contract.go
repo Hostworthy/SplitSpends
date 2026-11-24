@@ -49,7 +49,10 @@ type User struct {
 	Name            string  `json:"name"`
 	DefaultCurrency string  `json:"defaultCurrency"`
 	AvatarColor     string  `json:"avatarColor"`
-	Status          string  `json:"status"`
+	// AvatarURL is the person's Gravatar picture when they opted in (and the
+	// host allows it); it answers 404 when they have none. Null otherwise.
+	AvatarURL *string `json:"avatarUrl"`
+	Status    string  `json:"status"`
 }
 
 // NotificationSwitches turn one channel on or off per notification kind.
@@ -90,6 +93,8 @@ type Me struct {
 	User
 	Timezone      string        `json:"timezone"`
 	Notifications Notifications `json:"notifications"`
+	// Gravatar is whether you show your Gravatar picture.
+	Gravatar bool `json:"gravatar"`
 }
 
 // MePatch updates the caller's profile.
@@ -98,6 +103,7 @@ type MePatch struct {
 	DefaultCurrency *string             `json:"defaultCurrency,omitempty"`
 	Timezone        *string             `json:"timezone,omitempty"`
 	AvatarColor     *string             `json:"avatarColor,omitempty"`
+	Gravatar        *bool               `json:"gravatar,omitempty"`
 	Notifications   *NotificationsPatch `json:"notifications,omitempty"`
 }
 
@@ -188,6 +194,8 @@ type Config struct {
 	// VAPIDPublicKey is the application server key (base64url) devices
 	// subscribe with; empty when push is off.
 	VAPIDPublicKey string `json:"vapidPublicKey"`
+	// GravatarEnabled is false when the host turned Gravatar pictures off.
+	GravatarEnabled bool `json:"gravatarEnabled"`
 }
 
 // OTPRequest asks for a login code. InviteToken, from a group invite link,

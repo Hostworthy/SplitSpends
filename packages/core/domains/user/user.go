@@ -33,9 +33,12 @@ type User struct {
 	Name            string
 	DefaultCurrency string
 	AvatarColor     string
-	Timezone        string
-	Status          Status
-	Notifications   Notifications
+	// Gravatar shows the picture gravatar.com has for Email, when there is
+	// one, instead of initials. Off until the person turns it on.
+	Gravatar      bool
+	Timezone      string
+	Status        Status
+	Notifications Notifications
 	// CreatedBy is who added a placeholder; nil for everyone else.
 	CreatedBy *uuid.UUID
 	CreatedAt time.Time
@@ -121,6 +124,7 @@ type Patch struct {
 	DefaultCurrency *string
 	Timezone        *string
 	AvatarColor     *string
+	Gravatar        *bool
 	Notifications   *NotificationsPatch
 }
 
@@ -151,6 +155,12 @@ func (u *User) Apply(p Patch, now time.Time) error {
 			return errs.Validation("avatarColor", "Use a hex color such as #00897B.")
 		}
 		u.AvatarColor = strings.ToUpper(*p.AvatarColor)
+	}
+	if p.Gravatar != nil {
+		if *p.Gravatar && u.Email == "" {
+			return errs.Validation("gravatar", "Add an email address before using a Gravatar picture.")
+		}
+		u.Gravatar = *p.Gravatar
 	}
 	if p.Notifications != nil {
 		u.Notifications.Apply(*p.Notifications)

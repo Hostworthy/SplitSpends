@@ -28,14 +28,41 @@ class UserAvatar extends StatelessWidget {
               )
             : null,
       ),
-      child: Text(
-        user.initials,
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w700,
-          fontSize: size * 0.38,
+      child: _picture(
+        Text(
+          user.initials,
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            fontSize: size * 0.38,
+          ),
         ),
       ),
+    );
+  }
+
+  /// The Gravatar picture over the initials, which stay visible while it
+  /// loads and when the person has none (Gravatar answers 404).
+  Widget _picture(Widget initials) {
+    final url = user.avatarUrl;
+    if (url == null) return initials;
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        initials,
+        ClipOval(
+          child: Image.network(
+            url,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            excludeFromSemantics: true,
+            frameBuilder: (context, child, frame, sync) =>
+                frame == null ? const SizedBox.shrink() : child,
+            errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+          ),
+        ),
+      ],
     );
   }
 

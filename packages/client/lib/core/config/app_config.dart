@@ -62,6 +62,7 @@ class AppConfig {
     this.categories = const [],
     this.pushEnabled = false,
     this.vapidPublicKey = '',
+    this.gravatarEnabled = false,
   });
 
   factory AppConfig.fromJson(JsonMap json) => AppConfig(
@@ -70,6 +71,7 @@ class AppConfig {
     signupMode: (json['signupMode'] as String?) ?? 'open',
     pushEnabled: (json['pushEnabled'] as bool?) ?? false,
     vapidPublicKey: (json['vapidPublicKey'] as String?) ?? '',
+    gravatarEnabled: (json['gravatarEnabled'] as bool?) ?? false,
     currencies: (json['currencies'] as List? ?? const [])
         .cast<JsonMap>()
         .map(CurrencyInfo.fromJson)
@@ -91,6 +93,9 @@ class AppConfig {
 
   /// The server's VAPID key (base64url) that devices subscribe with.
   final String vapidPublicKey;
+
+  /// Whether people may show their Gravatar picture on this server.
+  final bool gravatarEnabled;
 
   CurrencyInfo currency(String code) {
     for (final c in currencies) {

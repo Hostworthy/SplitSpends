@@ -47,6 +47,9 @@ type Config struct {
 
 	MCPEnabled bool
 
+	// Gravatar lets people show their Gravatar picture (opt-in per person).
+	Gravatar bool
+
 	// RatesURL is where exchange rates come from; empty turns them off.
 	RatesURL string
 
@@ -156,6 +159,13 @@ func LoadConfig() (*Config, error) {
 	}
 	c.TrustProxy, _ = strconv.ParseBool(env("TRUST_PROXY", "false"))
 	c.MCPEnabled, _ = strconv.ParseBool(env("MCP_ENABLED", "true"))
+	switch strings.ToLower(env("GRAVATAR", "on")) {
+	case "on", "true", "1":
+		c.Gravatar = true
+	case "off", "false", "0":
+	default:
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.GRAVATAR: use on or off")
+	}
 	c.Serverless, _ = strconv.ParseBool(env("SERVERLESS", "false"))
 	if err := c.loadPush(); err != nil {
 		return nil, err

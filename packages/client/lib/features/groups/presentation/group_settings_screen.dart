@@ -18,23 +18,9 @@ import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/domain/groups_repository.dart';
 import 'package:splitspends/features/groups/presentation/default_split_section.dart';
+import 'package:splitspends/features/groups/presentation/emoji_picker.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';
 import 'package:splitspends/features/invites/presentation/invite_section.dart';
-
-const _emojis = [
-  '🏠',
-  '✈️',
-  '💞',
-  '👥',
-  '🏖️',
-  '🎉',
-  '🍕',
-  '🚗',
-  '🏕️',
-  '⚽',
-  '🎓',
-  '💼',
-];
 
 class GroupSettingsScreen extends ConsumerWidget {
   const GroupSettingsScreen({super.key, required this.groupId});
@@ -210,12 +196,28 @@ class _SettingsState extends ConsumerState<_Settings> {
             spacing: 6,
             runSpacing: 6,
             children: [
-              for (final e in _emojis)
+              for (final e in {
+                if (!quickEmojis.contains(group.displayEmoji))
+                  group.displayEmoji,
+                ...quickEmojis,
+              })
                 ChoiceChip(
                   label: Text(e, style: const TextStyle(fontSize: 18)),
                   selected: group.displayEmoji == e,
                   onSelected: (_) => _patch(GroupInput(emoji: e)),
                 ),
+              ActionChip(
+                key: const Key('emoji-more'),
+                avatar: const Icon(Icons.add_reaction_outlined, size: 18),
+                label: const Text('More'),
+                onPressed: () async {
+                  final e = await pickEmoji(
+                    context,
+                    selected: group.displayEmoji,
+                  );
+                  if (e != null) _patch(GroupInput(emoji: e));
+                },
+              ),
             ],
           ),
         ),

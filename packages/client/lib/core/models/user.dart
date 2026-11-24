@@ -8,6 +8,7 @@ class User {
     required this.name,
     this.defaultCurrency = 'USD',
     this.avatarColor,
+    this.avatarUrl,
     this.status = 'active',
   });
 
@@ -17,6 +18,7 @@ class User {
     name: (json['name'] as String?) ?? '',
     defaultCurrency: (json['defaultCurrency'] as String?) ?? 'USD',
     avatarColor: json['avatarColor'] as String?,
+    avatarUrl: _nonEmpty(json['avatarUrl'] as String?),
     status: (json['status'] as String?) ?? 'active',
   );
 
@@ -27,6 +29,10 @@ class User {
   final String name;
   final String defaultCurrency;
   final String? avatarColor;
+
+  /// Gravatar picture when the person opted in; it may answer 404, so the
+  /// initials stay the fallback.
+  final String? avatarUrl;
   final String status;
 
   bool get isInvited => status == 'invited';
@@ -70,6 +76,7 @@ class User {
     name: name ?? this.name,
     defaultCurrency: defaultCurrency,
     avatarColor: avatarColor,
+    avatarUrl: avatarUrl,
     status: status ?? this.status,
   );
 
@@ -79,6 +86,7 @@ class User {
     'name': name,
     'defaultCurrency': defaultCurrency,
     'avatarColor': avatarColor,
+    'avatarUrl': avatarUrl,
     'status': status,
   };
 }
@@ -178,9 +186,11 @@ class Me extends User {
     required super.name,
     super.defaultCurrency,
     super.avatarColor,
+    super.avatarUrl,
     super.status,
     this.timezone,
     this.notifications = const NotificationPrefs(),
+    this.gravatar = false,
   });
 
   factory Me.fromJson(JsonMap json) {
@@ -191,8 +201,10 @@ class Me extends User {
       name: user.name,
       defaultCurrency: user.defaultCurrency,
       avatarColor: user.avatarColor,
+      avatarUrl: user.avatarUrl,
       status: user.status,
       timezone: json['timezone'] as String?,
+      gravatar: (json['gravatar'] as bool?) ?? false,
       notifications: NotificationPrefs.fromJson(
         json['notifications'] as JsonMap?,
       ),
@@ -201,6 +213,9 @@ class Me extends User {
 
   final String? timezone;
   final NotificationPrefs notifications;
+
+  /// Whether you show your Gravatar picture (server accounts only).
+  final bool gravatar;
 
   @override
   Me copyWith({
@@ -217,9 +232,11 @@ class Me extends User {
     name: name ?? this.name,
     defaultCurrency: defaultCurrency ?? this.defaultCurrency,
     avatarColor: avatarColor ?? this.avatarColor,
+    avatarUrl: avatarUrl,
     status: status ?? this.status,
     timezone: timezone ?? this.timezone,
     notifications: notifications ?? this.notifications,
+    gravatar: gravatar,
   );
 }
 

@@ -21,6 +21,7 @@ class LocalAccountRepository implements AccountRepository {
     String? defaultCurrency,
     String? timezone,
     String? avatarColor,
+    bool? gravatar,
     NotificationPrefs? notifications,
   }) async {
     final db = await _ledger.db;

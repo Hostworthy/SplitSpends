@@ -27,6 +27,7 @@ class AccountScreen extends ConsumerWidget {
     String? name,
     String? defaultCurrency,
     String? avatarColor,
+    bool? gravatar,
     NotificationPrefs? notifications,
   }) async {
     final session = ref.read(sessionProvider).value;
@@ -46,6 +47,7 @@ class AccountScreen extends ConsumerWidget {
               name: name,
               defaultCurrency: defaultCurrency,
               avatarColor: avatarColor,
+              gravatar: gravatar,
               notifications: notifications,
             );
       }
@@ -189,6 +191,22 @@ class AccountScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
+                if (!local &&
+                    me.email != null &&
+                    ref.watch(configValueProvider).gravatarEnabled)
+                  SwitchListTile(
+                    key: const Key('gravatar'),
+                    secondary: const Icon(Icons.face_retouching_natural),
+                    title: const Text('Use my Gravatar picture'),
+                    subtitle: const Text(
+                      'Shows the picture gravatar.com has for your email '
+                      'instead of your initials. Gravatar can see when '
+                      'people load it. Set one up at gravatar.com.',
+                    ),
+                    isThreeLine: true,
+                    value: me.gravatar,
+                    onChanged: (v) => _update(context, ref, gravatar: v),
+                  ),
                 const SectionHeader('Preferences'),
                 ListTile(
                   leading: const Icon(Icons.currency_exchange_rounded),
@@ -240,6 +258,7 @@ class AccountScreen extends ConsumerWidget {
                         ref.read(themeModeProvider.notifier).set(v.first),
                   ),
                 ),
+                const _ThemeColors(),
                 if (local) ...[
                   const LocalModeCard(),
                   ListTile(
@@ -336,6 +355,58 @@ class _KindTile extends StatelessWidget {
               selected: prefs.push.on(kind),
               onSelected: (v) =>
                   onChanged(prefs.copyWith(push: prefs.push.set(kind, v))),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Accent colour swatches, saved on this device.
+class _ThemeColors extends ConsumerWidget {
+  const _ThemeColors();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = ref.watch(themeColorProvider);
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(72, 0, 16, 12),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          for (final c in ThemeColor.values)
+            Tooltip(
+              message: c.label,
+              excludeFromSemantics: true,
+              child: Semantics(
+                button: true,
+                selected: c == current,
+                label: '${c.label} theme',
+                child: InkWell(
+                  key: Key('theme-color-${c.name}'),
+                  customBorder: const CircleBorder(),
+                  onTap: () => ref.read(themeColorProvider.notifier).set(c),
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: c.seed,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: c == current
+                            ? scheme.onSurface
+                            : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                    child: c == current
+                        ? const Icon(Icons.check, size: 16, color: Colors.white)
+                        : null,
+                  ),
+                ),
+              ),
             ),
         ],
       ),

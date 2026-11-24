@@ -30,7 +30,7 @@ SplitSpends keeps track of who paid what and who owes whom, so shared costs neve
 - **Less typing**: each group has its own currency and an optional default split (rent 60/40), plus your own categories.
 - **Clear money**: amounts are stored as exact integers, so balances always add up to the cent.
 - **Nudges**: email and push notifications (web and Android, no Google account needed) and one-tap reminders to settle up.
-- **Everything else**: comments, activity feed, search, charts, CSV export, undo delete, backup and restore, dark mode.
+- **Everything else**: comments, activity feed, search, charts, CSV export, undo delete, backup and restore, light and dark themes with your choice of colour, Gravatar pictures.
 - **Works offline**: on-device mode needs no network; connected mode queues changes and syncs when you are back online.
 - **Optional AI**: snap a receipt to split it line by line (receipts from abroad are converted to the group's currency), or type "dinner 60 paid by me split with Sam". Works with Claude or any OpenAI-compatible server, including local models.
 - **AI assistants**: a built-in MCP server lets assistants such as Claude check balances and add expenses for you.

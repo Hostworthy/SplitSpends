@@ -2,8 +2,30 @@ import 'package:cupertino_ui/cupertino_ui.dart'
     show CupertinoPageTransitionsBuilder;
 import 'package:material_ui/material_ui.dart';
 
-/// Brand seed: a calm emerald teal.
-const _seed = Color(0xFF0E7C66);
+/// Accent colours people can pick in Account. Teal is the brand default.
+/// Balance colours (green for owed, orange for owing) never change, so
+/// money always reads the same whatever the accent.
+enum ThemeColor {
+  teal('Teal', Color(0xFF0E7C66)),
+  blue('Blue', Color(0xFF1565C0)),
+  indigo('Indigo', Color(0xFF3F51B5)),
+  purple('Purple', Color(0xFF7B1FA2)),
+  pink('Pink', Color(0xFFC2185B)),
+  red('Red', Color(0xFFC62828)),
+  orange('Orange', Color(0xFFE65100)),
+  amber('Amber', Color(0xFFFFA000)),
+  green('Green', Color(0xFF2E7D32)),
+  brown('Brown', Color(0xFF6D4C41)),
+  slate('Slate', Color(0xFF455A64));
+
+  const ThemeColor(this.label, this.seed);
+
+  final String label;
+  final Color seed;
+
+  static ThemeColor named(String? name) =>
+      values.where((c) => c.name == name).firstOrNull ?? teal;
+}
 
 /// Semantic colors for balances.
 @immutable
@@ -62,11 +84,8 @@ class BalanceColors extends ThemeExtension<BalanceColors> {
 abstract final class AppTheme {
   static const radius = 20.0;
 
-  static ThemeData light() => _build(
-    ColorScheme.fromSeed(
-      seedColor: _seed,
-      dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
-    ).copyWith(surface: const Color(0xFFF5FAF7)),
+  static ThemeData light([ThemeColor color = ThemeColor.teal]) => _build(
+    _scheme(color, Brightness.light),
     const BalanceColors(
       owed: Color(0xFF0B8A5F),
       owe: Color(0xFFD9541E),
@@ -76,12 +95,8 @@ abstract final class AppTheme {
     ),
   );
 
-  static ThemeData dark() => _build(
-    ColorScheme.fromSeed(
-      seedColor: _seed,
-      brightness: Brightness.dark,
-      dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
-    ).copyWith(surface: const Color(0xFF0F1513)),
+  static ThemeData dark([ThemeColor color = ThemeColor.teal]) => _build(
+    _scheme(color, Brightness.dark),
     const BalanceColors(
       owed: Color(0xFF5FD9A6),
       owe: Color(0xFFFF9466),
@@ -90,6 +105,22 @@ abstract final class AppTheme {
       oweContainer: Color(0xFF452414),
     ),
   );
+
+  static ColorScheme _scheme(ThemeColor color, Brightness brightness) {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: color.seed,
+      brightness: brightness,
+      dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
+    );
+    // The brand teal keeps its hand-tuned backgrounds; other accents use the
+    // surfaces Material derives from their seed.
+    if (color != ThemeColor.teal) return scheme;
+    return scheme.copyWith(
+      surface: brightness == Brightness.light
+          ? const Color(0xFFF5FAF7)
+          : const Color(0xFF0F1513),
+    );
+  }
 
   static ThemeData _build(ColorScheme scheme, BalanceColors balances) {
     final base = ThemeData(

@@ -19,12 +19,14 @@ class RemoteAccountRepository implements AccountRepository {
     String? defaultCurrency,
     String? timezone,
     String? avatarColor,
+    bool? gravatar,
     NotificationPrefs? notifications,
   }) => _api.patchData('/me', {
     'name': ?name,
     'defaultCurrency': ?defaultCurrency,
     'timezone': ?timezone,
     'avatarColor': ?avatarColor,
+    'gravatar': ?gravatar,
     'notifications': ?notifications?.toJson(),
   }, (d) => Me.fromJson(d as JsonMap));
 }
