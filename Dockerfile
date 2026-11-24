@@ -35,6 +35,8 @@ RUN go mod download
 COPY packages packages
 COPY apps/api apps/api
 COPY apps/mcp apps/mcp
+COPY scripts/release/notices.sh scripts/release/
+RUN mkdir -p /notices && sh scripts/release/notices.sh /notices/THIRD_PARTY_NOTICES.txt
 ARG VERSION=dev
 # The same flags as LDFLAGS in the Makefile.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/splitspends ./apps/api \
@@ -43,6 +45,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}"
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=api /out/ /usr/local/bin/
+COPY --from=api /notices/ /usr/share/doc/splitspends/
 # /data must belong to the runtime user: Docker seeds new volumes from it.
 COPY --from=api --chown=nonroot:nonroot /data /data
 COPY --from=web /src/apps/web/build/web /srv/web
