@@ -40,7 +40,7 @@ Split Spends keeps track of who paid what and who owes whom, so shared costs nev
 
 ## Get Started
 
-**Just using it?** Open the app and choose *Use on this device*. You can connect to a server later.
+**Just using it?** Get the Android app, the web app or the server from the [releases page](https://github.com/Hostworthy/SplitSpends/releases), open the app and choose *Use on this device*. You can connect to a server later.
 
 **Hosting a server for your group?** With Docker:
 
