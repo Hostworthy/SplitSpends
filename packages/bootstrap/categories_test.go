@@ -1,10 +1,11 @@
-package bootstrap
+package bootstrap_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/category"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
@@ -13,19 +14,6 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/google/uuid"
 )
-
-func login(t *testing.T, svc *Services, notes *fakeNotifier, email, name string) uuid.UUID {
-	t.Helper()
-	ctx := context.Background()
-	if err := svc.Auth.RequestCode(ctx, email, ""); err != nil {
-		t.Fatal(err)
-	}
-	res, err := svc.Auth.Verify(ctx, email, notes.codes[email], name, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return res.User.ID
-}
 
 func str(s string) *string { return &s }
 
@@ -39,9 +27,10 @@ func wantField(t *testing.T, err error, field string) {
 
 func TestDefaultSplit(t *testing.T) {
 	ctx := context.Background()
-	svc, notes := setup(t, time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC))
-	ada := login(t, svc, notes, "ada@example.com", "Ada")
-	ben := login(t, svc, notes, "ben@example.com", "Ben")
+	env := bootstraptest.Open(t, bootstraptest.Options{Now: time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC)})
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
 	v, err := svc.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: str("Flat")}, People: []uuid.UUID{ben}})
 	if err != nil {
 		t.Fatal(err)
@@ -108,9 +97,10 @@ func TestDefaultSplit(t *testing.T) {
 
 func TestCustomCategories(t *testing.T) {
 	ctx := context.Background()
-	svc, notes := setup(t, time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC))
-	ada := login(t, svc, notes, "ada@example.com", "Ada")
-	ben := login(t, svc, notes, "ben@example.com", "Ben")
+	env := bootstraptest.Open(t, bootstraptest.Options{Now: time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC)})
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
 	g, err := svc.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: str("Crag")}, People: []uuid.UUID{ben}})
 	if err != nil {
 		t.Fatal(err)
@@ -210,8 +200,9 @@ func TestCustomCategories(t *testing.T) {
 
 func TestImportDefaultSplitAndCategories(t *testing.T) {
 	ctx := context.Background()
-	svc, notes := setup(t, time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC))
-	cara := login(t, svc, notes, "cara@example.com", "Cara")
+	env := bootstraptest.Open(t, bootstraptest.Options{Now: time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC)})
+	svc := env.Services
+	cara := env.SignIn(t, "cara@example.com", "Cara").User.ID
 
 	me, dan, flat := uuid.New(), uuid.New(), uuid.New()
 	live, gone := "custom."+uuid.NewString(), "custom."+uuid.NewString()

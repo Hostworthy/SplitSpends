@@ -1,4 +1,4 @@
-package bootstrap
+package bootstrap_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/admin"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
@@ -15,15 +16,16 @@ import (
 // disabled accounts against a real database.
 func TestAdministration(t *testing.T) {
 	ctx := context.Background()
-	svc, notes := setup(t, time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC))
+	env := bootstraptest.Open(t, bootstraptest.Options{Now: time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)})
+	svc, notes := env.Services, env.Notifier
 	login := func(email, name string) (*user.User, string, error) {
 		t.Helper()
-		delete(notes.codes, email)
+		notes.Forget(email)
 		if err := svc.Auth.RequestCode(ctx, email, ""); err != nil {
 			return nil, "", err
 		}
-		code, sent := notes.codes[email]
-		if !sent {
+		code := notes.Code(email)
+		if code == "" {
 			return nil, "", errs.Forbidden("no code sent")
 		}
 		l, err := svc.Auth.Verify(ctx, email, code, name, "test")
@@ -67,12 +69,12 @@ func TestAdministration(t *testing.T) {
 	if _, _, err := login("kim@family.com", "Kim"); err != nil {
 		t.Fatalf("allowed domain must sign in directly: %v", err)
 	}
-	notes.sent = nil
+	notes.Reset()
 	if _, _, err := login("dan@else.org", "Dan"); !errs.Is(err, errs.KindPending) {
 		t.Fatalf("stranger must wait for approval: %v", err)
 	}
-	if len(notes.sent) != 1 || notes.sent[0].To != "ada@example.com" || !strings.Contains(notes.sent[0].Subject, "Dan (dan@else.org)") {
-		t.Fatalf("administrators must hear about the request: %+v", notes.sent)
+	if sent := notes.Sent(); len(sent) != 1 || sent[0].To != "ada@example.com" || !strings.Contains(sent[0].Subject, "Dan (dan@else.org)") {
+		t.Fatalf("administrators must hear about the request: %+v", sent)
 	}
 
 	// A manager can approve, but not change settings.
@@ -90,12 +92,12 @@ func TestAdministration(t *testing.T) {
 	if len(pending) != 1 || pending[0].Email != "dan@else.org" || pending[0].Name != "Dan" {
 		t.Fatalf("pending = %+v", pending)
 	}
-	notes.sent = nil
+	notes.Reset()
 	if _, err := svc.Admin.Approve(ctx, ben.ID, pending[0].ID); err != nil {
 		t.Fatal(err)
 	}
-	if len(notes.sent) != 1 || notes.sent[0].To != "dan@else.org" {
-		t.Fatalf("the approved person must be emailed: %+v", notes.sent)
+	if sent := notes.Sent(); len(sent) != 1 || sent[0].To != "dan@else.org" {
+		t.Fatalf("the approved person must be emailed: %+v", sent)
 	}
 	dan, _, err := login("dan@else.org", "Dan")
 	if err != nil || dan.Name != "Dan" {

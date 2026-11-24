@@ -72,7 +72,7 @@ test:
 	cd packages/client && flutter test
 
 test-integration:
-	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -count=1 ./packages/bootstrap/...
+	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -count=1 ./...
 
 check: lint vuln test
 

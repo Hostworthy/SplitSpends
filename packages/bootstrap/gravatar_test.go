@@ -1,4 +1,4 @@
-package bootstrap
+package bootstrap_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 )
 
@@ -13,14 +14,9 @@ import (
 // after it is turned on.
 func TestGravatarPreference(t *testing.T) {
 	ctx := context.Background()
-	svc, notes := setup(t, time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC))
-	if err := svc.Auth.RequestCode(ctx, "ada@example.com", ""); err != nil {
-		t.Fatal(err)
-	}
-	login, err := svc.Auth.Verify(ctx, "ada@example.com", notes.codes["ada@example.com"], "Ada", "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	env := bootstraptest.Open(t, bootstraptest.Options{Now: time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)})
+	svc := env.Services
+	login := env.SignIn(t, "ada@example.com", "Ada")
 	if login.User.Gravatar || login.User.Picture(160) != "" {
 		t.Fatal("Gravatar must be off for new accounts")
 	}

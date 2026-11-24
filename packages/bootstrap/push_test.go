@@ -12,6 +12,22 @@ import (
 	"github.com/google/uuid"
 )
 
+// fakeNotifier records what the fanout hands to email. Tests in this package
+// cannot use bootstraptest.Notifier: that package imports this one.
+type fakeNotifier struct {
+	codes map[string]string
+	sent  []ports.Notification
+}
+
+func (f *fakeNotifier) LoginCode(_ context.Context, to, code string, _ time.Duration) error {
+	f.codes[to] = code
+	return nil
+}
+func (f *fakeNotifier) Invite(context.Context, string, string) error { return nil }
+func (f *fakeNotifier) Notify(_ context.Context, n ports.Notification) {
+	f.sent = append(f.sent, n)
+}
+
 type recordingPusher struct {
 	mu   sync.Mutex
 	sent []ports.Notification
