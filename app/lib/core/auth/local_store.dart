@@ -13,10 +13,6 @@ abstract class LocalStore {
   /// `local` or `connected`; null until the user picks on the welcome screen.
   Future<String?> readAppMode();
   Future<void> writeAppMode(String? mode);
-
-  /// The on-device profile (JSON) used in local mode.
-  Future<String?> readLocalProfile();
-  Future<void> writeLocalProfile(String json);
 }
 
 /// Token in the platform keychain/keystore, the rest in shared preferences.
@@ -28,7 +24,6 @@ class DeviceLocalStore implements LocalStore {
   static const _tokenKey = 'session_token';
   static const _themeKey = 'theme_mode';
   static const _modeKey = 'app_mode';
-  static const _profileKey = 'local_profile';
 
   final FlutterSecureStorage _secure;
 
@@ -79,31 +74,16 @@ class DeviceLocalStore implements LocalStore {
       await prefs.setString(_modeKey, mode);
     }
   }
-
-  @override
-  Future<String?> readLocalProfile() async =>
-      (await SharedPreferences.getInstance()).getString(_profileKey);
-
-  @override
-  Future<void> writeLocalProfile(String json) async =>
-      (await SharedPreferences.getInstance()).setString(_profileKey, json);
 }
 
 /// In-memory store for tests.
 class MemoryLocalStore implements LocalStore {
-  MemoryLocalStore({
-    this.serverUrl,
-    this.token,
-    this.themeMode,
-    this.appMode,
-    this.localProfile,
-  });
+  MemoryLocalStore({this.serverUrl, this.token, this.themeMode, this.appMode});
 
   String? serverUrl;
   String? token;
   String? themeMode;
   String? appMode;
-  String? localProfile;
 
   @override
   Future<String?> readServerUrl() async => serverUrl;
@@ -128,10 +108,4 @@ class MemoryLocalStore implements LocalStore {
 
   @override
   Future<void> writeAppMode(String? mode) async => appMode = mode;
-
-  @override
-  Future<String?> readLocalProfile() async => localProfile;
-
-  @override
-  Future<void> writeLocalProfile(String json) async => localProfile = json;
 }

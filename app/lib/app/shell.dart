@@ -3,10 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:splitspends/app/refresh.dart';
+import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/app/router.dart';
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/core/auth/session.dart';
+import 'package:splitspends/core/sync/outbox_sync.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
+import 'package:splitspends/core/widgets/sync_bar.dart';
 
 class _Destination {
   const _Destination(this.label, this.icon, this.selectedIcon);
@@ -48,10 +52,22 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen(localMaintenanceProvider, (_, next) {
+      if ((next.value ?? 0) > 0) ref.refreshLedger();
+    });
+    ref.listen(outboxSyncProvider, (was, now) {
+      if (was?.round != now.round) ref.refreshLedger();
+    });
+    final body = Column(
+      children: [
+        const SyncBar(),
+        Expanded(child: shell),
+      ],
+    );
     final showFab = shell.currentIndex <= 2;
     if (!isWide(context)) {
       return Scaffold(
-        body: shell,
+        body: body,
         floatingActionButton: AnimatedScale(
           scale: showFab ? 1 : 0,
           duration: const Duration(milliseconds: 180),
@@ -122,7 +138,7 @@ class AppShell extends ConsumerWidget {
                       child: Padding(
                         padding: const EdgeInsets.only(bottom: 20),
                         child: Tooltip(
-                          message: me.email,
+                          message: me.email ?? me.displayName,
                           child: UserAvatar(user: me, size: 36),
                         ),
                       ),
@@ -138,7 +154,7 @@ class AppShell extends ConsumerWidget {
             ],
           ),
           const VerticalDivider(width: 1),
-          Expanded(child: shell),
+          Expanded(child: body),
         ],
       ),
     );

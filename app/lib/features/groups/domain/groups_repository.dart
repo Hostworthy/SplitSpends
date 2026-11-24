@@ -17,8 +17,8 @@ abstract interface class GroupsRepository {
   /// Fails when the group is not settled.
   Future<void> delete(String id);
 
-  /// Adds someone by email (connected) or by name (local, email optional).
-  Future<Group> addMember(String id, String email, {String? name});
+  /// Adds someone by email, by name (a placeholder), or both.
+  Future<Group> addMember(String id, {String? email, String? name});
 
   /// Fails when that member is not settled.
   Future<void> removeMember(String id, String userId);

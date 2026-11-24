@@ -19,9 +19,12 @@ IconData _kindIcon(String kind) {
 }
 
 class ActivityTile extends StatelessWidget {
-  const ActivityTile({super.key, required this.activity});
+  const ActivityTile({super.key, required this.activity, this.linkable = true});
 
   final Activity activity;
+
+  /// False inside the expense's own page.
+  final bool linkable;
 
   void _open(BuildContext context) {
     if (activity.expenseId != null && !activity.kind.endsWith('deleted')) {
@@ -35,7 +38,7 @@ class ActivityTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return ListTile(
-      onTap: () => _open(context),
+      onTap: linkable ? () => _open(context) : null,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: Stack(
         clipBehavior: Clip.none,

@@ -8,6 +8,7 @@ import 'package:splitspends/core/widgets/category_icon.dart';
 /// Searchable currency picker sheet. Returns the chosen code.
 Future<String?> pickCurrency(BuildContext context, {String? selected}) {
   return showModalBottomSheet<String>(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     builder: (context) => _CurrencySheet(selected: selected),
@@ -88,6 +89,7 @@ class _CurrencySheetState extends ConsumerState<_CurrencySheet> {
 /// Category picker sheet grouped by category group. Returns the id.
 Future<String?> pickCategory(BuildContext context, {String? selected}) {
   return showModalBottomSheet<String>(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     builder: (context) => _CategorySheet(selected: selected),

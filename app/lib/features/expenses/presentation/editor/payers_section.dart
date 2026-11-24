@@ -17,6 +17,7 @@ class PayersSection extends ConsumerWidget {
   final Map<String, User> people;
 
   Future<void> _edit(BuildContext context) => showModalBottomSheet<void>(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     builder: (_) => _PayersSheet(form: form, people: people),

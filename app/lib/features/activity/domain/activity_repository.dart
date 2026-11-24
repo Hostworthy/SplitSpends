@@ -5,6 +5,7 @@ import 'package:splitspends/features/activity/domain/activity.dart';
 abstract interface class ActivityRepository {
   Future<PageResult<Activity>> list({
     String? groupId,
+    String? expenseId,
     int limit = 30,
     int offset = 0,
   });

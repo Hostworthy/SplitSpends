@@ -16,9 +16,16 @@ class RemoteFriendsRepository implements FriendsRepository {
   )).items;
 
   @override
-  Future<Friend> add(String email, {String? name}) => _api.postData(
-    '/friends',
-    {'email': email, 'name': ?name},
+  Future<Friend> add({String? email, String? name}) =>
+      _api.postData('/friends', {
+        if (email != null && email.isNotEmpty) 'email': email,
+        if (name != null && name.isNotEmpty) 'name': name,
+      }, (d) => Friend.fromJson(d as JsonMap));
+
+  @override
+  Future<Friend> invite(String userId, String email) => _api.patchData(
+    '/friends/$userId',
+    {'email': email},
     (d) => Friend.fromJson(d as JsonMap),
   );
 

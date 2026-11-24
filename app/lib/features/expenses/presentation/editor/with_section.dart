@@ -27,6 +27,7 @@ class WithSection extends ConsumerWidget {
     final groups = await ref.read(groupsProvider.future);
     if (!context.mounted) return;
     final picked = await showModalBottomSheet<Object>(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       builder: (context) => SafeArea(
@@ -67,6 +68,7 @@ class WithSection extends ConsumerWidget {
     if (!context.mounted) return;
     final selected = {...form.people}..remove(form.meId);
     final result = await showModalBottomSheet<Set<String>>(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
@@ -83,7 +85,7 @@ class WithSection extends ConsumerWidget {
                         value: selected.contains(f.user.id),
                         secondary: UserAvatar(user: f.user),
                         title: Text(f.user.displayName),
-                        subtitle: Text(f.user.email),
+                        subtitle: Text(f.user.statusLine),
                         onChanged: (v) => setState(() {
                           v == true
                               ? selected.add(f.user.id)

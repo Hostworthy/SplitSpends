@@ -7,6 +7,7 @@ abstract final class Routes {
   static const welcomeLocal = '/welcome/local';
   static const login = '/login';
   static const verify = '/login/verify';
+  static const importData = '/login/import';
   static const home = '/';
   static const groups = '/groups';
   static const friends = '/friends';

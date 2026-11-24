@@ -16,6 +16,7 @@ import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/presentation/detail/comments_section.dart';
+import 'package:splitspends/features/expenses/presentation/detail/history_section.dart';
 import 'package:splitspends/features/expenses/presentation/detail/receipt_image.dart';
 import 'package:splitspends/features/expenses/presentation/detail/shares_card.dart';
 import 'package:splitspends/features/expenses/presentation/providers.dart';
@@ -133,6 +134,7 @@ class ExpenseDetailScreen extends ConsumerWidget {
                     if (e.receiptId != null)
                       ReceiptImage(receiptId: e.receiptId!),
                     CommentsSection(expenseId: e.id),
+                    HistorySection(expenseId: e.id),
                   ],
                 ),
               ),

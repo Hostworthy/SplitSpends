@@ -11,6 +11,7 @@ import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/friends/domain/friend.dart';
+import 'package:splitspends/features/friends/presentation/add_friend_dialog.dart';
 import 'package:splitspends/features/friends/presentation/providers.dart';
 import 'package:splitspends/features/groups/presentation/detail/expenses_tab.dart';
 
@@ -76,7 +77,11 @@ class FriendDetailScreen extends ConsumerWidget {
         onRetry: () => ref.invalidate(friendDetailProvider(userId)),
         data: (d) => ExpenseFeedList(
           query: ExpenseQuery(friendId: userId),
-          header: _FriendHeader(detail: d, meId: meId),
+          header: _FriendHeader(
+            detail: d,
+            meId: meId,
+            local: ref.watch(appModeProvider) == AppMode.local,
+          ),
           empty: const EmptyState(
             icon: Icons.receipt_long_rounded,
             title: 'No shared expenses yet',
@@ -88,10 +93,11 @@ class FriendDetailScreen extends ConsumerWidget {
 }
 
 class _FriendHeader extends StatelessWidget {
-  const _FriendHeader({required this.detail, this.meId});
+  const _FriendHeader({required this.detail, this.meId, this.local = false});
 
   final FriendDetail detail;
   final String? meId;
+  final bool local;
 
   @override
   Widget build(BuildContext context) {
@@ -113,12 +119,7 @@ class _FriendHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(detail.user.displayName, style: text.titleLarge),
-                    Text(
-                      detail.user.isInvited
-                          ? '${detail.user.email} · invited'
-                          : detail.user.email,
-                      style: text.bodySmall,
-                    ),
+                    Text(detail.user.statusLine, style: text.bodySmall),
                   ],
                 ),
               ),
@@ -161,6 +162,25 @@ class _FriendHeader extends StatelessWidget {
               ),
             ],
           ),
+          if (detail.user.email == null) ...[
+            const SizedBox(height: 12),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.forward_to_inbox_rounded),
+                title: Text('Add ${detail.user.firstName}’s email'),
+                subtitle: Text(
+                  local
+                      ? 'Optional. Helps match them if you connect to a server later.'
+                      : 'Invite them so they can see and add expenses too.',
+                ),
+                onTap: () => showInviteDialog(
+                  context,
+                  detail.user.id,
+                  detail.user.firstName,
+                ),
+              ),
+            ),
+          ],
           if (detail.groups.isNotEmpty || detail.nonGroup.isNotEmpty) ...[
             const SizedBox(height: 16),
             Card(

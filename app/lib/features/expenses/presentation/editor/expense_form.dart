@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'package:splitspends/core/ledger/rational.dart';
+
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/domain/split_calculator.dart';
@@ -62,7 +64,7 @@ class ExpenseForm extends ChangeNotifier {
   final Set<String> included = {};
 
   /// Per-user inputs for exact / percent / shares / adjustment.
-  final Map<String, num> values = {};
+  final Map<String, String> values = {};
 
   /// Payer amounts; with a single payer the amount follows the total.
   final Map<String, int> payers = {};
@@ -121,7 +123,7 @@ class ExpenseForm extends ChangeNotifier {
     values.clear();
     if (value == SplitMethod.shares) {
       for (final id in _people) {
-        values[id] = 1;
+        values[id] = '1';
       }
     }
     if (value == SplitMethod.itemized && items.isEmpty) {
@@ -234,6 +236,11 @@ class ExpenseForm extends ChangeNotifier {
     notifyListeners();
   }
 
+  static bool _nonZero(String? value) {
+    final r = value == null ? null : Rational.tryParseDecimal(value);
+    return r != null && r.sign != 0;
+  }
+
   ExpenseInput toInput() {
     final splits = switch (method) {
       SplitMethod.equal => [
@@ -242,8 +249,8 @@ class ExpenseForm extends ChangeNotifier {
       SplitMethod.itemized => const <SplitEntry>[],
       _ => [
         for (final id in _people)
-          if ((values[id] ?? 0) != 0 || method == SplitMethod.adjustment)
-            SplitEntry(userId: id, value: values[id] ?? 0),
+          if (_nonZero(values[id]) || method == SplitMethod.adjustment)
+            SplitEntry(userId: id, value: values[id] ?? '0'),
       ],
     };
     return ExpenseInput(

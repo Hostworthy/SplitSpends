@@ -22,6 +22,8 @@ class ApiClient {
     this.token,
     http.Client? httpClient,
     this.onUnauthorized,
+    this.cache,
+    this.onReachability,
     this.timeout = const Duration(seconds: 30),
   }) : _http = httpClient ?? http.Client();
 
@@ -30,6 +32,13 @@ class ApiClient {
   final void Function()? onUnauthorized;
   final Duration timeout;
   final http.Client _http;
+
+  /// Stores successful GET responses and serves them when offline.
+  final ResponseCache? cache;
+
+  /// Called with true after a request reached the server, false when it
+  /// could not (network failure).
+  final void Function(bool reachable)? onReachability;
 
   String get apiBase => '${normalizeServerUrl(serverUrl)}/api/v1';
 
@@ -108,6 +117,10 @@ class ApiClient {
   Future<void> post(String path, [Object? payload]) =>
       _send('POST', path, payload: payload);
 
+  /// Sends a request as-is (the offline outbox replays these).
+  Future<Object?> send(String method, String path, {Object? payload}) =>
+      _send(method, path, payload: payload);
+
   Future<void> delete(String path) => _send('DELETE', path);
 
   /// Fetches raw bytes (receipt images, CSV export).
@@ -150,18 +163,36 @@ class ApiClient {
     Object? payload,
     Map<String, Object?>? query,
   }) async {
-    final request = http.Request(method, uri(path, query))
+    final target = uri(path, query);
+    final cacheKey = method == 'GET' && cache != null ? '$target' : null;
+    final request = http.Request(method, target)
       ..headers.addAll(headers(json: payload != null));
     if (payload != null) request.body = jsonEncode(payload);
-    final streamed = await _guard(() => _http.send(request));
-    final response = await http.Response.fromStream(streamed);
+    http.Response response;
+    try {
+      final streamed = await _guard(() => _http.send(request));
+      response = await http.Response.fromStream(streamed);
+    } on ApiError catch (error) {
+      if (error.isNetwork) {
+        onReachability?.call(false);
+        if (cacheKey != null) {
+          final hit = await cache!.read(cacheKey);
+          if (hit != null) return hit;
+        }
+      }
+      rethrow;
+    }
+    onReachability?.call(true);
     _check(response);
     if (response.statusCode == 204 || response.body.isEmpty) return null;
+    final Object? decoded;
     try {
-      return jsonDecode(utf8.decode(response.bodyBytes));
+      decoded = jsonDecode(utf8.decode(response.bodyBytes));
     } on FormatException {
       throw const ApiError.network('The server sent an unexpected response.');
     }
+    if (cacheKey != null) unawaited(cache!.write(cacheKey, decoded));
+    return decoded;
   }
 
   Future<R> _guard<R>(Future<R> Function() run) async {
@@ -212,4 +243,11 @@ MediaType? _mediaType(String contentType) {
   } on FormatException {
     return null;
   }
+}
+
+/// Offline copies of GET responses, keyed by URL.
+abstract interface class ResponseCache {
+  Future<Object?> read(String key);
+  Future<void> write(String key, Object? body);
+  Future<void> clear();
 }

@@ -104,6 +104,7 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
   Future<String?> _pickPerson(List<User> candidates, String? exclude) {
     final meId = ref.read(meProvider)?.id;
     return showModalBottomSheet<String>(
+      useRootNavigator: true,
       context: context,
       builder: (context) => SafeArea(
         child: ListView(

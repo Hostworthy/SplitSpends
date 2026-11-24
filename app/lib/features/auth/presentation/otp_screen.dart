@@ -69,19 +69,43 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       final result = await ref
           .read(authRepositoryProvider)
           .verifyCode(_server, widget.email, code);
-      if (result.isNew || result.me.name.trim().isEmpty) {
-        setState(() => _pending = result);
-      } else {
-        await ref
-            .read(sessionProvider.notifier)
-            .signIn(token: result.token, me: result.me);
+      final session = ref.read(sessionProvider).value;
+      final localName = (session?.isLocal ?? false) ? session?.me?.name : null;
+      var login = result;
+      final needsName = login.isNew || login.me.name.trim().isEmpty;
+      if (needsName && localName != null && localName.trim().isNotEmpty) {
+        // New account from on-device mode: reuse the name given there.
+        final me = await ref
+            .read(authRepositoryProvider)
+            .setName(_server, login.token, localName);
+        login = LoginResult(token: login.token, me: me, isNew: login.isNew);
+      } else if (needsName) {
+        _name.text = login.me.name;
+        setState(() => _pending = login);
+        return;
       }
+      await _continue(login);
     } on ApiError catch (error) {
       _code.clear();
       setState(() => _error = describeError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Signs in, or first offers to upload on-device data.
+  Future<void> _continue(LoginResult login) async {
+    final local = ref.read(sessionProvider).value?.isLocal ?? false;
+    if (local) {
+      final summary = await ref.read(importServiceProvider).summary();
+      if (!summary.isEmpty && mounted) {
+        context.go(Routes.importData, extra: login);
+        return;
+      }
+    }
+    await ref
+        .read(sessionProvider.notifier)
+        .signIn(token: login.token, me: login.me);
   }
 
   Future<void> _resend() async {
@@ -112,9 +136,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       final me = await ref
           .read(authRepositoryProvider)
           .setName(_server, pending.token, name);
-      await ref
-          .read(sessionProvider.notifier)
-          .signIn(token: pending.token, me: me);
+      await _continue(
+        LoginResult(token: pending.token, me: me, isNew: pending.isNew),
+      );
     } on ApiError catch (error) {
       setState(() => _error = describeError(error));
     } finally {

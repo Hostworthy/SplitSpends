@@ -102,7 +102,7 @@ class _FriendsListState extends ConsumerState<_FriendsList> {
                   (f) =>
                       q.isEmpty ||
                       f.user.displayName.toLowerCase().contains(q) ||
-                      f.user.email.toLowerCase().contains(q),
+                      (f.user.email ?? '').toLowerCase().contains(q),
                 )
                 .toList();
             return ListView(
@@ -136,9 +136,7 @@ class _FriendsListState extends ConsumerState<_FriendsList> {
                       child: UserAvatar(user: f.user, size: 44),
                     ),
                     title: Text(f.user.displayName),
-                    subtitle: f.user.isInvited
-                        ? const Text('Invited')
-                        : Text(f.user.email),
+                    subtitle: Text(f.user.statusLine),
                     trailing: BalanceText(
                       balances: f.balances,
                       owedLabel: 'owes you',

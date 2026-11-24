@@ -4,8 +4,11 @@ import 'package:splitspends/features/friends/domain/friend.dart';
 abstract interface class FriendsRepository {
   Future<List<Friend>> list();
 
-  /// Adds a friend by email; [name] is used for people not yet registered.
-  Future<Friend> add(String email, {String? name});
+  /// Adds a friend by email, by name only (a placeholder), or both.
+  Future<Friend> add({String? email, String? name});
+
+  /// Gives a placeholder an email (and invites them when connected).
+  Future<Friend> invite(String userId, String email);
 
   Future<FriendDetail> get(String userId);
 

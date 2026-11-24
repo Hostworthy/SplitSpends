@@ -5,14 +5,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:sembast/sembast.dart';
 
 import 'package:splitspends/app/app.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/user.dart';
+import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/auth/domain/auth_repository.dart';
+
+import '../helpers.dart';
 
 const _me = Me(
   id: 'u1',
@@ -107,6 +111,7 @@ void main() {
         retry: (_, _) => null,
         overrides: [
           localStoreProvider.overrideWithValue(store),
+          memoryDatabase(),
           authRepositoryProvider.overrideWithValue(auth),
           httpClientProvider.overrideWithValue(_api()),
         ],
@@ -176,6 +181,7 @@ void main() {
         retry: (_, _) => null,
         overrides: [
           localStoreProvider.overrideWithValue(store),
+          memoryDatabase(),
           authRepositoryProvider.overrideWithValue(auth),
           httpClientProvider.overrideWithValue(_api()),
         ],
@@ -194,7 +200,18 @@ void main() {
     expect(auth.requested, isEmpty);
     expect(store.appMode, 'local');
     expect(store.token, isNull);
-    expect(store.localProfile, contains('Grace'));
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SplitSpendsApp)),
+    );
+    final db = await pumpFuture(
+      tester,
+      container.read(databaseProvider.future),
+    );
+    final profile = await pumpFuture(
+      tester,
+      Stores.meta.record('profile').get(db),
+    );
+    expect((profile! as Map)['name'], 'Grace');
     expect(find.text('Grace'), findsWidgets);
   });
 }

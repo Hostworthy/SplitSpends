@@ -55,6 +55,24 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
 
   @override
   Widget build(BuildContext context) {
+    if (ref.watch(appModeProvider) == AppMode.local) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SectionHeader('Comments'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              'Comments are shared through a server. Connect to one in '
+              'Account to talk about expenses with others.',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     final comments = ref.watch(commentsProvider(widget.expenseId));
     final meId = ref.watch(meProvider)?.id;
     final muted = Theme.of(context).colorScheme.onSurfaceVariant;

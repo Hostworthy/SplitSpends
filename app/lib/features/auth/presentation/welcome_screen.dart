@@ -7,7 +7,7 @@ import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/app/shell.dart';
 
 final _hostingGuide = Uri.parse(
-  'https://github.com/atb00ker/SplitSpends/blob/main/docs/HOSTING.md',
+  'https://github.com/Hostworthy/SplitSpends/blob/main/docs/HOSTING.md',
 );
 
 /// First screen: use the app on this device, or connect to a server.

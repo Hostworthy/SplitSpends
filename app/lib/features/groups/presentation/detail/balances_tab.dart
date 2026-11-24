@@ -130,8 +130,9 @@ class _DebtAvatars extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 64,
+      width: 74,
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           if (from != null) UserAvatar(user: from!, size: 28),
           const Icon(Icons.arrow_forward_rounded, size: 14),
