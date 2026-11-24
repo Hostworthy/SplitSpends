@@ -7,7 +7,7 @@ const localConfig = AppConfig(
   appName: 'SplitSpends',
   signupMode: 'local',
   currencies: [
-    CurrencyInfo(code: 'AED', name: 'UAE Dirham', symbol: 'د.إ', exponent: 2),
+    CurrencyInfo(code: 'AED', name: 'UAE Dirham', symbol: 'AED', exponent: 2),
     CurrencyInfo(
       code: 'ARS',
       name: 'Argentine Peso',
@@ -26,7 +26,12 @@ const localConfig = AppConfig(
       symbol: '৳',
       exponent: 2,
     ),
-    CurrencyInfo(code: 'BGN', name: 'Bulgarian Lev', symbol: 'лв', exponent: 2),
+    CurrencyInfo(
+      code: 'BGN',
+      name: 'Bulgarian Lev',
+      symbol: 'BGN',
+      exponent: 2,
+    ),
     CurrencyInfo(
       code: 'BHD',
       name: 'Bahraini Dinar',
@@ -54,7 +59,7 @@ const localConfig = AppConfig(
       symbol: '\$',
       exponent: 2,
     ),
-    CurrencyInfo(code: 'CZK', name: 'Czech Koruna', symbol: 'Kč', exponent: 2),
+    CurrencyInfo(code: 'CZK', name: 'Czech Koruna', symbol: 'CZK', exponent: 2),
     CurrencyInfo(code: 'DKK', name: 'Danish Krone', symbol: 'kr', exponent: 2),
     CurrencyInfo(
       code: 'EGP',
@@ -91,7 +96,7 @@ const localConfig = AppConfig(
     CurrencyInfo(code: 'INR', name: 'Indian Rupee', symbol: '₹', exponent: 2),
     CurrencyInfo(
       code: 'ISK',
-      name: 'Icelandic Króna',
+      name: 'Icelandic Krona',
       symbol: 'kr',
       exponent: 0,
     ),
@@ -172,7 +177,7 @@ const localConfig = AppConfig(
       symbol: 'Rs',
       exponent: 2,
     ),
-    CurrencyInfo(code: 'PLN', name: 'Polish Złoty', symbol: 'zł', exponent: 2),
+    CurrencyInfo(code: 'PLN', name: 'Polish Zloty', symbol: 'PLN', exponent: 2),
     CurrencyInfo(code: 'QAR', name: 'Qatari Riyal', symbol: 'QR', exponent: 2),
     CurrencyInfo(code: 'RON', name: 'Romanian Leu', symbol: 'lei', exponent: 2),
     CurrencyInfo(code: 'SAR', name: 'Saudi Riyal', symbol: 'SR', exponent: 2),
@@ -200,7 +205,7 @@ const localConfig = AppConfig(
     CurrencyInfo(code: 'USD', name: 'US Dollar', symbol: '\$', exponent: 2),
     CurrencyInfo(
       code: 'VND',
-      name: 'Vietnamese Đồng',
+      name: 'Vietnamese Dong',
       symbol: '₫',
       exponent: 0,
     ),

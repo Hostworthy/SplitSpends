@@ -16,11 +16,11 @@ type Currency struct {
 }
 
 var currencies = []Currency{
-	{"AED", "UAE Dirham", "د.إ", 2},
+	{"AED", "UAE Dirham", "AED", 2},
 	{"ARS", "Argentine Peso", "$", 2},
 	{"AUD", "Australian Dollar", "A$", 2},
 	{"BDT", "Bangladeshi Taka", "৳", 2},
-	{"BGN", "Bulgarian Lev", "лв", 2},
+	{"BGN", "Bulgarian Lev", "BGN", 2},
 	{"BHD", "Bahraini Dinar", "BD", 3},
 	{"BRL", "Brazilian Real", "R$", 2},
 	{"CAD", "Canadian Dollar", "C$", 2},
@@ -28,7 +28,7 @@ var currencies = []Currency{
 	{"CLP", "Chilean Peso", "$", 0},
 	{"CNY", "Chinese Yuan", "¥", 2},
 	{"COP", "Colombian Peso", "$", 2},
-	{"CZK", "Czech Koruna", "Kč", 2},
+	{"CZK", "Czech Koruna", "CZK", 2},
 	{"DKK", "Danish Krone", "kr", 2},
 	{"EGP", "Egyptian Pound", "E£", 2},
 	{"EUR", "Euro", "€", 2},
@@ -38,7 +38,7 @@ var currencies = []Currency{
 	{"IDR", "Indonesian Rupiah", "Rp", 2},
 	{"ILS", "Israeli New Shekel", "₪", 2},
 	{"INR", "Indian Rupee", "₹", 2},
-	{"ISK", "Icelandic Króna", "kr", 0},
+	{"ISK", "Icelandic Krona", "kr", 0},
 	{"JOD", "Jordanian Dinar", "JD", 3},
 	{"JPY", "Japanese Yen", "¥", 0},
 	{"KES", "Kenyan Shilling", "KSh", 2},
@@ -56,7 +56,7 @@ var currencies = []Currency{
 	{"PEN", "Peruvian Sol", "S/", 2},
 	{"PHP", "Philippine Peso", "₱", 2},
 	{"PKR", "Pakistani Rupee", "Rs", 2},
-	{"PLN", "Polish Złoty", "zł", 2},
+	{"PLN", "Polish Zloty", "PLN", 2},
 	{"QAR", "Qatari Riyal", "QR", 2},
 	{"RON", "Romanian Leu", "lei", 2},
 	{"SAR", "Saudi Riyal", "SR", 2},
@@ -67,7 +67,7 @@ var currencies = []Currency{
 	{"TWD", "New Taiwan Dollar", "NT$", 2},
 	{"UAH", "Ukrainian Hryvnia", "₴", 2},
 	{"USD", "US Dollar", "$", 2},
-	{"VND", "Vietnamese Đồng", "₫", 0},
+	{"VND", "Vietnamese Dong", "₫", 0},
 	{"ZAR", "South African Rand", "R", 2},
 }
 
