@@ -60,6 +60,7 @@ flowchart TB
 | `receipt` | Receipt images and AI scanning |
 | `assist` | Natural-language expense drafts |
 | `stats` | Spending summaries |
+| `push` | Push subscriptions (devices) and delivery rules |
 
 ### Layout Inside a Context
 

@@ -43,11 +43,12 @@ apps/                     Runnable apps only
   web/                    Flutter shell: web/ runner + lib/main.dart
 packages/                 Shared code the apps are built from
   core/                   Go domain centre: entities, services, ports (no infrastructure)
-    domains/<context>     user, auth, friend, group, expense, balance, activity, receipt, assist, stats, transfer
+    domains/<context>     user, auth, friend, group, expense, balance, activity, receipt, assist, stats, transfer, push
     ports                 Interfaces adapters implement (Tx, Notifier, BlobStore, ReceiptReader)
     shared                errs, money, clock
   database/               PostgreSQL adapters (pgx) and embedded migrations
   notifications/          SMTP email adapter
+  webpush/                Web Push adapter (browsers, and Android through UnifiedPush)
   storage/                Local disk and S3-compatible blob stores
   ai/                     Anthropic and OpenAI-compatible AI providers
   platform/               HTTP contract (request and response shapes), standard library only

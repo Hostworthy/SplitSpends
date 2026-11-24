@@ -68,6 +68,16 @@ Terraform in [`deploy/gcp`](../deploy/gcp/README.md). Cloud Run's free tier cove
 
 Terraform in [`deploy/aws`](../deploy/aws/README.md): Lambda (arm64) running the same server through the AWS Lambda Web Adapter, API Gateway, CloudFront for HTTPS and the web app, private S3 buckets for the web app and receipts, and EventBridge for scheduled jobs. Use a Neon or Supabase database (Lambda outside a VPC cannot reach a private RDS instance without a NAT gateway, which costs about 32 USD a month).
 
+## Push Notifications
+
+Push works out of the box, with nothing to configure and no Google or Apple account:
+
+- **Web app:** open Account and tap **Enable push notifications**, then allow notifications when the browser asks. The app must be served over HTTPS (or `localhost`). On iPhone and iPad, add the web app to the Home Screen first and enable push from there.
+- **Android app:** install a UnifiedPush distributor, for example [ntfy](https://ntfy.sh) from F-Droid or Google Play, and open it once. Then tap **Enable push notifications** in Account and pick the distributor. [Other distributors](https://unifiedpush.org/users/distributors/) work too, including one that relays through Google's push service if you prefer.
+- **iPhone app:** not available yet.
+
+The server creates its push key on first start and keeps it in the database. If you run your own ntfy server on the local network, set `PUSH_ALLOW_PRIVATE=true`. Details are in [ENVIRONMENT.md](ENVIRONMENT.md#push-notifications).
+
 ## Security Checklist
 
 - Always serve over HTTPS. Every option above does, except plain LAN setups.

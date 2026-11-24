@@ -36,9 +36,15 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 { "id": "uuid", "email": "a@b.c" | null, "name": "Ada", "defaultCurrency": "USD",
   "avatarColor": "#7C4DFF", "status": "active" | "invited" | "placeholder" }
 
-// Me (User plus private settings)
+// Me (User plus private settings). In notifications the top-level switches
+// are email (as before push existed); push has the same keys.
 { ...User, "timezone": "Europe/Berlin",
-  "notifications": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true } }
+  "notifications": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true,
+                     "push": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true } } }
+
+// PushSubscription (one of your devices; the endpoint is only shown to you)
+{ "id": "uuid", "platform": "web" | "unifiedpush", "label": "Firefox on Linux",
+  "endpoint": "https://push.example.com/...", "createdAt": "RFC3339", "lastSuccessAt": "RFC3339" | null, "failures": 0 }
 
 // Balance (one per currency, only non-zero entries are returned)
 { "currency": "EUR", "amount": 1250 }
@@ -95,7 +101,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | Method | Path | Notes |
 | ------ | ---- | ----- |
 | GET | `/health` | **public**, outside `/api/v1`: `{ "ok": true }` |
-| GET | `/config` | **public**: `{ data: { appName, aiEnabled, signupMode: "open" \| "invite" \| "domain", currencies: [{ code, name, symbol, exponent }], categories: [{ id, name, group, icon }] } }` |
+| GET | `/config` | **public**: `{ data: { appName, aiEnabled, signupMode: "open" \| "invite" \| "domain", currencies: [{ code, name, symbol, exponent }], categories: [{ id, name, group, icon }], pushEnabled, vapidPublicKey } }`. `vapidPublicKey` is the base64url VAPID key to subscribe with (empty when `pushEnabled` is false) |
 
 ### Auth
 
@@ -115,6 +121,16 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | GET | `/me/tokens` | | List of `{ id, name, createdAt, lastUsedAt }` |
 | POST | `/me/tokens` | `{ name }` | 201 `{ data: { id, name, token, createdAt } }` (token shown once) |
 | DELETE | `/me/tokens/{tokenId}` | | 204 |
+| GET | `/me/push-subscriptions` | | List of PushSubscription, newest first |
+| POST | `/me/push-subscriptions` | `{ endpoint, keys: { p256dh, auth }, platform?: "web" \| "unifiedpush", label? }` | 201 `{ data: PushSubscription }`, or 200 when the endpoint was already registered (refreshed) |
+| DELETE | `/me/push-subscriptions/{subscriptionId}` | | 204 |
+| POST | `/me/push-subscriptions/test` | | `{ data: { sent, failed, removed } }` after sending a test notification to every device of the caller |
+
+Notification preferences: `PATCH /me` with `notifications` merges, so omitted keys keep their value. `{ "notifications": { "push": { "paymentReceived": false } } }` turns off push for payments and leaves everything else as it was. Unknown kinds added later default to on.
+
+Push subscriptions follow the Web Push standards: the body of `POST /me/push-subscriptions` is what `PushSubscription.toJSON()` returns in a browser (plus `platform` and `label`), and UnifiedPush on Android provides the same endpoint and keys. Rules: the endpoint must be an `https` URL; `p256dh` is an uncompressed P-256 public key and `auth` 16 bytes, both base64url. Registering is idempotent on the endpoint: the existing row is refreshed, its failure count reset, and it moves to the caller if another account registered it (the device now belongs to whoever is signed in). At most 25 devices per user (409 beyond that). `POST .../test` returns 409 when push is off or no device is registered. When push is off on the server, `POST` returns 409.
+
+Delivery: the server encrypts each message (RFC 8291, `aes128gcm`) and signs it with VAPID (RFC 8292), with a TTL of one day. The decrypted payload is small JSON, `{ "title": "Ada added “Rent”", "body": "Ada added “Rent” (€1,000.00) in Flat. Your share: €500.00.", "url": "<BASE_URL>" }`, with the same text as the email. A device the push service answers 404 or 410 for is removed; other failures are counted (`failures`) and a device is removed after 25 failures in a row. Push is sent in the background, or before the response when `SERVERLESS=true`.
 
 ### Friends
 
