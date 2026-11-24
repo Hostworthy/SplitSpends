@@ -14,11 +14,11 @@ To stop anyone tagging by mistake, add a tag ruleset for `v*` (Settings, Rules, 
 
 | Artifact | Built on | Notes |
 | --- | --- | --- |
-| Server and MCP binaries for Linux (amd64, arm64), macOS (amd64, arm64) and Windows (amd64) | Ubuntu | `main.version` is the tag, so `splitspends version` prints it |
+| Server and MCP binaries for Linux (amd64, arm64), macOS (amd64, arm64) and Windows (amd64) | Ubuntu | `main.version` is the tag, so `splitspends version` prints it; `THIRD_PARTY_NOTICES.txt` holds the licences of the Go modules linked in (`scripts/release/notices.sh`) |
 | Web app (`splitspends-web-<tag>.tar.gz`) | Ubuntu | Serve with `WEB_DIR` |
 | Android APK | Ubuntu | Signed with your upload key when the secrets below exist; otherwise named `-debug-signed.apk` and signed with a key the runner generates for that run |
 | iOS app (`-unsigned.ipa`) | macOS | Unsigned until an Apple Developer account is set up; install with Xcode, AltStore or Sideloadly |
-| Container image `ghcr.io/hostworthy/splitspends:<tag>` | Ubuntu | linux/amd64; includes the server and the web app |
+| Container image `ghcr.io/hostworthy/splitspends:<tag>` | Ubuntu | linux/amd64; includes the server and the web app, with the third-party notices in `/usr/share/doc/splitspends` |
 | `SHA256SUMS` | | Checksums of every file |
 
 Every file and the image also get a signed build provenance attestation, and the image carries a software bill of materials. The release notes print the image digest and the commands to check them; checksums alone only catch a damaged download, because they are published next to the files.

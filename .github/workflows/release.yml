@@ -86,6 +86,7 @@ jobs:
           name="splitspends-server-${TAG}-${GOOS}-${GOARCH}"
           mkdir -p "dist/$name"
           make build VERSION="$TAG" BIN="dist/$name"
+          scripts/release/notices.sh "dist/$name/THIRD_PARTY_NOTICES.txt"
           cp LICENSE README.md "dist/$name/"
           cp apps/api/.env.example "dist/$name/env.example"
           cd dist
