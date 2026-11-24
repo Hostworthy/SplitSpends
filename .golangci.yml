@@ -1,7 +1,7 @@
 version: "2"
 
-# Go linting for the whole module. `make lint` runs it; CI builds the same
-# pinned version with the project's Go toolchain.
+# Go linting for the whole module. `make lint` and CI both build the pinned
+# version with the Go release go.mod names.
 run:
   timeout: 5m
 
