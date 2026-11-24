@@ -19,11 +19,15 @@ import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/core/storage/local_ledger.dart';
 import 'package:splitspends/core/sync/outbox.dart';
 import 'package:splitspends/features/account/data/local_account_repository.dart';
+import 'package:splitspends/features/categories/data/local_categories_repository.dart';
+import 'package:splitspends/features/categories/data/remote_categories_repository.dart';
+import 'package:splitspends/features/categories/domain/categories_repository.dart';
 import 'package:splitspends/features/expenses/data/local_expenses_repository.dart';
 import 'package:splitspends/features/expenses/data/offline_expenses_repository.dart';
 import 'package:splitspends/features/expenses/data/remote_expenses_repository.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/groups/data/local_groups_repository.dart';
+import 'package:splitspends/features/groups/data/remote_groups_repository.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/sync/data/import_service.dart';
 
@@ -170,6 +174,40 @@ void main() {
       currency: 'EUR',
       date: '2026-11-06',
     );
+    // A default split and custom categories, one of them deleted but still
+    // used by an expense.
+    await groups.update(
+      g.id,
+      GroupInput(
+        defaultSplit: DefaultSplit(
+          method: SplitMethod.shares,
+          values: {me: '2', sam: '1', kim: '1', lee: '0'},
+        ),
+      ),
+    );
+    final categories = LocalCategoriesRepository(ledger);
+    final boats = await categories.create(
+      const CategoryInput(name: 'Boats', icon: 'attractions', group: 'Travel'),
+    );
+    final old = await categories.create(const CategoryInput(name: 'Old'));
+    for (final c in [boats, old]) {
+      await add(
+        ExpenseInput(
+          groupId: g.id,
+          description: 'Kayak ${c.name}',
+          currency: 'EUR',
+          total: 4000,
+          date: '2026-11-06',
+          category: c.id,
+          payers: [Payer(userId: me, amount: 4000)],
+          splits: [
+            SplitEntry(userId: me),
+            SplitEntry(userId: sam),
+          ],
+        ),
+      );
+    }
+    await categories.delete(old.id);
     final localTotals = await LocalBalancesRepository(ledger).mine();
     final localGroup = await groups.balances(g.id);
 
@@ -199,6 +237,27 @@ void main() {
     expect(serverGroup.debts.length, localGroup.debts.length);
     final profile = await LocalAccountRepository(ledger).me();
     expect(profile.id, serverMe.id, reason: 'local me maps to the account');
+
+    // The default split arrives with server ids, matching the local copy.
+    final serverSplit = (await RemoteGroupsRepository(api).get(g.id))
+        .defaultSplit;
+    final localSplit = (await groups.get(g.id)).defaultSplit;
+    expect(serverSplit?.method, SplitMethod.shares);
+    expect(serverSplit?.values, localSplit?.values);
+    expect(serverSplit?.values[serverMe.id], '2');
+    // Custom categories keep their ids; deleted ones stay on expenses only.
+    final serverCategories = {
+      for (final c in await RemoteCategoriesRepository(api).list()) c.id: c,
+    };
+    expect(serverCategories[boats.id]?.name, 'Boats');
+    expect(serverCategories[boats.id]?.mine, isTrue);
+    expect(serverCategories.containsKey(old.id), isFalse);
+    final kayaks = await api.getList(
+      '/expenses',
+      Expense.fromJson,
+      query: {'groupId': g.id, 'q': 'Kayak'},
+    );
+    expect({for (final e in kayaks.items) e.category}, {boats.id, old.id});
 
     // 4. Offline outbox replays with client ids exactly once.
     final outbox = Outbox(() async => db);

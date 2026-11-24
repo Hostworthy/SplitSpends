@@ -74,7 +74,8 @@ func toGroup(v *group.View) platform.Group {
 	}
 	return platform.Group{ID: v.ID.String(), Name: v.Name, Kind: string(v.Kind), DefaultCurrency: v.DefaultCurrency,
 		SimplifyDebts: v.SimplifyDebts, Emoji: v.Emoji, Color: v.Color, Archived: v.ArchivedAt != nil,
-		CreatedAt: stamp(v.CreatedAt), UpdatedAt: stamp(v.UpdatedAt), Members: members, Balances: toBalances(v.Balances)}
+		CreatedAt: stamp(v.CreatedAt), UpdatedAt: stamp(v.UpdatedAt), Members: members, Balances: toBalances(v.Balances),
+		DefaultSplit: toDefaultSplit(v.Effective())}
 }
 
 func toDebts(ds []balance.Debt) []platform.Debt {

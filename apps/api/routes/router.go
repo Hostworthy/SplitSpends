@@ -103,6 +103,11 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("POST "+p+"/payments", authed(a.createPayment))
 	mux.Handle("POST "+p+"/reminders", authed(a.sendReminder))
 
+	mux.Handle("GET "+p+"/categories", authed(a.listCategories))
+	mux.Handle("POST "+p+"/categories", authed(a.createCategory))
+	mux.Handle("PATCH "+p+"/categories/{categoryId}", authed(a.patchCategory))
+	mux.Handle("DELETE "+p+"/categories/{categoryId}", authed(a.deleteCategory))
+
 	mux.Handle("GET "+p+"/activity", authed(a.listActivity))
 	mux.Handle("GET "+p+"/stats", authed(a.stats))
 

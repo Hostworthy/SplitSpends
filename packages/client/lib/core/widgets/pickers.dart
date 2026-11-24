@@ -3,7 +3,6 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/core/config/app_config.dart';
 import 'package:splitspends/core/config/config_provider.dart';
-import 'package:splitspends/core/widgets/category_icon.dart';
 
 /// Searchable currency picker sheet. Returns the chosen code.
 Future<String?> pickCurrency(BuildContext context, {String? selected}) {
@@ -82,65 +81,6 @@ class _CurrencySheetState extends ConsumerState<_CurrencySheet> {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Category picker sheet grouped by category group. Returns the id.
-Future<String?> pickCategory(BuildContext context, {String? selected}) {
-  return showModalBottomSheet<String>(
-    useRootNavigator: true,
-    context: context,
-    isScrollControlled: true,
-    builder: (context) => _CategorySheet(selected: selected),
-  );
-}
-
-class _CategorySheet extends ConsumerWidget {
-  const _CategorySheet({this.selected});
-
-  final String? selected;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final categories = ref.watch(configValueProvider).categories;
-    final groups = <String, List<Category>>{};
-    for (final c in categories) {
-      groups.putIfAbsent(c.group, () => []).add(c);
-    }
-    final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.75,
-      child: categories.isEmpty
-          ? const Center(child: Text('No categories configured'))
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              children: [
-                for (final entry in groups.entries) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-                    child: Text(
-                      entry.key,
-                      style: Theme.of(context).textTheme.titleSmall
-                          ?.copyWith(color: scheme.primary),
-                    ),
-                  ),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final c in entry.value)
-                        ChoiceChip(
-                          selected: c.id == selected,
-                          avatar: Icon(categoryVisual(c.id).icon, size: 18),
-                          label: Text(c.name),
-                          onSelected: (_) => Navigator.pop(context, c.id),
-                        ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
     );
   }
 }

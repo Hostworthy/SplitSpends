@@ -3,6 +3,7 @@ package routes
 import (
 	"net/http"
 
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/category"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/transfer"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
@@ -28,12 +29,25 @@ func (a *API) importBundle(w http.ResponseWriter, r *http.Request) error {
 		}
 		b.People = append(b.People, transfer.Person{ID: id, Name: p.Name, Email: p.Email})
 	}
+	for _, c := range in.Categories {
+		if c.ID == "" {
+			return errs.Validation("categories", "Every imported category needs its id.")
+		}
+		b.Categories = append(b.Categories, transfer.Category{
+			Input:   category.Input{ID: &c.ID, Name: &c.Name, Icon: &c.Icon, Group: &c.Group},
+			Deleted: c.Deleted,
+		})
+	}
 	for _, g := range in.Groups {
 		id, err := uuid.Parse(g.ID)
 		if err != nil {
 			return errs.Validation("groups", "Invalid group id.")
 		}
-		group := transfer.Group{ID: id, Patch: toPatch(g.GroupPatch)}
+		patch, err := toPatch(g.GroupPatch)
+		if err != nil {
+			return err
+		}
+		group := transfer.Group{ID: id, Patch: patch}
 		for _, m := range g.MemberIDs {
 			mid, err := uuid.Parse(m)
 			if err != nil {
@@ -61,7 +75,7 @@ func (a *API) importBundle(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := platform.ImportResult{People: map[string]string{}, Groups: res.Groups, Expenses: res.Expenses}
+	out := platform.ImportResult{People: map[string]string{}, Categories: res.Categories, Groups: res.Groups, Expenses: res.Expenses}
 	for local, server := range res.People {
 		out.People[local.String()] = server.String()
 	}

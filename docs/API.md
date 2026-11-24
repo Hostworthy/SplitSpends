@@ -63,7 +63,15 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 { "id": "uuid", "name": "Lisbon trip", "kind": "home" | "trip" | "couple" | "other",
   "defaultCurrency": "EUR", "simplifyDebts": true, "emoji": "✈️", "color": "#00BFA5",
   "archived": false, "createdAt": "...", "updatedAt": "...",
-  "members": [User], "balances": [Balance] /* caller's balance in this group */ }
+  "members": [User], "balances": [Balance] /* caller's balance in this group */,
+  "defaultSplit": DefaultSplit | null }
+
+// DefaultSplit (see "Default Split" below); values are decimal strings
+{ "method": "equal" | "percent" | "shares", "values": { "<userId>": "60" } }
+
+// Category (GET /categories; GET /config lists built-ins without custom and mine)
+{ "id": "food.dining" | "custom.<uuid>", "name": "Dining out", "group": "Food and drink",
+  "icon": "restaurant", "custom": false, "mine": false }
 
 // Expense (payments are expenses with kind = "payment")
 { "id": "uuid", "groupId": "uuid" | null, "kind": "expense" | "payment",
@@ -100,6 +108,20 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | `itemized` | omitted | `items[].userIds` share each item evenly; `tax` and `tip` are spread proportionally to each user's item subtotal; `total` must equal items + tax + tip |
 
 `payers` is a list of `{ "userId", "amount" }` whose amounts sum to `total`. Every user in `payers`, `splits` or `items` must be a group member (group expense) or the caller's friend (non-group expense), and the caller must be involved.
+
+`category` is a built-in id or a custom category id (`custom.<uuid>`). A custom id must be one of the caller's own live categories; an update may also keep the category the expense already has, even when it belongs to another member or was deleted.
+
+### Default Split
+
+A group can store the split that new expenses in it start with. Clients apply it when someone adds an expense (the user can still change it); it never changes saved expenses. Only methods that do not depend on the total can be defaults.
+
+| `method` | `values` | Rule |
+| -------- | -------- | ---- |
+| `equal` | `{}` | Everyone in the group, equally |
+| `percent` | every current member, `"0"` leaves someone out | Plain decimals (at most four decimal places), never negative, adding up to exactly `100` |
+| `shares` | every current member, `"0"` leaves someone out | Plain decimals (at most four decimal places), never negative, adding up to more than zero |
+
+A `percent` or `shares` default applies only while its members are exactly the group's members. When someone joins or leaves, `Group.defaultSplit` is `null` (the default is treated as absent) until the group's members match it again or someone saves a new one, so a stale default never silently produces a wrong split. Violations return 422 with `field: "defaultSplit"`. The same rules run on the device (`packages/ledger`) and are tested with `spec/vectors.json`.
 
 ## Endpoints
 
@@ -154,9 +176,9 @@ Delivery: the server encrypts each message (RFC 8291, `aes128gcm`) and signs it 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/groups` | `?archived=true` | List of `Group` |
-| POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, members?: [{ email, name? }] }` | 201 `{ data: Group }` |
+| POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, defaultSplit?, members?: [{ email, name? }] }` | 201 `{ data: Group }`; `defaultSplit` is checked against the members after they are added |
 | GET | `/groups/{groupId}` | | `{ data: Group }` |
-| PATCH | `/groups/{groupId}` | `{ name?, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, archived? }` | `{ data: Group }` |
+| PATCH | `/groups/{groupId}` | `{ name?, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, archived?, defaultSplit? }` | `{ data: Group }`; `defaultSplit: null` clears it, leaving it out keeps it |
 | DELETE | `/groups/{groupId}` | | 204; 409 when not settled |
 | POST | `/groups/{groupId}/members` | `{ email?, name? }` | 201 `{ data: Group }` (name only adds a placeholder) |
 | DELETE | `/groups/{groupId}/members/{userId}` | | 204; 409 when that member is not settled. A member may remove themselves (leave) |
@@ -209,12 +231,25 @@ People without an account follow the link, request a login code with `inviteToke
 
 Asks someone who owes you money to settle up: in one group when `groupId` is set, otherwise across everything you share. `balances` is what they owe you (positive amounts only, per currency). The reminder is emailed unless they turned the `reminders` notification off (`emailed: false`), and recorded as `reminder.sent` in both people's activity. Errors: 409 `CONFLICT` when they owe you nothing in that scope, or have no email address (people added by name only); 429 `RATE_LIMITED` when you already reminded them in the same scope in the last 24 hours (enforced in the database); 422 when `groupId` is not one of your groups.
 
+### Categories
+
+| Method | Path | Body | Response |
+| ------ | ---- | ---- | -------- |
+| GET | `/categories` | | List of `Category`: the built-ins, then the caller's own custom categories and custom categories used by expenses the caller can see (`mine: false`), by name |
+| POST | `/categories` | `{ id?, name, icon?, group? }` | 201 `{ data: Category }`; repeating a create with the same `id` returns the existing category, an `id` owned by someone else returns 409 |
+| PATCH | `/categories/{categoryId}` | `{ name?, icon?, group? }` | `{ data: Category }`; owner only (404 otherwise) |
+| DELETE | `/categories/{categoryId}` | | 204; owner only |
+
+Rules: `name` is 1 to 40 characters (whitespace collapsed). `icon` is one of `restaurant`, `local_grocery_store`, `local_bar`, `local_cafe`, `home`, `bolt`, `wifi`, `cleaning_services`, `chair`, `build`, `pets`, `local_gas_station`, `local_parking`, `local_taxi`, `directions_bus`, `directions_car`, `flight`, `hotel`, `attractions`, `movie`, `sports_esports`, `music_note`, `sports_soccer`, `subscriptions`, `checkroom`, `redeem`, `medical_services`, `school`, `child_care`, `shield`, `account_balance`, `shopping_bag`, `receipt_long`, `label`, `star`, `favorite`, `work`, `fitness_center`, `park`, `celebration`, `cake`, `savings`, `devices`, `menu_book`, `palette`, `volunteer_activism`, `local_laundry_service`, `content_cut` (default `label`). `group` is the display group, one of the built-in groups (`Food and drink`, `Home`, `Transportation`, `Travel`, `Entertainment`, `Life`, `Other`; default `Other`). Client-chosen ids look like `custom.<uuid>` (lowercase). Each person keeps up to 200 categories.
+
+Deleting hides a category from listings and from new expenses but never rewrites history: expenses keep its id, clients show them as General, and `/stats` counts them under `general`. `GET /config` keeps returning only the built-ins.
+
 ### Activity and Stats
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/activity` | `?groupId=&expenseId=` | List of `Activity`, newest first |
-| GET | `/stats` | `?groupId=&from=&to=&currency=` | `{ data: { currency, totalSpent, byCategory: [{ category, amount }], byMonth: [{ month: "2026-11", amount }], byMember: [{ userId, paid, owed }] } }`. `totalSpent` is your share (or the group total when `groupId` is set) |
+| GET | `/stats` | `?groupId=&from=&to=&currency=` | `{ data: { currency, totalSpent, byCategory: [{ category, name, amount }], byMonth: [{ month: "2026-11", amount }], byMember: [{ userId, paid, owed }] } }`. `totalSpent` is your share (or the group total when `groupId` is set). Custom categories are grouped by id with their names; deleted ones count as `general` |
 
 ### Receipts and AI
 
@@ -250,7 +285,7 @@ Asks someone who owes you money to settle up: in one group when `groupId` is set
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| POST | `/import` | `ImportRequest` (max 16 MB) | `{ data: { people: { localId: serverUserId }, groups, expenses } }` |
+| POST | `/import` | `ImportRequest` (max 16 MB) | `{ data: { people: { localId: serverUserId }, categories, groups, expenses } }` |
 
 ```jsonc
 // ImportRequest: everything recorded in local-only mode. All ids are UUIDs chosen by the device.
@@ -259,10 +294,13 @@ Asks someone who owes you money to settle up: in one group when `groupId` is set
   "groups": [{ "id": "uuid", "name": "Camping", "kind": "trip", "defaultCurrency": "EUR",
                "simplifyDebts": true, "emoji": "⛺", "color": "#00897B", "archived": false,
                "memberIds": ["uuid"] }],
+  "categories": [{ "id": "custom.<uuid>", "name": "Climbing", "icon": "fitness_center",
+                   "group": "Entertainment", "deleted": false }],     // optional
   "expenses": [{ "id": "uuid", "kind": "expense" | "payment", ...ExpenseInput }] }
+// groups[].defaultSplit is optional; its values are keyed by local person ids
 ```
 
-Rules: runs in one transaction and sends no emails. People with an email resolve to the existing (or a newly invited) user, so their server id may differ from the local id: use the returned `people` map to rewrite local references. People without an email become placeholders that keep the local id. The caller becomes friends with everyone imported. Payments use `kind: "payment"` with one payer and one split (the recipient). Validation errors name the failing item in `field`, for example `expenses[3].total`. Retrying the same import is safe.
+Rules: runs in one transaction and sends no emails. People with an email resolve to the existing (or a newly invited) user, so their server id may differ from the local id: use the returned `people` map to rewrite local references. People without an email become placeholders that keep the local id. The caller becomes friends with everyone imported. Payments use `kind: "payment"` with one payer and one split (the recipient). Custom categories are created first with their device ids, so expenses can use them; deleted ones are created too and deleted once the expenses are in. A group's `defaultSplit` has its person ids remapped like `memberIds` and must match the group's members (send it only while it still applies). Validation errors name the failing item in `field`, for example `expenses[3].total`. Retrying the same import is safe.
 
 ### Maintenance
 

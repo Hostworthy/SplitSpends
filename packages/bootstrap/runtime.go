@@ -10,6 +10,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/assist"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/balance"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/category"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/friend"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
@@ -47,6 +48,8 @@ type Services struct {
 	Invites   *invite.Service
 	Rates     *rates.Service
 	Push      *push.Service
+	// Categories are the built-in plus user-defined expense categories.
+	Categories *category.Service
 
 	notifier *fanout
 }
@@ -149,8 +152,9 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	groups := group.NewService(groupRepo, users, balances, act, notifier, tx, c, cfg.BaseURL)
 	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
 	receipts := receipt.NewService(receiptRepo, blobs, reader, c)
+	categories := category.NewService(repositories.NewCategories(db), c)
 	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
-		Connections: friends, Receipts: receiptRepo, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+		Connections: friends, Receipts: receiptRepo, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	// Rates only convert AI drafts read in another currency, so nothing is
 	// fetched unless AI is on.
 	var source rates.Source
@@ -170,15 +174,16 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 		Balances: balances,
 		Activity: act,
 		Expenses: expenses,
-		Transfer: transfer.NewService(users, friendRepo, groups, expenses, tx),
+		Transfer: transfer.NewService(users, friendRepo, groups, expenses, categories, tx),
 		Receipts: receipts,
 		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, fx, c),
-		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users),
+		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users, categories),
 
-		Reminders: reminders,
-		Invites:   invites,
-		Push:      pushes,
-		notifier:  notifier,
+		Reminders:  reminders,
+		Invites:    invites,
+		Push:       pushes,
+		notifier:   notifier,
+		Categories: categories,
 	}
 }
 

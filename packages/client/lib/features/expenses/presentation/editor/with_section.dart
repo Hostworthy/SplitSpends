@@ -59,6 +59,8 @@ class WithSection extends ConsumerWidget {
         group: picked.id,
       );
       form.update(() => form.currency = picked.defaultCurrency);
+      final preset = picked.defaultSplit;
+      if (preset != null) form.applyDefault(preset.method, preset.values);
     } else if (picked == false && form.groupId != null) {
       form.setPeople([form.meId]);
       final mine = ref.read(meProvider)?.defaultCurrency;

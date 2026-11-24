@@ -209,6 +209,14 @@ class AccountScreen extends ConsumerWidget {
                   },
                 ),
                 ListTile(
+                  key: const Key('manage-categories'),
+                  leading: const Icon(Icons.category_outlined),
+                  title: const Text('Categories'),
+                  subtitle: const Text('Add your own expense categories'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => context.push(Routes.categories),
+                ),
+                ListTile(
                   leading: const Icon(Icons.palette_outlined),
                   title: const Text('Theme'),
                   trailing: SegmentedButton<ThemeMode>(

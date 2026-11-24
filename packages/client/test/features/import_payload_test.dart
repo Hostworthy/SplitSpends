@@ -157,4 +157,64 @@ void main() {
     expect(out.activity.single['actorId'], serverSam);
     expect(out.activity.single['involved'], [me, serverSam]);
   });
+
+  // Default split.
+  {
+    Map<String, Object?> withSplit(Map<String, Object?> split) => {
+      ...groups.single,
+      'defaultSplit': split,
+    };
+    Object? sent(Map<String, Object?> group) =>
+        ((buildImportRequest(
+                      meId: me,
+                      people: people,
+                      groups: [group],
+                      expenses: const [],
+                    )['groups']
+                    as List)
+                .single
+            as Map)['defaultSplit'];
+
+    test('default split is sent while it matches the members', () {
+      final split = {
+        'method': 'percent',
+        'values': {me: '50', sam: '30', kim: '20'},
+      };
+      expect(sent(withSplit(split)), split);
+    });
+
+    test('default split is left out once the members changed', () {
+      expect(
+        sent(
+          withSplit({
+            'method': 'percent',
+            'values': {me: '60', sam: '40'},
+          }),
+        ),
+        isNull,
+      );
+      expect(sent(groups.single), isNull);
+    });
+
+    test('default split person ids are remapped after the import', () {
+      const serverKim = 'cccccccc-0000-4000-8000-000000000007';
+      final out = applyPeopleMap(
+        {kim: serverKim},
+        people: people,
+        groups: [
+          withSplit({
+            'method': 'shares',
+            'values': {me: '2', sam: '1', kim: '1'},
+          }),
+        ],
+        expenses: const [],
+        activity: const [],
+      );
+      expect((out.groups.single['defaultSplit'] as Map)['values'], {
+        me: '2',
+        sam: '1',
+        serverKim: '1',
+      });
+    });
+  }
 }

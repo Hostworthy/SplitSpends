@@ -29,6 +29,7 @@ type Service struct {
 	groups      group.Repository
 	connections Connections
 	receipts    Receipts
+	catalog     Catalog
 	users       *user.Service
 	activity    *activity.Service
 	notifier    ports.Notifier
@@ -44,6 +45,7 @@ type Deps struct {
 	Groups      group.Repository
 	Connections Connections
 	Receipts    Receipts
+	Catalog     Catalog
 	Users       *user.Service
 	Activity    *activity.Service
 	Notifier    ports.Notifier
@@ -55,7 +57,7 @@ type Deps struct {
 // NewService builds a Service.
 func NewService(d Deps) *Service {
 	return &Service{repo: d.Repo, comments: d.Comments, groups: d.Groups, connections: d.Connections, receipts: d.Receipts,
-		users: d.Users, activity: d.Activity, notifier: d.Notifier, tx: d.Tx, clock: d.Clock, baseURL: d.BaseURL}
+		catalog: d.Catalog, users: d.Users, activity: d.Activity, notifier: d.Notifier, tx: d.Tx, clock: d.Clock, baseURL: d.BaseURL}
 }
 
 // load fetches an expense the actor may see, plus its group if any.
@@ -127,6 +129,24 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 		return nil, errs.Validation("splits", "You must be part of an expense outside a group.")
 	}
 	return nil, nil
+}
+
+// category checks that the actor may file an expense under a custom
+// category: their own live one, or the one the expense already has (kept is
+// empty for new expenses), so editing never fails because a category was
+// deleted or belongs to another member.
+func (s *Service) category(ctx context.Context, actor uuid.UUID, id, kept string) error {
+	if !CustomCategory(id) || id == kept {
+		return nil
+	}
+	ok, err := s.catalog.Usable(ctx, actor, id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errs.Validation("category", "Unknown category.")
+	}
+	return nil
 }
 
 func (s *Service) build(e *Expense, n *Normalized, actor uuid.UUID, now time.Time) {
@@ -218,6 +238,9 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expen
 	if err != nil {
 		return nil, err
 	}
+	if err := s.category(ctx, actor, n.Category, ""); err != nil {
+		return nil, err
+	}
 	g, err := s.authorize(ctx, actor, in.GroupID, n.Shares, in.ReceiptID)
 	if err != nil {
 		return nil, err
@@ -255,6 +278,9 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 	}
 	n, err := Normalize(in, e.Date)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.category(ctx, actor, n.Category, e.Category); err != nil {
 		return nil, err
 	}
 	g, err := s.authorize(ctx, actor, e.GroupID, n.Shares, in.ReceiptID)

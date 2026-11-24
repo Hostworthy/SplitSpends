@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/misc.dart' show ProviderOrFamily;
 
 import 'package:splitspends/features/account/presentation/providers.dart';
 import 'package:splitspends/features/activity/presentation/providers.dart';
+import 'package:splitspends/features/categories/presentation/providers.dart';
 import 'package:splitspends/features/expenses/presentation/providers.dart';
 import 'package:splitspends/features/friends/presentation/providers.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';
@@ -30,4 +31,5 @@ void _refresh(void Function(ProviderOrFamily) invalidate) {
   invalidate(expenseProvider);
   invalidate(activityFeedProvider);
   invalidate(expenseHistoryProvider);
+  invalidate(categoriesProvider);
 }

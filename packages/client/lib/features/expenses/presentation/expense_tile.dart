@@ -8,7 +8,7 @@ import 'package:splitspends/app/theme.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/money/money.dart';
-import 'package:splitspends/core/widgets/category_icon.dart';
+import 'package:splitspends/features/categories/presentation/category_badge.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/friends/presentation/people.dart';
 
@@ -84,7 +84,7 @@ class ExpenseTile extends ConsumerWidget {
             const SizedBox(width: 8),
             Hero(
               tag: 'expense-icon-${expense.id}',
-              child: CategoryIcon(
+              child: CategoryBadge(
                 category: expense.category,
                 payment: expense.isPayment,
               ),
