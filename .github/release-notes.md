@@ -4,7 +4,7 @@
 | --- | --- |
 | `splitspends-server-{{TAG}}-linux-amd64.tar.gz` (and `linux-arm64`, `darwin-amd64`, `darwin-arm64`, `windows-amd64.zip`) | The server (`splitspends`) and the stdio MCP host (`splitspends-mcp`), with `env.example`, the license and the README |
 | `splitspends-web-{{TAG}}.tar.gz` | The web app, ready to serve. Point the server at it with `WEB_DIR=/path/to/web` |
-| `splitspends-android-{{TAG}}.apk` | Android app. Open it on the phone to install (allow installs from your browser or files app) |
+| `{{APK}}` | Android app. Open it on the phone to install (allow installs from your browser or files app).{{APK_NOTE}} |
 | `splitspends-ios-{{TAG}}-unsigned.ipa` | iPhone app, **unsigned**: install it with your own Apple ID through Xcode, AltStore or Sideloadly |
 | `SHA256SUMS` | Checksums for every file above |
 
