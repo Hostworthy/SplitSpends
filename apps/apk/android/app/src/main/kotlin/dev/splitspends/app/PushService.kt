@@ -28,7 +28,7 @@ class PushService : UnifiedPushService() {
         } catch (_: Exception) {
             return
         }
-        show(this, json.optString("title", "SplitSpends"), json.optString("body", ""))
+        show(this, json.optString("title", "Split Spends"), json.optString("body", ""))
     }
 
     companion object {

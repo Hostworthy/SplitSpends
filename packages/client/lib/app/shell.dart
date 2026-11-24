@@ -176,7 +176,7 @@ class _Brand extends StatelessWidget {
           const AppLogo(size: 32),
           const SizedBox(width: 10),
           Text(
-            'SplitSpends',
+            'Split Spends',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w800,
               color: scheme.onSurface,
@@ -197,7 +197,7 @@ class AppLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: 'SplitSpends',
+    label: 'Split Spends',
     image: true,
     child: CustomPaint(size: Size.square(size), painter: const _LogoPainter()),
   );

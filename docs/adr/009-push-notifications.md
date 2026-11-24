@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-People want to hear about new expenses and payments right away, not only by email. The usual way to push to phones is Firebase Cloud Messaging (FCM) on Android and the Apple Push Notification service (APNs) on iOS. Both tie every message to an account the app developer owns: with FCM, each self-hoster would need a Firebase project and its service account key, and the Android app would have to be built against that project. That contradicts the promise of SplitSpends: one container plus PostgreSQL, no vendor accounts, and an app that works against any server.
+People want to hear about new expenses and payments right away, not only by email. The usual way to push to phones is Firebase Cloud Messaging (FCM) on Android and the Apple Push Notification service (APNs) on iOS. Both tie every message to an account the app developer owns: with FCM, each self-hoster would need a Firebase project and its service account key, and the Android app would have to be built against that project. That contradicts the promise of Split Spends: one container plus PostgreSQL, no vendor accounts, and an app that works against any server.
 
 The web app needs push as well, and browsers already have a standard for it.
 

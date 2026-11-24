@@ -1,11 +1,11 @@
-# SplitSpends Client
+# Split Spends Client
 
-The Flutter package behind every SplitSpends app: all screens, the on-device store, sync and assets. The runnable apps are thin shells in [`apps/apk`](../../apps/apk), [`apps/ios`](../../apps/ios) and [`apps/web`](../../apps/web), so **iOS, Android and the web** share one codebase. It works in two modes, chosen on the first screen:
+The Flutter package behind every Split Spends app: all screens, the on-device store, sync and assets. The runnable apps are thin shells in [`apps/apk`](../../apps/apk), [`apps/ios`](../../apps/ios) and [`apps/web`](../../apps/web), so **iOS, Android and the web** share one codebase. It works in two modes, chosen on the first screen:
 
 | Mode | What it means |
 | ---- | ------------- |
 | Use on this device | No account. Data stays on the device (IndexedDB in the browser, a file on phones). Backups export to a JSON file. |
-| Connect to a server | Email sign-in (a 6-digit code, no password) to a SplitSpends server that you or a friend hosts. Needed only to sync between devices, share with others and get emails. |
+| Connect to a server | Email sign-in (a 6-digit code, no password) to a Split Spends server that you or a friend hosts. Needed only to sync between devices, share with others and get emails. |
 
 The HTTP contract the app talks to is [docs/API.md](../../docs/API.md).
 

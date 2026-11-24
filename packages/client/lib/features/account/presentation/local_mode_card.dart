@@ -93,7 +93,7 @@ class LocalModeCard extends ConsumerWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Using SplitSpends on this device',
+                    'Using Split Spends on this device',
                     style: text.titleMedium,
                   ),
                 ),

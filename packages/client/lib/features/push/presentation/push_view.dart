@@ -35,7 +35,7 @@ class PushView {
       return const PushView._(
         PushState.needsServer,
         'Push notifications need a server. Connect this app to a '
-        'SplitSpends server to get them on your phone or in your browser.',
+        'Split Spends server to get them on your phone or in your browser.',
         [],
         null,
       );
@@ -102,7 +102,7 @@ class PushView {
 const noDistributorMessage =
     'Android delivers push notifications through a separate app called a '
     'UnifiedPush distributor, for example ntfy. Install one, open it once, '
-    'then come back and tap Enable push notifications again. SplitSpends '
+    'then come back and tap Enable push notifications again. Split Spends '
     'does not need Google services for this.';
 
 const distributorsUrl = 'https://unifiedpush.org/users/distributors/';

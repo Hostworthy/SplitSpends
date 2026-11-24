@@ -1,4 +1,4 @@
-# SplitSpends API Server
+# Split Spends API Server
 
 The Go HTTP server: REST API (`/api/v1`), MCP over HTTP (`/mcp`), background jobs and, when `WEB_DIR` is set, the web app. Handlers live in `routes/`; everything else comes from [`packages/`](../../packages).
 

@@ -1,6 +1,6 @@
 # MCP Server
 
-SplitSpends ships a Model Context Protocol server so assistants such as Claude can read balances and add expenses for you. It is a client of the public HTTP API: every call is checked exactly like a call from the app.
+Split Spends ships a Model Context Protocol server so assistants such as Claude can read balances and add expenses for you. It is a client of the public HTTP API: every call is checked exactly like a call from the app.
 
 ## Get a Token
 
@@ -8,7 +8,7 @@ In the app, open **Account → API tokens**, create a token and copy it (it star
 
 ## Option 1: Remote (Streamable HTTP)
 
-Every SplitSpends server exposes `POST /mcp`. Send the token as a bearer header.
+Every Split Spends server exposes `POST /mcp`. Send the token as a bearer header.
 
 Claude Code:
 

@@ -109,7 +109,7 @@ resource "google_secret_manager_secret_version" "app" {
 
 resource "google_service_account" "run" {
   account_id   = "${var.name}-run"
-  display_name = "SplitSpends Cloud Run"
+  display_name = "Split Spends Cloud Run"
 }
 
 resource "google_secret_manager_secret_iam_member" "run" {

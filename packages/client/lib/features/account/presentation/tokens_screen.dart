@@ -94,7 +94,7 @@ class TokensScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Use SplitSpends from AI assistants',
+                          'Use Split Spends from AI assistants',
                           style: text.titleMedium,
                         ),
                         const SizedBox(height: 6),

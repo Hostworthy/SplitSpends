@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Renders every SplitSpends icon, splash and banner from one design: two
+"""Renders every Split Spends icon, splash and banner from one design: two
 overlapping coins (the in-app logo) on the brand teal. Run from the
 repository root after changing the design; the outputs are committed.
 
@@ -129,7 +129,7 @@ def banner(w, h, path_parts, tagline=True):
     d = ImageDraw.Draw(img)
     tx = x0 + s + round(w * 0.05)
     title = font("Bold", round(h * 0.15))
-    d.text((tx, h * 0.29), "SplitSpends", font=title, fill=(255, 255, 255))
+    d.text((tx, h * 0.29), "Split Spends", font=title, fill=(255, 255, 255))
     if tagline:
         d.text((tx, h * 0.50), "Split expenses, not friendships.", font=font("SemiBold", round(h * 0.066)), fill=(215, 245, 234))
         d.text((tx, h * 0.62), "Self-hosted · Web, Android and iPhone", font=font("Regular", round(h * 0.046)), fill=(189, 232, 217))

@@ -50,7 +50,7 @@ class _InviteSectionState extends ConsumerState<InviteSection> {
 
   Future<void> _share(String url) async {
     final how = await shareText(
-      'Join “${widget.group.name}” on SplitSpends to share expenses: $url',
+      'Join “${widget.group.name}” on Split Spends to share expenses: $url',
       title: 'Join ${widget.group.name}',
     );
     if (mounted && how == Shared.clipboard) {

@@ -47,7 +47,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final email = _email.text.trim().toLowerCase();
     final server = normalizeServerUrl(_server.text);
     if (server.isEmpty) {
-      setState(() => _error = 'Enter your SplitSpends server address.');
+      setState(() => _error = 'Enter your Split Spends server address.');
       return;
     }
     if (!_emailPattern.hasMatch(email)) {

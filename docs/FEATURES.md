@@ -1,6 +1,6 @@
 # Splitwise Study and Feature Parity
 
-SplitSpends aims to cover everything people use Splitwise for, with no paid tier: every feature below is available to every user of an instance.
+Split Spends aims to cover everything people use Splitwise for, with no paid tier: every feature below is available to every user of an instance.
 
 ## What Splitwise Does
 
@@ -17,7 +17,7 @@ Several of these sit behind Splitwise Pro today (receipt scanning, itemization, 
 
 ## Parity Matrix
 
-| Capability | Splitwise | SplitSpends |
+| Capability | Splitwise | Split Spends |
 | ---------- | --------- | ----------- |
 | Email login without passwords | Password or social | Email one-time code |
 | Add people by email before they join | Yes | Yes, they keep their history on first login |

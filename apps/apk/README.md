@@ -1,4 +1,4 @@
-# SplitSpends for Android
+# Split Spends for Android
 
 A thin shell around [`packages/client`](../../packages/client/README.md): this folder holds only the Android runner and a two-line `lib/main.dart`.
 

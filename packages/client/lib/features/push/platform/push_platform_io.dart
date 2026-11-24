@@ -142,10 +142,10 @@ class UnifiedPushDevice implements PushPlatform {
         FailedReason.actionRequired =>
           'The distributor needs your attention. Open it, then try again.',
         FailedReason.vapidRequired =>
-          'The distributor needs a server key. Update SplitSpends and try '
+          'The distributor needs a server key. Update Split Spends and try '
               'again.',
         FailedReason.internalError =>
-          'The distributor could not register SplitSpends. Try again.',
+          'The distributor could not register Split Spends. Try again.',
       });
 
   static void _fail(String message) {
@@ -205,7 +205,7 @@ class UnifiedPushDevice implements PushPlatform {
     final allowed = await _channel.invokeMethod<bool>('requestPermission');
     if (allowed != true) {
       throw const PushError(
-        'Notifications are turned off for SplitSpends. Allow them in '
+        'Notifications are turned off for Split Spends. Allow them in '
         'Android settings and try again.',
       );
     }

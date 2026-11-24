@@ -55,7 +55,7 @@ class Category {
 /// Public server configuration from `GET /config`.
 class AppConfig {
   const AppConfig({
-    this.appName = 'SplitSpends',
+    this.appName = 'Split Spends',
     this.aiEnabled = false,
     this.signupMode = 'open',
     this.currencies = const [],
@@ -66,7 +66,7 @@ class AppConfig {
   });
 
   factory AppConfig.fromJson(JsonMap json) => AppConfig(
-    appName: (json['appName'] as String?) ?? 'SplitSpends',
+    appName: (json['appName'] as String?) ?? 'Split Spends',
     aiEnabled: (json['aiEnabled'] as bool?) ?? false,
     signupMode: (json['signupMode'] as String?) ?? 'open',
     pushEnabled: (json['pushEnabled'] as bool?) ?? false,

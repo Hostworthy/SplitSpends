@@ -1,4 +1,4 @@
-# SplitSpends for the Web
+# Split Spends for the Web
 
 A thin shell around [`packages/client`](../../packages/client/README.md): this folder holds only the web runner (`web/index.html`, manifest, icons) and a two-line `lib/main.dart`.
 

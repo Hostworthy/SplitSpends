@@ -1,4 +1,4 @@
-# Homelab: PostgreSQL, SplitSpends, Caddy with automatic HTTPS, and nightly
+# Homelab: PostgreSQL, Split Spends, Caddy with automatic HTTPS, and nightly
 # database dumps in ./backups (prune old dumps yourself).
 #   cp ../.env.example .env   # set DOMAIN, BASE_URL=https://<DOMAIN>, POSTGRES_PASSWORD, SECRET_KEY, SMTP
 #   docker compose up -d --build

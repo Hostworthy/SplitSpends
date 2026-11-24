@@ -39,7 +39,7 @@ class WelcomeScreen extends ConsumerWidget {
       title: 'Connect to a server',
       points: const [
         'An account is only needed to sync between devices and share with others.',
-        'You need the address of a SplitSpends server that you or a friend hosts.',
+        'You need the address of a Split Spends server that you or a friend hosts.',
         'We email you a sign-in code. No password.',
       ],
       action: 'Connect',

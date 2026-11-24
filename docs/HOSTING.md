@@ -2,7 +2,7 @@
 
 ## Do You Need a Server?
 
-No. The SplitSpends app works on its own: choose **Use on this device** and everything stays on your phone or in your browser. Nothing is sent anywhere.
+No. The Split Spends app works on its own: choose **Use on this device** and everything stays on your phone or in your browser. Nothing is sent anywhere.
 
 A server is only needed to:
 
@@ -16,7 +16,7 @@ When you connect a server later, the app offers to upload what you already recor
 
 ## What a Server Is
 
-SplitSpends is self-hosted: there is no central SplitSpends service. You (or a friend, a family member, a club) run one server, and everyone who shares expenses connects to it. Signing in needs three things:
+Split Spends is self-hosted: there is no central Split Spends service. You (or a friend, a family member, a club) run one server, and everyone who shares expenses connects to it. Signing in needs three things:
 
 1. **The server URL**, for example `https://split.example.com`. The person who runs the server gives it to you.
 2. **Your email address.** You get a 6-digit sign-in code by email. There is no password to remember.
@@ -46,7 +46,7 @@ cp ../.env.example .env          # set DOMAIN, BASE_URL=https://DOMAIN, POSTGRES
 docker compose up -d --build
 ```
 
-This runs PostgreSQL, SplitSpends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly `pg_dump` into `deploy/docker/backups/`. Copy those backups off the machine now and then, and delete old ones when you no longer need them.
+This runs PostgreSQL, Split Spends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly `pg_dump` into `deploy/docker/backups/`. Copy those backups off the machine now and then, and delete old ones when you no longer need them.
 
 LAN or VPN only (no public domain): skip Caddy and use `deploy/docker-compose.yml`, then reach the server at `http://<machine-ip>:8080` over your LAN or a VPN such as Tailscale or WireGuard. Browsers and phones treat plain HTTP as insecure, so prefer a VPN with HTTPS (for example Tailscale's built-in certificates) over exposing port 8080.
 

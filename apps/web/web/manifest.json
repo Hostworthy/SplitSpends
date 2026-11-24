@@ -1,6 +1,6 @@
 {
-  "name": "SplitSpends",
-  "short_name": "SplitSpends",
+  "name": "Split Spends",
+  "short_name": "Split Spends",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#F5FAF7",
