@@ -59,6 +59,7 @@ packages/                 Shared code the apps are built from
   ledger/                 Dart: split, balance and recurrence rules (mirrors core)
   client/                 Flutter: every screen, the local store, sync, assets and fonts
 spec/vectors.json         Shared test cases run by both the Go and the Dart rules
+scripts/                  README screenshots; fonts/fallback.sh checks the committed web fallback fonts
 deploy/                   Docker Compose (server, homelab), Terraform (AWS, GCP)
 docs/                     API contract, environment, hosting, MCP, ADRs
 go.mod, pubspec.yaml      One Go module and one Dart workspace at the root
