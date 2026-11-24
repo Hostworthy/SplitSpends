@@ -181,7 +181,9 @@ class _PersonRow extends StatelessWidget {
             width: 110,
             child: _NumberField(
               initial: form.values[userId],
-              suffix: form.method == SplitMethod.percent ? '%' : 'shares',
+              suffix: form.method == SplitMethod.percent
+                  ? '%'
+                  : _sharesLabel(form.values[userId]),
               onChanged: (v) => form.update(() {
                 if (v == null) {
                   form.values.remove(userId);
@@ -239,4 +241,10 @@ class _NumberFieldState extends State<_NumberField> {
 String? _decimal(String input) {
   final text = input.trim().replaceAll(',', '.');
   return Rational.tryParseDecimal(text) == null ? null : text;
+}
+
+/// "1 share", "2 shares", "0.5 shares".
+String _sharesLabel(String? value) {
+  final n = num.tryParse(value ?? '1');
+  return n == 1 ? 'share' : 'shares';
 }
