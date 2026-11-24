@@ -49,6 +49,13 @@ class FakeAuthRepository implements AuthRepository {
     String email,
     String code,
   ) async {
+    if (code == '777777') {
+      throw const ApiError(
+        status: 403,
+        message: 'Thanks! Your account is waiting for approval.',
+        code: 'APPROVAL_PENDING',
+      );
+    }
     if (code != '123456') {
       throw const ApiError(
         status: 401,
@@ -221,5 +228,50 @@ void main() {
     );
     expect((profile! as Map)['name'], 'Grace');
     expect(find.text('Grace'), findsWidgets);
+  });
+
+  testWidgets('approval mode: the code leads to a waiting screen', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final store = MemoryLocalStore();
+    await tester.pumpWidget(
+      ProviderScope(
+        retry: (_, _) => null,
+        overrides: [
+          localStoreProvider.overrideWithValue(store),
+          memoryDatabase(),
+          authRepositoryProvider.overrideWithValue(FakeAuthRepository()),
+          httpClientProvider.overrideWithValue(_api()),
+        ],
+        child: const SplitSpendsApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Connect'));
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('login-server')),
+      'http://splitspends.test',
+    );
+    await tester.enterText(
+      find.byKey(const Key('login-email')),
+      'dan@else.org',
+    );
+    await tester.tap(find.byKey(const Key('login-continue')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('otp-field')), '777777');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Waiting for approval'), findsOneWidget);
+    expect(find.textContaining('waiting for approval'), findsWidgets);
+    expect(store.token, isNull);
+    await tester.tap(find.text('Back to sign in'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('login-email')), findsOneWidget);
   });
 }

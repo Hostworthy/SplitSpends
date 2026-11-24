@@ -15,6 +15,7 @@ abstract final class Routes {
   static const account = '/account';
   static const tokens = '/account/tokens';
   static const categories = '/account/categories';
+  static const admin = '/account/admin';
   static const newExpense = '/expenses/new';
   static const settle = '/settle';
   static const scan = '/scan';

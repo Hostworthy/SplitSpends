@@ -65,6 +65,12 @@ Build or download `splitspends-mcp` (`make build` writes `bin/splitspends-mcp`; 
 | `record_payment` | Settle up between two people |
 | `remind_to_settle` | Email someone who owes you a reminder to settle up (one group or everything; once per 24 hours) |
 | `delete_expense` | Soft delete (restorable in the app) |
+| `admin_get_signup`, `admin_set_signup` | Administrators: sign-up mode and allowed list |
+| `admin_list_requests`, `admin_decide_request` | Administrators and managers: people waiting to join; approve or decline |
+| `admin_list_accounts`, `admin_set_role` | Administrators: accounts, and making someone a user, manager or admin |
+| `admin_disable_account`, `admin_enable_account` | Administrators: disable (signs out everywhere, removes the email) or enable an account |
+
+The admin tools are listed for everyone; the API refuses them unless your role allows it, and `get_overview` shows your role.
 
 Example prompts: "How much do I owe in the Lisbon trip?", "Add 84.20 for groceries in Flat, split with everyone", "Ben paid me back 25 euros", "Remind Sam about the Lisbon trip".
 

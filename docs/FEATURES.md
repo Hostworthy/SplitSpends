@@ -50,6 +50,7 @@ Several of these sit behind Splitwise Pro today (receipt scanning, itemization, 
 | API for third parties | Yes | Yes, plus personal API tokens |
 | AI assistant integration | No | MCP server (HTTP and stdio) |
 | Self-hosting | No | Yes, one container plus PostgreSQL |
+| Server administration | No | Administrators and managers: open, invite, approval or closed sign-up, an allowed list of emails and domains, approvals, roles and disabled accounts |
 
 ## Roadmap Ideas
 

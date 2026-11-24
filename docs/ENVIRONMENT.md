@@ -40,8 +40,8 @@ Buckets stay private: the API checks access and streams receipts itself.
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `SIGNUP_MODE` | `invite` | `open`: anyone. `invite`: the first account, plus anyone an existing user added as a friend or group member. `domain`: invited users plus emails from `SIGNUP_ALLOWED_DOMAINS` |
-| `SIGNUP_ALLOWED_DOMAINS` | empty | Comma-separated domains for `SIGNUP_MODE=domain` |
+| `SIGNUP_MODE` | `invite` | Starting sign-up mode until an administrator changes it in the app (Account, Administration). `open`: anyone. `invite`: the allowed list, people a member added by email, and group invite links. `approval`: anyone can ask and an administrator or manager approves them. `closed`: no new accounts. The very first account can always sign up and becomes the administrator. `domain` is still read, as `invite` with the domains below |
+| `SIGNUP_ALLOWED_DOMAINS` | empty | Comma-separated domains that start out on the allowed list |
 | `SESSION_TTL_DAYS` | `90` | How long app sessions last. API tokens do not expire until revoked |
 
 Login codes are 6 digits, valid for 10 minutes, allow 5 attempts, and at most 5 codes per email per hour. Requests for unknown emails in `invite` mode get the same response as real ones and send nothing.

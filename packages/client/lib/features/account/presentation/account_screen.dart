@@ -226,6 +226,23 @@ class AccountScreen extends ConsumerWidget {
                     }
                   },
                 ),
+                if (!local && me.canApprove)
+                  ListTile(
+                    key: const Key('administration'),
+                    leading: Icon(
+                      me.isAdmin
+                          ? Icons.admin_panel_settings_outlined
+                          : Icons.how_to_reg_outlined,
+                    ),
+                    title: Text(me.isAdmin ? 'Administration' : 'Approvals'),
+                    subtitle: Text(
+                      me.isAdmin
+                          ? 'Sign-up, approvals, roles and accounts'
+                          : 'Approve people who want to join',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => context.push(Routes.admin),
+                  ),
                 ListTile(
                   key: const Key('manage-categories'),
                   leading: const Icon(Icons.category_outlined),

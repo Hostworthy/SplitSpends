@@ -20,6 +20,8 @@ const (
 	KindRateLimited  Kind = "RATE_LIMITED"
 	KindUnavailable  Kind = "AI_DISABLED"
 	KindNoRates      Kind = "RATES_UNAVAILABLE"
+	KindPending      Kind = "APPROVAL_PENDING"
+	KindDeclined     Kind = "APPROVAL_DECLINED"
 )
 
 // Error is a domain error with a human-readable message.
@@ -79,6 +81,12 @@ func Unavailable(message string) *Error {
 func NoRates(message string) *Error {
 	return &Error{Kind: KindNoRates, Message: message}
 }
+
+// Pending reports that an account waits for an administrator's approval.
+func Pending(message string) *Error { return &Error{Kind: KindPending, Message: message} }
+
+// Declined reports that a request to join was declined.
+func Declined(message string) *Error { return &Error{Kind: KindDeclined, Message: message} }
 
 // As extracts a domain error from err.
 func As(err error) (*Error, bool) {

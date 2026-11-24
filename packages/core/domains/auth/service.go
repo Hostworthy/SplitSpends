@@ -19,8 +19,20 @@ type Invites interface {
 	Valid(ctx context.Context, token string) (bool, error)
 }
 
+// Gate is the sign-up configuration administrators change at runtime, and
+// the approvals they give.
+type Gate interface {
+	Signup(ctx context.Context) (Signup, error)
+	// Approved reports whether an administrator or manager approved email.
+	Approved(ctx context.Context, email string) (bool, error)
+	// Request records that email waits for approval and reports whether an
+	// earlier request was declined.
+	Request(ctx context.Context, email, name string) (declined bool, err error)
+}
+
 // Service implements login and credential management.
 type Service struct {
+	gate       Gate
 	policy     Policy
 	challenges ChallengeRepository
 	sessions   SessionRepository
@@ -36,42 +48,96 @@ func NewService(p Policy, challenges ChallengeRepository, sessions SessionReposi
 	return &Service{policy: p, challenges: challenges, sessions: sessions, users: users, invites: invites, notifier: notifier, tx: tx, clock: c}
 }
 
-// Mode returns the configured signup mode.
-func (s *Service) Mode() SignupMode { return s.policy.Mode }
+// Use makes g decide who may sign up, instead of the static policy.
+func (s *Service) Use(g Gate) { s.gate = g }
+
+// Mode returns the current sign-up mode.
+func (s *Service) Mode(ctx context.Context) SignupMode {
+	cfg, err := s.signup(ctx)
+	if err != nil {
+		return s.policy.Signup().Mode
+	}
+	return cfg.Mode
+}
+
+func (s *Service) signup(ctx context.Context) (Signup, error) {
+	if s.gate == nil {
+		return s.policy.Signup(), nil
+	}
+	return s.gate.Signup(ctx)
+}
 
 // CodeTTL returns how long login codes stay valid.
 func (s *Service) CodeTTL() time.Duration { return s.policy.CodeTTL }
 
-// allowed decides whether email may log in. Existing users always may, and
-// so may anyone holding a valid group invite link.
-func (s *Service) allowed(ctx context.Context, email, invite string) (bool, error) {
+// decision is what happens when someone signs in.
+type decision int
+
+const (
+	deny     decision = iota
+	allow             // sign in, creating or activating the account
+	approval          // prove the email, then wait for an administrator
+)
+
+// decide applies the sign-up rules to email. Active accounts always sign
+// in and disabled ones never do; the very first account bootstraps the
+// server whatever the mode.
+func (s *Service) decide(ctx context.Context, email, invite string) (decision, error) {
 	existing, err := s.users.FindByEmail(ctx, email)
 	if err != nil {
-		return false, err
+		return deny, err
 	}
 	if existing != nil {
-		return true, nil
-	}
-	switch s.policy.Mode {
-	case SignupOpen:
-		return true, nil
-	case SignupDomain:
-		if s.policy.domainAllowed(email) {
-			return true, nil
-		}
-	}
-	if invite != "" && s.invites != nil {
-		ok, err := s.invites.Valid(ctx, invite)
-		if err != nil || ok {
-			return ok, err
+		switch {
+		case existing.Status == user.StatusActive:
+			return allow, nil
+		case existing.Status == user.StatusDisabled:
+			return deny, nil
+		case existing.Email == "" && existing.EmailHash != "":
+			// Re-enabled by an administrator: known by the hash of this email.
+			return allow, nil
 		}
 	}
 	count, err := s.users.Count(ctx)
 	if err != nil {
-		return false, err
+		return deny, err
 	}
-	// The very first account bootstraps the instance.
-	return count == 0, nil
+	if count == 0 {
+		return allow, nil
+	}
+	cfg, err := s.signup(ctx)
+	if err != nil {
+		return deny, err
+	}
+	switch cfg.Mode {
+	case SignupOpen:
+		return allow, nil
+	case SignupClosed:
+		return deny, nil
+	case SignupApproval:
+		if cfg.Allows(email) {
+			return allow, nil
+		}
+		if s.gate != nil {
+			ok, err := s.gate.Approved(ctx, email)
+			if err != nil || ok {
+				return allow, err
+			}
+		}
+		return approval, nil
+	}
+	// Invite mode: the allowed list, people someone added by email, and
+	// holders of a group invite link.
+	if cfg.Allows(email) || existing != nil {
+		return allow, nil
+	}
+	if invite != "" && s.invites != nil {
+		ok, err := s.invites.Valid(ctx, invite)
+		if err != nil || ok {
+			return allow, err
+		}
+	}
+	return deny, nil
 }
 
 // RequestCode emails a login code. It returns nil for disallowed emails too,
@@ -90,15 +156,15 @@ func (s *Service) RequestCode(ctx context.Context, rawEmail, invite string) erro
 	if recent >= s.policy.MaxCodesHour {
 		return errs.RateLimited("Too many codes requested. Try again in an hour.")
 	}
-	ok, err := s.allowed(ctx, email, invite)
-	if err != nil || !ok {
+	d, err := s.decide(ctx, email, invite)
+	if err != nil || d == deny {
 		return err
 	}
 	code, err := newCode()
 	if err != nil {
 		return err
 	}
-	c := &Challenge{ID: uuid.New(), Email: email, ExpiresAt: now.Add(s.policy.CodeTTL), CreatedAt: now}
+	c := &Challenge{ID: uuid.New(), Email: email, ExpiresAt: now.Add(s.policy.CodeTTL), CreatedAt: now, Pending: d == approval}
 	c.CodeHash = hashCode(s.policy.Secret, c.ID, email, code)
 	if err := s.challenges.Create(ctx, c); err != nil {
 		return err
@@ -140,6 +206,33 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code, name, userAgent st
 		return nil, invalid
 	}
 
+	// The code was only sent because the rules allowed it (an invite link,
+	// say); a code for someone waiting for approval is checked again, in
+	// case they were approved in the meantime.
+	d := allow
+	if c.Pending {
+		if d, err = s.decide(ctx, email, ""); err != nil {
+			return nil, err
+		}
+	}
+	if d != allow {
+		c.ConsumedAt = &now
+		if err := s.challenges.Update(ctx, c); err != nil {
+			return nil, err
+		}
+		if d == deny || s.gate == nil {
+			return nil, errs.Forbidden("New accounts are not being created on this server right now.")
+		}
+		declined, err := s.gate.Request(ctx, email, name)
+		if err != nil {
+			return nil, err
+		}
+		if declined {
+			return nil, errs.Declined("Your request to join was declined. Ask an administrator of this server if you think that is a mistake.")
+		}
+		return nil, errs.Pending("Thanks! Your account is waiting for approval. You can sign in once an administrator or manager approves it.")
+	}
+
 	var login *Login
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
 		c.ConsumedAt = &now
@@ -170,12 +263,24 @@ func (s *Service) activate(ctx context.Context, email, name string, now time.Tim
 	if err != nil {
 		return nil, false, err
 	}
+	count, err := s.users.Count(ctx)
+	if err != nil {
+		return nil, false, err
+	}
 	if u == nil {
 		u, err = user.New(email, name, user.StatusActive, now)
 		if err != nil {
 			return nil, false, err
 		}
+		if count == 0 {
+			// The first account runs the server.
+			u.Role = user.RoleAdmin
+		}
 		return u, true, s.users.Create(ctx, u)
+	}
+	u.Attach(email)
+	if count == 0 && u.Status != user.StatusActive {
+		u.Role = user.RoleAdmin
 	}
 	if u.Status == user.StatusActive {
 		return u, false, nil

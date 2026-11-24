@@ -18,15 +18,15 @@ type Challenges struct{ db *database.DB }
 func NewChallenges(db *database.DB) *Challenges { return &Challenges{db: db} }
 
 func (r *Challenges) Create(ctx context.Context, c *auth.Challenge) error {
-	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO login_challenges (id, expires_at, consumed_at, created_at, attempts, email, code_hash) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		c.ID, c.ExpiresAt, c.ConsumedAt, c.CreatedAt, c.Attempts, c.Email, c.CodeHash)
+	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO login_challenges (id, expires_at, consumed_at, created_at, attempts, email, code_hash, pending) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		c.ID, c.ExpiresAt, c.ConsumedAt, c.CreatedAt, c.Attempts, c.Email, c.CodeHash, c.Pending)
 	return err
 }
 
 func (r *Challenges) Latest(ctx context.Context, email string) (*auth.Challenge, error) {
 	var c auth.Challenge
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT id, expires_at, consumed_at, created_at, attempts, email, code_hash FROM login_challenges WHERE email = $1 ORDER BY created_at DESC LIMIT 1`, email).
-		Scan(&c.ID, &c.ExpiresAt, &c.ConsumedAt, &c.CreatedAt, &c.Attempts, &c.Email, &c.CodeHash)
+	err := r.db.Q(ctx).QueryRow(ctx, `SELECT id, expires_at, consumed_at, created_at, attempts, email, code_hash, pending FROM login_challenges WHERE email = $1 ORDER BY created_at DESC, consumed_at IS NOT NULL LIMIT 1`, email).
+		Scan(&c.ID, &c.ExpiresAt, &c.ConsumedAt, &c.CreatedAt, &c.Attempts, &c.Email, &c.CodeHash, &c.Pending)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

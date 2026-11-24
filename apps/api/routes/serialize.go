@@ -60,7 +60,7 @@ func toUser(u *user.User) platform.User {
 }
 
 func toMe(u *user.User) platform.Me {
-	return platform.Me{User: toUser(u), Timezone: u.Timezone, Gravatar: u.Gravatar, Notifications: platform.Notifications{
+	return platform.Me{User: toUser(u), Timezone: u.Timezone, Gravatar: u.Gravatar, Role: string(u.Role), Notifications: platform.Notifications{
 		NotificationSwitches: platform.NotificationSwitches(u.Notifications.Switches),
 		Push:                 platform.NotificationSwitches(u.Notifications.Push),
 	}}

@@ -13,3 +13,4 @@ Each ADR records why a choice was made. Copy [000-template.md](000-template.md) 
 | [007](007-local-first.md) | Local-first app with optional server |
 | [008](008-hosting-targets.md) | Hosting targets: container, serverless and free tiers |
 | [009](009-push-notifications.md) | Push notifications with Web Push and UnifiedPush |
+| [010](010-administration.md) | Roles, sign-up modes, approvals and disabled accounts |
