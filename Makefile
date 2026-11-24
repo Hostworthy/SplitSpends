@@ -7,6 +7,13 @@ DART_MEMBERS := packages/ledger packages/client apps/apk apps/ios apps/web
 # tool built with an older Go refuses this module, so pin go.mod's version.
 # CI builds the same golangci-lint version (.github/workflows/ci.yml).
 GO_VERSION := $(shell sed -n 's/^go //p' go.mod)
+# Stamped into the binaries (`splitspends version`, the MCP server info).
+# The release workflow passes the tag; the Dockerfile uses the same flags.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS = -s -w -X main.version=$(VERSION)
+# Output directory and executable suffix (.exe when GOOS=windows).
+BIN ?= bin
+EXE ?= $(shell go env GOEXE)
 GOLANGCI ?= GOTOOLCHAIN=go$(GO_VERSION) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
 GOVULNCHECK ?= GOTOOLCHAIN=go$(GO_VERSION) go run golang.org/x/vuln/cmd/govulncheck@v1.10.0
 
@@ -80,8 +87,8 @@ test-integration:
 check: lint vuln test
 
 build:
-	CGO_ENABLED=0 go build -trimpath -o bin/splitspends ./apps/api
-	CGO_ENABLED=0 go build -trimpath -o bin/splitspends-mcp ./apps/mcp
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN)/splitspends$(EXE)" ./apps/api
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN)/splitspends-mcp$(EXE)" ./apps/mcp
 
 web-build:
 	cd apps/web && flutter build web --release --no-web-resources-cdn
@@ -90,10 +97,10 @@ apk:
 	cd apps/apk && flutter build apk --release
 
 docker:
-	docker build -t splitspends:latest .
+	docker build --build-arg VERSION="$(VERSION)" -t splitspends:latest .
 
 lambda:
 	mkdir -p deploy/aws/build/lambda
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o deploy/aws/build/lambda/splitspends ./apps/api
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o deploy/aws/build/lambda/splitspends ./apps/api
 	printf '#!/bin/sh\nexec ./splitspends\n' > deploy/aws/build/lambda/run.sh
 	chmod +x deploy/aws/build/lambda/run.sh

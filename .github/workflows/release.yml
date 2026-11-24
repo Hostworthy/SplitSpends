@@ -16,9 +16,6 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  FLUTTER_VERSION: 3.50.1
-
 jobs:
   version:
     name: version
@@ -27,6 +24,7 @@ jobs:
       tag: ${{ steps.v.outputs.tag }}
       build_name: ${{ steps.v.outputs.build_name }}
       prerelease: ${{ steps.v.outputs.prerelease }}
+      flutter: ${{ steps.v.outputs.flutter }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -50,6 +48,7 @@ jobs:
           # App stores want plain x.y.z; the full tag stays in the file names.
           echo "build_name=$core" >> "$GITHUB_OUTPUT"
           if [[ "$tag" == *-* ]]; then echo "prerelease=true"; else echo "prerelease=false"; fi >> "$GITHUB_OUTPUT"
+          echo "flutter=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
 
   # The same checks as pull requests, on the tagged commit; nothing is built
   # or published unless they pass.
@@ -84,11 +83,9 @@ jobs:
           CGO_ENABLED: "0"
           TAG: ${{ needs.version.outputs.tag }}
         run: |
-          ext=""; [ "$GOOS" = windows ] && ext=".exe"
           name="splitspends-server-${TAG}-${GOOS}-${GOARCH}"
           mkdir -p "dist/$name"
-          go build -trimpath -ldflags "-s -w -X main.version=${TAG}" -o "dist/$name/splitspends$ext" ./apps/api
-          go build -trimpath -ldflags "-s -w -X main.version=${TAG}" -o "dist/$name/splitspends-mcp$ext" ./apps/mcp
+          make build VERSION="$TAG" BIN="dist/$name"
           cp LICENSE README.md "dist/$name/"
           cp apps/api/.env.example "dist/$name/env.example"
           cd dist
@@ -109,7 +106,7 @@ jobs:
           persist-credentials: false
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: ${{ needs.version.outputs.flutter }}
           channel: stable
       - run: flutter pub get --enforce-lockfile
       - name: Build and package
@@ -142,7 +139,7 @@ jobs:
           java-version: 21
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: ${{ needs.version.outputs.flutter }}
           channel: stable
       - run: flutter pub get --enforce-lockfile
       - name: Build
@@ -189,7 +186,7 @@ jobs:
           persist-credentials: false
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: ${{ needs.version.outputs.flutter }}
           channel: stable
       - run: flutter pub get --enforce-lockfile
       - name: Build an unsigned IPA
