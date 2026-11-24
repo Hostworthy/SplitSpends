@@ -26,6 +26,8 @@ import 'package:splitspends/features/friends/data/remote_friends_repository.dart
 import 'package:splitspends/features/friends/domain/friends_repository.dart';
 import 'package:splitspends/features/groups/data/remote_groups_repository.dart';
 import 'package:splitspends/features/groups/domain/groups_repository.dart';
+import 'package:splitspends/features/push/data/remote_push_repository.dart';
+import 'package:splitspends/features/push/domain/push_repository.dart';
 import 'package:splitspends/features/receipts/data/remote_receipts_repository.dart';
 import 'package:splitspends/features/receipts/domain/receipts_repository.dart';
 import 'package:splitspends/features/sync/data/backup_service.dart';
@@ -118,6 +120,11 @@ final balancesRepositoryProvider = Provider<BalancesRepository>(
 /// API tokens exist only on a server.
 final tokensRepositoryProvider = Provider<TokensRepository>(
   (ref) => _select(ref, remote: RemoteTokensRepository.new),
+);
+
+/// Push devices exist only on a server.
+final pushRepositoryProvider = Provider<PushRepository>(
+  (ref) => _select(ref, remote: RemotePushRepository.new),
 );
 
 /// Receipts and AI need a server (AI is a server-side feature).

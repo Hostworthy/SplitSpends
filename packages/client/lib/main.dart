@@ -4,8 +4,12 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/app.dart';
+import 'package:splitspends/features/push/platform/push_platform.dart';
 
-void main() {
+/// Starts the app. [args] come from the platform shell: Android passes
+/// `--unifiedpush-bg` when it starts the app only to handle a push event.
+Future<void> main([List<String> args = const []]) async {
+  if (await runPushBackground(args)) return;
   WidgetsFlutterBinding.ensureInitialized();
   // The app is English-only: dates and numbers never follow the device locale.
   Intl.defaultLocale = 'en_US';

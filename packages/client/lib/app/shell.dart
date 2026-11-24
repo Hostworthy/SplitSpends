@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/refresh.dart';
 import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/push/presentation/providers.dart';
 import 'package:splitspends/app/router.dart';
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/core/auth/session.dart';
@@ -58,6 +59,7 @@ class AppShell extends ConsumerWidget {
     ref.listen(outboxSyncProvider, (was, now) {
       if (was?.round != now.round) ref.refreshLedger();
     });
+    ref.watch(pushSyncProvider);
     final body = Column(
       children: [
         const SyncBar(),

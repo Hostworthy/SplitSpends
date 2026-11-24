@@ -83,16 +83,30 @@ class User {
   };
 }
 
-/// Notification preferences for the signed-in user.
-class NotificationPrefs {
-  const NotificationPrefs({
+/// Things the server notifies about. [key] is the preference key in the API.
+enum NotificationKind {
+  expenseAdded('Expense added'),
+  expenseUpdated('Expense edited or deleted'),
+  paymentReceived('Payment received'),
+  addedToGroup('Added to a group');
+
+  const NotificationKind(this.label);
+
+  final String label;
+
+  String get key => name;
+}
+
+/// Per-kind switches for one channel (email or push).
+class ChannelPrefs {
+  const ChannelPrefs({
     this.expenseAdded = true,
     this.expenseUpdated = true,
     this.paymentReceived = true,
     this.addedToGroup = true,
   });
 
-  factory NotificationPrefs.fromJson(JsonMap? json) => NotificationPrefs(
+  factory ChannelPrefs.fromJson(JsonMap? json) => ChannelPrefs(
     expenseAdded: (json?['expenseAdded'] as bool?) ?? true,
     expenseUpdated: (json?['expenseUpdated'] as bool?) ?? true,
     paymentReceived: (json?['paymentReceived'] as bool?) ?? true,
@@ -104,24 +118,48 @@ class NotificationPrefs {
   final bool paymentReceived;
   final bool addedToGroup;
 
-  NotificationPrefs copyWith({
-    bool? expenseAdded,
-    bool? expenseUpdated,
-    bool? paymentReceived,
-    bool? addedToGroup,
-  }) => NotificationPrefs(
-    expenseAdded: expenseAdded ?? this.expenseAdded,
-    expenseUpdated: expenseUpdated ?? this.expenseUpdated,
-    paymentReceived: paymentReceived ?? this.paymentReceived,
-    addedToGroup: addedToGroup ?? this.addedToGroup,
+  bool on(NotificationKind kind) => switch (kind) {
+    NotificationKind.expenseAdded => expenseAdded,
+    NotificationKind.expenseUpdated => expenseUpdated,
+    NotificationKind.paymentReceived => paymentReceived,
+    NotificationKind.addedToGroup => addedToGroup,
+  };
+
+  /// A copy with [kind] switched to [value].
+  ChannelPrefs set(NotificationKind kind, bool value) => ChannelPrefs(
+    expenseAdded: kind == NotificationKind.expenseAdded ? value : expenseAdded,
+    expenseUpdated: kind == NotificationKind.expenseUpdated
+        ? value
+        : expenseUpdated,
+    paymentReceived: kind == NotificationKind.paymentReceived
+        ? value
+        : paymentReceived,
+    addedToGroup: kind == NotificationKind.addedToGroup ? value : addedToGroup,
   );
 
-  JsonMap toJson() => {
-    'expenseAdded': expenseAdded,
-    'expenseUpdated': expenseUpdated,
-    'paymentReceived': paymentReceived,
-    'addedToGroup': addedToGroup,
-  };
+  JsonMap toJson() => {for (final k in NotificationKind.values) k.key: on(k)};
+}
+
+/// Notification preferences for the signed-in user. In the API the email
+/// switches sit at the top level of `notifications` and push is nested.
+class NotificationPrefs {
+  const NotificationPrefs({
+    this.email = const ChannelPrefs(),
+    this.push = const ChannelPrefs(),
+  });
+
+  factory NotificationPrefs.fromJson(JsonMap? json) => NotificationPrefs(
+    email: ChannelPrefs.fromJson(json),
+    push: ChannelPrefs.fromJson(json?['push'] as JsonMap?),
+  );
+
+  final ChannelPrefs email;
+  final ChannelPrefs push;
+
+  NotificationPrefs copyWith({ChannelPrefs? email, ChannelPrefs? push}) =>
+      NotificationPrefs(email: email ?? this.email, push: push ?? this.push);
+
+  JsonMap toJson() => {...email.toJson(), 'push': push.toJson()};
 }
 
 /// The signed-in user with private settings.
