@@ -72,7 +72,7 @@ jobs:
           rm -rf "$name"
       - uses: actions/upload-artifact@v4
         with:
-          name: server-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: release-server-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
   web:
@@ -97,7 +97,7 @@ jobs:
           tar -C build -czf "../../dist/splitspends-web-${TAG}.tar.gz" web
       - uses: actions/upload-artifact@v4
         with:
-          name: web
+          name: release-web
           path: dist/*
 
   android:
@@ -140,7 +140,7 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk "../../dist/splitspends-android-${TAG}.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: android
+          name: release-android
           path: dist/*
 
   ios:
@@ -168,7 +168,7 @@ jobs:
           zip -qr "../../dist/splitspends-ios-${TAG}-unsigned.ipa" Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: ios
+          name: release-ios
           path: dist/*
 
   docker:
@@ -189,6 +189,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
+        env:
+          # No build record artifact; the release only needs the image.
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
         with:
           context: .
           push: true
@@ -214,6 +217,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          # Only this workflow's files: the Docker job also stores a build
+          # record artifact (*.dockerbuild) that download-artifact cannot fetch.
+          pattern: release-*
           merge-multiple: true
       - name: Checksums and notes
         env:

@@ -19,6 +19,18 @@ git push origin v0.1.0-alpha.1
 
 App versions use the tag without the `v` and the suffix (`0.1.0`) and the workflow run number as the build number.
 
+## Redoing a Release
+
+If a run fails, fix the workflow on `main`, then move the tag to the fixed commit and push it again; the workflow runs from scratch and replaces any files already attached to that release.
+
+```bash
+git checkout main && git pull
+git tag -f -a v0.1.0-alpha.1 -m "Split Spends v0.1.0-alpha.1"
+git push -f origin v0.1.0-alpha.1
+```
+
+Move a tag only before people have downloaded the release; afterwards publish the next version (`v0.1.0-alpha.2`) instead.
+
 ## Android Signing Secrets (Optional)
 
 Add these repository secrets to sign the APK with your upload key (see [apps/apk/README.md](../apps/apk/README.md)):
