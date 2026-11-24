@@ -191,6 +191,7 @@ class Me extends User {
     this.timezone,
     this.notifications = const NotificationPrefs(),
     this.gravatar = false,
+    this.role = 'user',
   });
 
   factory Me.fromJson(JsonMap json) {
@@ -205,6 +206,7 @@ class Me extends User {
       status: user.status,
       timezone: json['timezone'] as String?,
       gravatar: (json['gravatar'] as bool?) ?? false,
+      role: (json['role'] as String?) ?? 'user',
       notifications: NotificationPrefs.fromJson(
         json['notifications'] as JsonMap?,
       ),
@@ -216,6 +218,14 @@ class Me extends User {
 
   /// Whether you show your Gravatar picture (server accounts only).
   final bool gravatar;
+
+  /// user, manager or admin.
+  final String role;
+
+  bool get isAdmin => role == 'admin';
+
+  /// Administrators and managers approve people waiting to join.
+  bool get canApprove => role == 'admin' || role == 'manager';
 
   @override
   Me copyWith({
@@ -237,6 +247,7 @@ class Me extends User {
     timezone: timezone ?? this.timezone,
     notifications: notifications ?? this.notifications,
     gravatar: gravatar,
+    role: role,
   );
 }
 

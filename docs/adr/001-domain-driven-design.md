@@ -62,6 +62,7 @@ flowchart TB
 | `assist` | Natural-language expense drafts |
 | `stats` | Spending summaries |
 | `push` | Push subscriptions (devices) and delivery rules |
+| `admin` | Sign-up modes and the allowed list, requests to join, roles and disabled accounts |
 
 ### Layout Inside a Context
 

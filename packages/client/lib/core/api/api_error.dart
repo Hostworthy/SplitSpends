@@ -62,6 +62,12 @@ class ApiError implements Exception {
   bool get isUnauthorized => status == 401;
   bool get isNetwork => status == 0;
   bool get isAiDisabled => code == 'AI_DISABLED';
+
+  /// The account waits for an administrator or manager to approve it.
+  bool get isPendingApproval => code == 'APPROVAL_PENDING';
+
+  /// The request to join was declined.
+  bool get isDeclined => code == 'APPROVAL_DECLINED';
   bool get needsServer => code == 'NEEDS_SERVER';
 
   static String _codeFor(int status) => switch (status) {

@@ -95,6 +95,9 @@ type Me struct {
 	Notifications Notifications `json:"notifications"`
 	// Gravatar is whether you show your Gravatar picture.
 	Gravatar bool `json:"gravatar"`
+	// Role is user, manager or admin; the app shows administration to
+	// managers and administrators.
+	Role string `json:"role"`
 }
 
 // MePatch updates the caller's profile.
@@ -657,4 +660,41 @@ type ImportResult struct {
 	Categories int               `json:"categories"`
 	Groups     int               `json:"groups"`
 	Expenses   int               `json:"expenses"`
+}
+
+// SignupSettings are who may create an account. Mode is open, invite,
+// approval or closed; Allowed holds addresses and "@domain" entries that
+// sign up without waiting in invite and approval modes.
+type SignupSettings struct {
+	Mode      string   `json:"mode"`
+	Allowed   []string `json:"allowed"`
+	UpdatedAt *string  `json:"updatedAt"`
+}
+
+// SignupSettingsInput replaces the sign-up settings.
+type SignupSettingsInput struct {
+	Mode    string   `json:"mode"`
+	Allowed []string `json:"allowed"`
+}
+
+// SignupRequest is someone waiting to join (or already decided).
+type SignupRequest struct {
+	ID          string  `json:"id"`
+	Email       string  `json:"email"`
+	Name        string  `json:"name"`
+	Status      string  `json:"status"`
+	RequestedAt string  `json:"requestedAt"`
+	DecidedAt   *string `json:"decidedAt"`
+}
+
+// Account is a person as administrators see them.
+type Account struct {
+	User
+	Role      string `json:"role"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// RoleInput changes someone's role.
+type RoleInput struct {
+	Role string `json:"role"`
 }

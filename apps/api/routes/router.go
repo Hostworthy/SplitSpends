@@ -117,6 +117,16 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("POST "+p+"/receipts/{receiptId}/scan", authed(a.scanReceipt))
 	mux.Handle("POST "+p+"/ai/expense-draft", authed(a.draftExpense))
 
+	mux.Handle("GET "+p+"/admin/signup", authed(a.signupSettings))
+	mux.Handle("PUT "+p+"/admin/signup", authed(a.updateSignupSettings))
+	mux.Handle("GET "+p+"/admin/requests", authed(a.signupRequests))
+	mux.Handle("POST "+p+"/admin/requests/{requestId}/approve", authed(a.approveRequest))
+	mux.Handle("POST "+p+"/admin/requests/{requestId}/decline", authed(a.declineRequest))
+	mux.Handle("GET "+p+"/admin/accounts", authed(a.accounts))
+	mux.Handle("PATCH "+p+"/admin/accounts/{userId}", authed(a.setRole))
+	mux.Handle("POST "+p+"/admin/accounts/{userId}/disable", authed(a.disableAccount))
+	mux.Handle("POST "+p+"/admin/accounts/{userId}/enable", authed(a.enableAccount))
+
 	mux.Handle(p+"/", public(a.notFound))
 	return mux
 }

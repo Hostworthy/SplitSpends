@@ -22,7 +22,8 @@ Start with get_overview to learn who the user is, their groups, friends and bala
 Ids are UUIDs; always look them up with list_groups or list_friends instead of guessing.
 Amounts you send are decimal strings in the currency's normal units ("12.50"). Amounts you read are already formatted.
 Positive balances mean the user is owed money; negative means the user owes.
-Confirm with the user before deleting anything.`
+Confirm with the user before deleting anything.
+Tools starting with admin_ work only for administrators (managers can list and decide requests); the user's role is in get_overview.`
 
 // NewServer builds an MCP server bound to one API client.
 func NewServer(c *Client, version string) *sdk.Server {
@@ -46,6 +47,7 @@ func NewServer(c *Client, version string) *sdk.Server {
 	sdk.AddTool(s, add("remind_to_settle", "Email someone who owes the user money a friendly reminder to settle up, in one group or across everything. At most one reminder per person and group every 24 hours.", nil), t.remind)
 	destructive := true
 	sdk.AddTool(s, add("delete_expense", "Delete an expense or payment. It can be restored from the app.", &sdk.ToolAnnotations{DestructiveHint: &destructive}), t.deleteExpense)
+	t.register(s)
 	return s
 }
 
@@ -141,7 +143,7 @@ func (t *tools) overview(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (
 		return fail(err)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are %s <%s> (id %s), default currency %s.\n", me.Name, email(me.Email), me.ID, me.DefaultCurrency)
+	fmt.Fprintf(&b, "You are %s <%s> (id %s), default currency %s, role %s.\n", me.Name, email(me.Email), me.ID, me.DefaultCurrency, me.Role)
 	fmt.Fprintf(&b, "Net balance: %s. Owed to you: %s. You owe: %s.\n\nGroups:\n", t.balances(ctx, totals.Balances), t.balances(ctx, totals.Owed), t.balances(ctx, totals.Owing))
 	for _, g := range groups.Items {
 		fmt.Fprintf(&b, "- %s %s (id %s, %d members): %s\n", g.Emoji, g.Name, g.ID, len(g.Members), t.balances(ctx, g.Balances))

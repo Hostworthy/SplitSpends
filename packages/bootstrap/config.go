@@ -130,9 +130,9 @@ func LoadConfig() (*Config, error) {
 		c.Secret = []byte(secret)
 	}
 	switch c.SignupMode {
-	case auth.SignupOpen, auth.SignupInvite, auth.SignupDomain:
+	case auth.SignupOpen, auth.SignupInvite, auth.SignupDomain, auth.SignupApproval, auth.SignupClosed:
 	default:
-		return nil, fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_MODE: use open, invite or domain")
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_MODE: use open, invite, approval or closed")
 	}
 	c.AllowedDomains = list(env("SIGNUP_ALLOWED_DOMAINS", ""))
 	if c.SignupMode == auth.SignupDomain && len(c.AllowedDomains) == 0 {

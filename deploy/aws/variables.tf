@@ -23,7 +23,7 @@ variable "base_url" {
 }
 
 variable "signup_mode" {
-  description = "open, invite or domain."
+  description = "Starting sign-up mode: open, invite, approval or closed (administrators can change it in the app)."
   type        = string
   default     = "invite"
 }

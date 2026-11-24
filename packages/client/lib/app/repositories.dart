@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:splitspends/features/admin/data/remote_admin_repository.dart';
+import 'package:splitspends/features/admin/domain/admin.dart';
 import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
@@ -135,6 +137,11 @@ final balancesRepositoryProvider = Provider<BalancesRepository>(
 /// API tokens exist only on a server.
 final tokensRepositoryProvider = Provider<TokensRepository>(
   (ref) => _select(ref, remote: RemoteTokensRepository.new),
+);
+
+/// Administration exists only on a server.
+final adminRepositoryProvider = Provider<AdminRepository>(
+  (ref) => _select(ref, remote: RemoteAdminRepository.new),
 );
 
 /// Push devices exist only on a server.

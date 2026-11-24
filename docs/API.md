@@ -29,7 +29,7 @@ When AI reads amounts in another currency (a receipt from abroad), `POST /ai/exp
 | Delete | 204 | empty |
 | Error | 4xx/5xx | `{ "error": string, "code": string, "field"?: string, "requestId"?: string }` |
 
-Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `CONFLICT` (409), `RATE_LIMITED` (429), `AI_DISABLED` (503), `RATES_UNAVAILABLE` (503), `INTERNAL` (500).
+Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `CONFLICT` (409), `RATE_LIMITED` (429), `AI_DISABLED` (503), `RATES_UNAVAILABLE` (503), `APPROVAL_PENDING` (403, the account waits for an administrator), `APPROVAL_DECLINED` (403), `INTERNAL` (500).
 
 Lists accept `limit` (default 50, max 200) and `offset` (default 0).
 
@@ -47,7 +47,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
 // Me (User plus private settings). In notifications the top-level switches
 // are email (as before push existed); push has the same keys.
-{ ...User, "timezone": "Europe/Berlin", "gravatar": false,
+{ ...User, "timezone": "Europe/Berlin", "gravatar": false, "role": "user" | "manager" | "admin",
   "notifications": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true,
                      "reminders": true,
                      "push": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true, "reminders": true } } }
@@ -304,6 +304,35 @@ Deleting hides a category from listings and from new expenses but never rewrites
 ```
 
 Rules: runs in one transaction and sends no emails. People with an email resolve to the existing (or a newly invited) user, so their server id may differ from the local id: use the returned `people` map to rewrite local references. People without an email become placeholders that keep the local id. The caller becomes friends with everyone imported. Payments use `kind: "payment"` with one payer and one split (the recipient). Custom categories are created first with their device ids, so expenses can use them; deleted ones are created too and deleted once the expenses are in. A group's `defaultSplit` has its person ids remapped like `memberIds` and must match the group's members (send it only while it still applies). Validation errors name the failing item in `field`, for example `expenses[3].total`. Retrying the same import is safe.
+
+### Administration
+
+Roles: `user`, `manager` (approves and declines people waiting to join) and `admin` (everything below). The first account on a server is an administrator; the last active administrator cannot step down or be disabled, and nobody can disable themselves.
+
+Sign-up modes:
+
+| Mode | Who can create an account |
+| --- | --- |
+| `open` | Anyone |
+| `invite` | The allowed list, people a member added by email, and holders of a group invite link |
+| `approval` | Anyone can ask: after proving their email with a code, `POST /auth/otp/verify` answers 403 `APPROVAL_PENDING` until an administrator or manager approves them (403 `APPROVAL_DECLINED` once declined). The allowed list and people approved earlier sign in directly. Invited people also wait |
+| `closed` | Nobody new, not even the allowed list |
+
+Existing active accounts always sign in. The allowed list holds addresses and whole domains (`@family.com`). `SIGNUP_MODE` and `SIGNUP_ALLOWED_DOMAINS` are the starting values until an administrator saves settings in the app.
+
+| Method | Path | Body | Response |
+| --- | --- | --- | --- |
+| GET | `/admin/signup` | | admin: `{ data: { mode, allowed: [], updatedAt } }` |
+| PUT | `/admin/signup` | `{ mode, allowed: [] }` | admin: the saved settings (entries lowercased, `example.com` becomes `@example.com`) |
+| GET | `/admin/requests` | `?status=pending\|approved\|declined` (pending by default) | admin or manager: list of `{ id, email, name, status, requestedAt, decidedAt }` |
+| POST | `/admin/requests/{requestId}/approve` | | admin or manager: the request; the person is emailed and can sign in |
+| POST | `/admin/requests/{requestId}/decline` | | admin or manager: the request |
+| GET | `/admin/accounts` | `?status=active\|invited\|disabled&q=&limit=&offset=` | admin: list of `{ ...User, role, createdAt }` (everyone except people added by name only) |
+| PATCH | `/admin/accounts/{userId}` | `{ role }` | admin: the account |
+| POST | `/admin/accounts/{userId}/disable` | | admin: removes sessions, API tokens and push devices, deletes the email (keeping its SHA-256 hash so the same address is recognised) and sets `status: "disabled"`. The name stays on shared expenses |
+| POST | `/admin/accounts/{userId}/enable` | | admin: the person signs in again with their old email, which is stored again |
+
+Administrators and managers get an `approvals` notification (email and push) for each new request.
 
 ### Maintenance
 

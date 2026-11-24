@@ -82,7 +82,7 @@ The server creates its push key on first start and keeps it in the database. If 
 
 - Always serve over HTTPS. Every option above does, except plain LAN setups.
 - Set a long random `SECRET_KEY` (`openssl rand -hex 32`) and keep it secret.
-- Keep `SIGNUP_MODE=invite` unless you really want strangers to sign up.
+- Keep `SIGNUP_MODE=invite` unless you really want strangers to sign up. `approval` lets anyone ask while you decide who gets in, and `closed` stops new accounts. You can change this later in the app (Account, Administration).
 - Behind a proxy or CDN, set `TRUST_PROXY=true` so rate limits see real client IPs; never set it when the server is directly exposed.
 - Back up the database. Receipts live in `DATA_DIR`, S3 or the database, depending on `BLOB_STORE`.
 - Update regularly: pull the latest code and rebuild. Migrations run automatically on start.

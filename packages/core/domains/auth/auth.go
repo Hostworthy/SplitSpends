@@ -36,6 +36,8 @@ type Challenge struct {
 	ExpiresAt  time.Time
 	ConsumedAt *time.Time
 	CreatedAt  time.Time
+	// Pending marks a code sent to someone who still needs approval.
+	Pending bool
 }
 
 // Usable reports whether the challenge can still be verified.
@@ -76,9 +78,40 @@ const (
 	SignupOpen SignupMode = "open"
 	// SignupInvite lets in the first user and anyone an existing user added.
 	SignupInvite SignupMode = "invite"
-	// SignupDomain lets in invited users and emails from allowed domains.
+	// SignupDomain is the older name for invite mode plus an allowed list of
+	// domains (SIGNUP_ALLOWED_DOMAINS); it is read as SignupInvite.
 	SignupDomain SignupMode = "domain"
+	// SignupApproval lets anyone ask to join; an administrator or manager
+	// approves them before their first sign-in.
+	SignupApproval SignupMode = "approval"
+	// SignupClosed allows no new accounts at all. Existing accounts still
+	// sign in.
+	SignupClosed SignupMode = "closed"
 )
+
+// Modes lists the sign-up modes an administrator can choose.
+var Modes = []SignupMode{SignupOpen, SignupInvite, SignupApproval, SignupClosed}
+
+// Signup is who may create an account right now. Allowed holds email
+// addresses and whole domains written as "@example.com"; in invite and
+// approval modes they sign up without waiting.
+type Signup struct {
+	Mode    SignupMode
+	Allowed []string
+}
+
+// Allows reports whether email is on the allowed list.
+func (s Signup) Allows(email string) bool {
+	email = strings.ToLower(strings.TrimSpace(email))
+	at := strings.LastIndex(email, "@")
+	for _, entry := range s.Allowed {
+		entry = strings.ToLower(strings.TrimSpace(entry))
+		if entry == email || (at >= 0 && strings.HasPrefix(entry, "@") && entry == email[at:]) {
+			return true
+		}
+	}
+	return false
+}
 
 // Policy configures login behaviour.
 type Policy struct {
@@ -102,18 +135,19 @@ func DefaultPolicy() Policy {
 	}
 }
 
-func (p Policy) domainAllowed(email string) bool {
-	at := strings.LastIndex(email, "@")
-	if at < 0 {
-		return false
+// Signup is the starting configuration from the environment, used until an
+// administrator changes it in the app.
+func (p Policy) Signup() Signup {
+	s := Signup{Mode: p.Mode}
+	if s.Mode == SignupDomain {
+		s.Mode = SignupInvite
 	}
-	domain := email[at+1:]
 	for _, d := range p.AllowedDomains {
-		if strings.EqualFold(strings.TrimSpace(d), domain) {
-			return true
+		if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
+			s.Allowed = append(s.Allowed, "@"+strings.TrimPrefix(d, "@"))
 		}
 	}
-	return false
+	return s
 }
 
 // newCode returns a uniformly random 6 digit code.

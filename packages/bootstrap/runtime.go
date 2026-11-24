@@ -7,6 +7,7 @@ import (
 
 	"github.com/Hostworthy/SplitSpends/packages/ai"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/admin"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/assist"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/balance"
@@ -50,6 +51,8 @@ type Services struct {
 	Push      *push.Service
 	// Categories are the built-in plus user-defined expense categories.
 	Categories *category.Service
+	// Admin runs sign-up settings, approvals, roles and disabled accounts.
+	Admin *admin.Service
 
 	notifier *fanout
 }
@@ -165,9 +168,15 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	invites := invite.NewService(repositories.NewInvites(db), groups, groupRepo, users, c, cfg.BaseURL)
 	reminders := reminder.NewService(reminder.Deps{Repo: repositories.NewReminders(db), Groups: groups, Connections: friends,
 		Users: users, Balances: balances, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+	administration := admin.NewService(admin.Deps{Settings: repositories.NewSignupSettings(db), Requests: repositories.NewSignupRequests(db),
+		Users: userRepo, Accounts: userRepo, Credentials: repositories.NewCredentials(db), Notifier: notifier, Tx: tx, Clock: c,
+		Defaults: policy.Signup(), BaseURL: cfg.BaseURL, AppName: cfg.AppName})
+	authn := auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, invites, notifier, tx, c)
+	authn.Use(administration)
 	return &Services{
+		Admin:    administration,
 		Rates:    fx,
-		Auth:     auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, invites, notifier, tx, c),
+		Auth:     authn,
 		Users:    users,
 		Friends:  friends,
 		Groups:   groups,

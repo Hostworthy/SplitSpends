@@ -24,6 +24,9 @@ const (
 	// StatusPlaceholder people were added by name only and cannot sign in
 	// until someone attaches an email.
 	StatusPlaceholder Status = "placeholder"
+	// StatusDisabled accounts were turned off by an administrator: they
+	// cannot sign in and keep only a hash of their email.
+	StatusDisabled Status = "disabled"
 )
 
 // User is a person who can take part in expenses.
@@ -35,9 +38,13 @@ type User struct {
 	AvatarColor     string
 	// Gravatar shows the picture gravatar.com has for Email, when there is
 	// one, instead of initials. Off until the person turns it on.
-	Gravatar      bool
-	Timezone      string
-	Status        Status
+	Gravatar bool
+	Timezone string
+	Status   Status
+	Role     Role
+	// EmailHash identifies the email of a disabled account (see HashEmail)
+	// after the address itself was removed.
+	EmailHash     string
 	Notifications Notifications
 	// CreatedBy is who added a placeholder; nil for everyone else.
 	CreatedBy *uuid.UUID
@@ -97,6 +104,7 @@ func New(email, name string, status Status, now time.Time) (*User, error) {
 		AvatarColor:     palette[int(id[0])%len(palette)],
 		Timezone:        "UTC",
 		Status:          status,
+		Role:            RoleUser,
 		Notifications:   DefaultNotifications(),
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -109,7 +117,7 @@ func NewPlaceholder(id *uuid.UUID, name string, createdBy uuid.UUID, now time.Ti
 	if err != nil {
 		return nil, err
 	}
-	u := &User{ID: uuid.New(), Name: name, DefaultCurrency: "USD", Timezone: "UTC", Status: StatusPlaceholder,
+	u := &User{ID: uuid.New(), Name: name, DefaultCurrency: "USD", Timezone: "UTC", Status: StatusPlaceholder, Role: RoleUser,
 		Notifications: DefaultNotifications(), CreatedBy: &createdBy, CreatedAt: now, UpdatedAt: now}
 	if id != nil && *id != uuid.Nil {
 		u.ID = *id

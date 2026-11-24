@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:splitspends/features/admin/presentation/admin_screen.dart';
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/app/shell.dart';
 import 'package:splitspends/core/auth/session.dart';
@@ -205,6 +206,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'categories',
                     builder: (context, state) => const ManageCategoriesScreen(),
+                  ),
+                  GoRoute(
+                    path: 'admin',
+                    builder: (context, state) => const AdminScreen(),
                   ),
                 ],
               ),

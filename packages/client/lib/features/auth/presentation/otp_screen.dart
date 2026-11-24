@@ -34,6 +34,10 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   String? _error;
   LoginResult? _pending;
 
+  /// Set when the server says the account waits for approval (or was
+  /// declined); the screen then explains instead of asking for a code.
+  ApiError? _waiting;
+
   String get _server => ref.read(sessionProvider).value?.serverUrl ?? '';
 
   @override
@@ -88,6 +92,10 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       await _continue(login);
     } on ApiError catch (error) {
       _code.clear();
+      if (error.isPendingApproval || error.isDeclined) {
+        setState(() => _waiting = error);
+        return;
+      }
       setState(() => _error = describeError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -163,6 +171,36 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
             child: Text(_error!, style: TextStyle(color: scheme.error)),
           );
 
+    final waiting = _waiting;
+    if (waiting != null) {
+      return AuthLayout(
+        key: const Key('approval-waiting'),
+        title: waiting.isDeclined ? 'Request declined' : 'Waiting for approval',
+        subtitle: waiting.message,
+        children: [
+          Icon(
+            waiting.isDeclined
+                ? Icons.block_rounded
+                : Icons.hourglass_top_rounded,
+            size: 56,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(height: 16),
+          if (!waiting.isDeclined)
+            Text(
+              'You will get an email when your account is approved. '
+              'Then sign in again with the same address.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          const SizedBox(height: 24),
+          FilledButton.tonal(
+            onPressed: () => context.go(Routes.login),
+            child: const Text('Back to sign in'),
+          ),
+        ],
+      );
+    }
     if (_pending != null) {
       return AuthLayout(
         title: 'Welcome aboard',
