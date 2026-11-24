@@ -8,6 +8,10 @@ git tag v0.1.0-alpha.1
 git push origin v0.1.0-alpha.1
 ```
 
+The workflow first checks that the tag names a version and points to a commit on `main`, then runs the full CI workflow (`ci.yml`) on that commit; nothing is built or published unless both pass. Runs for the same tag queue one behind the other instead of racing.
+
+To stop anyone tagging by mistake, add a tag ruleset for `v*` (Settings, Rules, Rulesets) that restricts creating, updating and deleting matching tags to maintainers.
+
 | Artifact | Built on | Notes |
 | --- | --- | --- |
 | Server and MCP binaries for Linux (amd64, arm64), macOS (amd64, arm64) and Windows (amd64) | Ubuntu | `main.version` is the tag, so `splitspends version` prints it |

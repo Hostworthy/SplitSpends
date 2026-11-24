@@ -7,6 +7,8 @@ on:
   # The Android emulator job is slow (about 15 minutes), so it only runs when
   # started by hand: Actions, CI, Run workflow.
   workflow_dispatch:
+  # The release workflow runs these checks on the tagged commit first.
+  workflow_call:
   # Weekly, so advisories published after the last push still fail a run.
   schedule:
     - cron: "17 5 * * 1"

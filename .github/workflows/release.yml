@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+# A moved tag queues behind the run already in progress instead of racing it
+# to upload assets and push the image.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   FLUTTER_VERSION: 3.50.1
 
@@ -22,12 +28,21 @@ jobs:
       build_name: ${{ steps.v.outputs.build_name }}
       prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          # Full history, so the tagged commit can be checked against main.
+          fetch-depth: 0
       - id: v
         run: |
           tag="${GITHUB_REF_NAME}"
           # Only plain version tags: everything below uses the tag in commands.
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
             echo "::error::Tag $tag is not a version like v1.2.3 or v1.2.3-alpha.1"; exit 1
+          fi
+          # Releases come only from reviewed code: the tagged commit must be on main.
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $tag points to $GITHUB_SHA, which is not on main. Tag a commit on main."; exit 1
           fi
           core="${tag#v}"
           core="${core%%-*}"
@@ -36,9 +51,16 @@ jobs:
           echo "build_name=$core" >> "$GITHUB_OUTPUT"
           if [[ "$tag" == *-* ]]; then echo "prerelease=true"; else echo "prerelease=false"; fi >> "$GITHUB_OUTPUT"
 
+  # The same checks as pull requests, on the tagged commit; nothing is built
+  # or published unless they pass.
+  ci:
+    name: ci
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
   server:
     name: server ${{ matrix.goos }}-${{ matrix.goarch }}
-    needs: version
+    needs: [version, ci]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -79,7 +101,7 @@ jobs:
 
   web:
     name: web
-    needs: version
+    needs: [version, ci]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -106,7 +128,7 @@ jobs:
 
   android:
     name: android
-    needs: version
+    needs: [version, ci]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -152,7 +174,7 @@ jobs:
 
   ios:
     name: ios (unsigned)
-    needs: version
+    needs: [version, ci]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -182,7 +204,7 @@ jobs:
 
   docker:
     name: docker image
-    needs: version
+    needs: [version, ci]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -219,7 +241,7 @@ jobs:
 
   release:
     name: publish
-    needs: [version, server, web, android, ios, docker]
+    needs: [version, ci, server, web, android, ios, docker]
     runs-on: ubuntu-latest
     permissions:
       contents: write
