@@ -166,7 +166,7 @@ class _SettingsState extends ConsumerState<_Settings> {
     final meId = ref.watch(meProvider)?.id;
     final scheme = Theme.of(context).colorScheme;
     return ListView(
-      padding: const EdgeInsets.only(bottom: 48),
+      padding: const EdgeInsets.only(bottom: 96),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),

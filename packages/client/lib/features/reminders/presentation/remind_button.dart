@@ -103,19 +103,24 @@ class _RemindButtonState extends ConsumerState<RemindButton> {
     final icon = Icon(
       local ? Icons.share_outlined : Icons.notifications_active_outlined,
     );
-    final Widget button = widget.compact
-        ? IconButton(
-            key: ValueKey('remind-${widget.user.id}'),
-            onPressed: onPressed,
-            icon: icon,
-          )
-        : OutlinedButton.icon(
-            key: ValueKey('remind-${widget.user.id}'),
-            onPressed: onPressed,
-            icon: icon,
-            label: Text(local ? 'Share reminder' : 'Remind'),
-          );
+    if (widget.compact) {
+      // The tooltip is also the button's accessible name, enabled or not.
+      return IconButton(
+        key: ValueKey('remind-${widget.user.id}'),
+        tooltip: tip,
+        onPressed: onPressed,
+        icon: icon,
+      );
+    }
     // Wrapping keeps the explanation visible when the button is disabled.
-    return Tooltip(message: tip, child: button);
+    return Tooltip(
+      message: tip,
+      child: OutlinedButton.icon(
+        key: ValueKey('remind-${widget.user.id}'),
+        onPressed: onPressed,
+        icon: icon,
+        label: Text(local ? 'Share reminder' : 'Remind'),
+      ),
+    );
   }
 }
