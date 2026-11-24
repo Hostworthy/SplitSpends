@@ -73,7 +73,7 @@ class WelcomeScreen extends ConsumerWidget {
                   const SizedBox(height: 8),
                   Text(
                     'Track shared costs with friends, housemates and trips. '
-                    'Free and open source, with every feature included.',
+                    'Free for personal use, with every feature included.',
                     style: text.bodyLarge?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),

@@ -1,6 +1,6 @@
 # SplitSpends
 
-Self-hosted expense splitting for friends, flatmates and trips. Everything you would use Splitwise for, with no paid tier, no ads and no limits, on your own server.
+Self-hosted expense splitting for friends, flatmates and trips. Everything you would use Splitwise for, with no paid tier, no ads and no limits, on your own server. Free for personal and other noncommercial use (see [License](#license)).
 
 - **Every split**: equal, exact amounts, percentages, shares, adjustments, and itemized bills with tax and tip.
 - **Groups and friends**: trips, homes, couples; non-group expenses; multiple payers; per-currency balances.
@@ -44,4 +44,11 @@ The Flutter app in [`app/`](app/README.md) builds for iOS and Android. On first 
 
 ## License
 
-[MIT](LICENSE)
+SplitSpends is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+- **Free for noncommercial use.** Use it, self-host it, change it and share it for personal, family, hobby, study and research use. Charities, schools, public research bodies and government institutions may use it too.
+- **Commercial use needs permission.** Examples: running it as a paid or ad-supported service, bundling it into a commercial product, or using it inside a business. Ask for a commercial license by opening an issue at <https://github.com/Hostworthy/SplitSpends/issues>.
+
+When you share copies or changed versions, include the license and the `Required Notice` line at the top of [LICENSE](LICENSE). Third-party components keep their own licenses (for example the bundled Inter font, under the SIL Open Font License in `app/assets/fonts/`).
+
+Contributions are accepted under the same license.
