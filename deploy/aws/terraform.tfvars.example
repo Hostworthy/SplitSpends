@@ -7,7 +7,7 @@ smtp = {
   host     = "smtp.gmail.com"
   username = "you@gmail.com"
   password = "app-password"
-  from     = "SplitSpends <you@gmail.com>"
+  from     = "Split Spends <you@gmail.com>"
 }
 
 # ai = { provider = "anthropic", api_key = "sk-ant-..." }

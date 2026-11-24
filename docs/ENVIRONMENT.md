@@ -10,7 +10,7 @@ The server reads everything from the environment. Invalid or missing required va
 | `SECRET_KEY` | required | At least 32 characters; hex is decoded. Signs login codes. Generate with `openssl rand -hex 32` |
 | `BASE_URL` | `http://localhost:8080` | Public URL, used in email links |
 | `ADDR` | `:8080` | Listen address |
-| `APP_NAME` | `SplitSpends` | Name shown in emails and the app |
+| `APP_NAME` | `Split Spends` | Name shown in emails and the app |
 | `WEB_DIR` | empty | Directory with the Flutter web build; the Docker image sets `/srv/web` |
 | `DATA_DIR` | `./data` | Where receipt images are stored |
 | `DATABASE_MAX_CONNS` | `10` | Connection pool size |
@@ -57,7 +57,7 @@ Leave `SMTP_HOST` empty in development: emails, including login codes, are writt
 | `SMTP_SECURITY` | `starttls` | `starttls` (port 587), `tls` (implicit TLS, port 465) or `none` (local relays only) |
 | `SMTP_USERNAME` | empty | Login, if the server needs one |
 | `SMTP_PASSWORD` | empty | Password or app password |
-| `SMTP_FROM` | `SMTP_USERNAME` | From address, for example `SplitSpends <split@example.com>` |
+| `SMTP_FROM` | `SMTP_USERNAME` | From address, for example `Split Spends <split@example.com>` |
 
 Common providers:
 
@@ -93,7 +93,7 @@ Outgoing requests: push endpoints come from devices, so the server refuses endpo
 
 ## AI (Optional)
 
-SplitSpends does not run a model. When a provider is configured, the server sends the user's instructions (and a receipt photo, when there is one) together with a system prompt describing their groups, people and the rules to that provider, and turns the structured answer into a draft the user reviews. AI is off unless a provider is configured, and the app hides AI buttons when it is off.
+Split Spends does not run a model. When a provider is configured, the server sends the user's instructions (and a receipt photo, when there is one) together with a system prompt describing their groups, people and the rules to that provider, and turns the structured answer into a draft the user reviews. AI is off unless a provider is configured, and the app hides AI buttons when it is off.
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |

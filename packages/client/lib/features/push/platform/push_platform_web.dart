@@ -32,7 +32,7 @@ class WebPushPlatform implements PushPlatform {
   String? get unsupportedReason {
     if (_supported) return null;
     if (_iOS) {
-      return 'On iPhone and iPad, add SplitSpends to your Home Screen from '
+      return 'On iPhone and iPad, add Split Spends to your Home Screen from '
           "Safari's Share menu, open it from there and enable push again.";
     }
     if (!web.window.isSecureContext) {

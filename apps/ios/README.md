@@ -1,4 +1,4 @@
-# SplitSpends for iOS
+# Split Spends for iOS
 
 A thin shell around [`packages/client`](../../packages/client/README.md): this folder holds only the iOS runner and a two-line `lib/main.dart`.
 

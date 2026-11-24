@@ -69,7 +69,7 @@ class DashboardScreen extends ConsumerWidget {
                                     ),
                                   ),
                                   Text(
-                                    me?.firstName ?? 'SplitSpends',
+                                    me?.firstName ?? 'Split Spends',
                                     style: text.headlineMedium,
                                   ),
                                 ],

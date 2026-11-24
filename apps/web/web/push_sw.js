@@ -16,7 +16,7 @@ self.addEventListener('push', (event) => {
   } catch (_) {
     message = { body: event.data ? event.data.text() : '' };
   }
-  const title = message.title || 'SplitSpends';
+  const title = message.title || 'Split Spends';
   event.waitUntil(
     self.registration.showNotification(title, {
       body: message.body || '',

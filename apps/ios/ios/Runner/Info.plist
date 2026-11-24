@@ -9,15 +9,15 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>SplitSpends uses the camera to photograph receipts so they can be split automatically.</string>
+	<string>Split Spends uses the camera to photograph receipts so they can be split automatically.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>SplitSpends lets you pick a receipt photo from your library to attach or scan it.</string>
+	<string>Split Spends lets you pick a receipt photo from your library to attach or scan it.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>SplitSpends</string>
+	<string>Split Spends</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,7 +25,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>splitspends</string>
+	<string>Split Spends</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

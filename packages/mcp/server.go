@@ -17,7 +17,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 )
 
-const instructions = `SplitSpends tracks shared expenses between friends and groups, like Splitwise.
+const instructions = `Split Spends tracks shared expenses between friends and groups, like Splitwise.
 Start with get_overview to learn who the user is, their groups, friends and balances.
 Ids are UUIDs; always look them up with list_groups or list_friends instead of guessing.
 Amounts you send are decimal strings in the currency's normal units ("12.50"). Amounts you read are already formatted.
@@ -27,7 +27,7 @@ Tools starting with admin_ work only for administrators (managers can list and d
 
 // NewServer builds an MCP server bound to one API client.
 func NewServer(c *Client, version string) *sdk.Server {
-	s := sdk.NewServer(&sdk.Implementation{Name: "splitspends", Title: "SplitSpends", Version: version}, &sdk.ServerOptions{Instructions: instructions})
+	s := sdk.NewServer(&sdk.Implementation{Name: "splitspends", Title: "Split Spends", Version: version}, &sdk.ServerOptions{Instructions: instructions})
 	t := &tools{c: c}
 
 	readOnly := &sdk.ToolAnnotations{ReadOnlyHint: true}
@@ -79,7 +79,7 @@ func text(s string) *sdk.CallToolResult {
 func fail(err error) (*sdk.CallToolResult, any, error) {
 	var apiErr *APIError
 	if errors.As(err, &apiErr) && apiErr.Status == http.StatusUnauthorized {
-		err = errors.New("not signed in: create an API token in SplitSpends under Settings, API tokens, and configure it as the bearer token")
+		err = errors.New("not signed in: create an API token in Split Spends under Settings, API tokens, and configure it as the bearer token")
 	}
 	res := text("Error: " + err.Error())
 	res.IsError = true

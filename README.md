@@ -13,17 +13,17 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/hero.webp" alt="SplitSpends on desktop and phone: a trip's expenses and its simplified settle-up plan" width="900">
+  <img src="docs/images/hero.webp" alt="Split Spends on desktop and phone: a trip's expenses and its simplified settle-up plan" width="900">
 </p>
 
-SplitSpends keeps track of who paid what and who owes whom, so shared costs never get awkward. It covers everything people use Splitwise for (groups, every kind of split, receipts, settling up) without a paid tier, ads or daily limits. Use it on your own, or run your own server so everyone in the group sees the same numbers.
+Split Spends keeps track of who paid what and who owes whom, so shared costs never get awkward. It covers everything people use Splitwise for (groups, every kind of split, receipts, settling up) without a paid tier, ads or daily limits. Use it on your own, or run your own server so everyone in the group sees the same numbers.
 
 ## How It Works
 
 1. **Start right away, no account.** Open the app on your phone or in a browser and choose *Use on this device*. Groups, expenses and balances stay on that device.
 2. **Add expenses the way they really happened.** Split equally, by exact amounts, percentages, shares or adjustments, or item by item from a receipt with tax and tip. Several people can pay for one bill.
-3. **Settle up with fewer payments.** SplitSpends works out who owes whom, simplifies the debts in a group to the fewest transfers, and records payments when people pay each other back.
-4. **Connect a server when you want to share.** Point the app at a SplitSpends server that you or a friend hosts, sign in with a code sent to your email (no password), and your on-device data uploads in one step. From then on your friends see the same groups, get email notifications, and you can use it on all your devices.
+3. **Settle up with fewer payments.** Split Spends works out who owes whom, simplifies the debts in a group to the fewest transfers, and records payments when people pay each other back.
+4. **Connect a server when you want to share.** Point the app at a Split Spends server that you or a friend hosts, sign in with a code sent to your email (no password), and your on-device data uploads in one step. From then on your friends see the same groups, get email notifications, and you can use it on all your devices.
 
 ## Features
 
@@ -68,7 +68,7 @@ Open `http://localhost:8080` and sign in with your email: the first account is t
 
 ## License
 
-SplitSpends is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+Split Spends is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
 
 - **Free for noncommercial use.** Use it, self-host it, change it and share it for personal, family, hobby, study and research use. Charities, schools, public research bodies and government institutions may use it too.
 - **Commercial use needs permission.** Examples: running it as a paid or ad-supported service, bundling it into a commercial product, or using it inside a business. Ask for a commercial license by opening an issue at <https://github.com/Hostworthy/SplitSpends/issues>.

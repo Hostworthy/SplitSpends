@@ -1,6 +1,6 @@
 # Brand
 
-The SplitSpends mark is two overlapping coins, a white one and a mint one, on a teal gradient. It matches the in-app logo (`AppLogo` in `packages/client/lib/app/shell.dart`).
+The Split Spends mark is two overlapping coins, a white one and a mint one, on a teal gradient. It matches the in-app logo (`AppLogo` in `packages/client/lib/app/shell.dart`).
 
 | Colour | Hex | Use |
 | --- | --- | --- |

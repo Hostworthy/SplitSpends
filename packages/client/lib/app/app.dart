@@ -11,7 +11,7 @@ class SplitSpendsApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
-      title: 'SplitSpends',
+      title: 'Split Spends',
       locale: const Locale('en', 'US'),
       supportedLocales: const [Locale('en', 'US')],
       debugShowCheckedModeBanner: false,

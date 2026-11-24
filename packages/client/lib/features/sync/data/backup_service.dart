@@ -46,13 +46,13 @@ class BackupService {
     } catch (_) {
       throw const ApiError.validation(
         'file',
-        'This is not a SplitSpends backup.',
+        'This is not a Split Spends backup.',
       );
     }
     if (body['format'] != backupFormat || body['profile'] is! Map) {
       throw const ApiError.validation(
         'file',
-        'This is not a SplitSpends backup.',
+        'This is not a Split Spends backup.',
       );
     }
     if ((body['version'] as int? ?? 0) > backupVersion) {

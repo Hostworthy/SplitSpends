@@ -95,7 +95,7 @@ func list(v string) []string {
 // LoadConfig reads configuration from the environment.
 func LoadConfig() (*Config, error) {
 	c := &Config{
-		AppName:      env("APP_NAME", "SplitSpends"),
+		AppName:      env("APP_NAME", "Split Spends"),
 		Addr:         env("ADDR", ":8080"),
 		BaseURL:      strings.TrimRight(env("BASE_URL", "http://localhost:8080"), "/"),
 		DatabaseURL:  env("DATABASE_URL", ""),

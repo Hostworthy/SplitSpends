@@ -156,7 +156,7 @@ class _JoinScreenState extends ConsumerState<JoinScreen> {
           ),
         TextButton(
           onPressed: () => context.go(Routes.home),
-          child: const Text('Open SplitSpends'),
+          child: const Text('Open Split Spends'),
         ),
       ],
     );
@@ -204,7 +204,7 @@ class _JoinScreenState extends ConsumerState<JoinScreen> {
         'This invite is for $host, but you are signed in to $signedIn. '
             'Sign out first to join with an account on $host.',
       JoinState.onDevice =>
-        'Invite links need a SplitSpends server. You are using SplitSpends '
+        'Invite links need a Split Spends server. You are using Split Spends '
             'on this device only. Connect to the server to join, or set up '
             'your own.',
       JoinState.signIn =>
@@ -239,7 +239,7 @@ class _JoinScreenState extends ConsumerState<JoinScreen> {
           JoinState.otherServer => [
             OutlinedButton(
               onPressed: () => context.go(Routes.home),
-              child: const Text('Open SplitSpends'),
+              child: const Text('Open Split Spends'),
             ),
           ],
           JoinState.onDevice => [

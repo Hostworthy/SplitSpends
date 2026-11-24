@@ -10,7 +10,7 @@ class LocalReceiptsRepository implements ReceiptsRepository {
   const LocalReceiptsRepository();
 
   static const _error = ApiError.needsServer(
-    'Receipt photos and AI help are features of a SplitSpends server. '
+    'Receipt photos and AI help are features of a Split Spends server. '
     'Connect to one to use them.',
   );
 

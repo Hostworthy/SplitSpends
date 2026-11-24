@@ -310,7 +310,7 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'SplitSpends only records the payment. Send the money with your usual app.',
+                  'Split Spends only records the payment. Send the money with your usual app.',
                   style: text.bodySmall,
                   textAlign: TextAlign.center,
                 ),

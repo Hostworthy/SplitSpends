@@ -1,4 +1,4 @@
-# Automatic HTTPS in front of SplitSpends. Point your domain's DNS at this
+# Automatic HTTPS in front of Split Spends. Point your domain's DNS at this
 # machine and open ports 80 and 443. For a LAN-only setup, see docs/HOSTING.md.
 {$DOMAIN} {
 	encode zstd gzip

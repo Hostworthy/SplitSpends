@@ -4,7 +4,7 @@
 import 'package:splitspends/core/config/app_config.dart';
 
 const localConfig = AppConfig(
-  appName: 'SplitSpends',
+  appName: 'Split Spends',
   signupMode: 'local',
   currencies: [
     CurrencyInfo(code: 'AED', name: 'UAE Dirham', symbol: 'AED', exponent: 2),
