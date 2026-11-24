@@ -21,10 +21,12 @@ class ImportService {
     final db = await _ledger.db;
     if (!await hasProfile()) return const ImportSummary();
     final expenses = await _ledger.expenses(db);
+    final categories = await _ledger.customCategories(db);
     return ImportSummary(
       groups: (await _ledger.groups(db)).length,
       expenses: expenses.where((e) => e['deleted'] != true).length,
       people: (await _ledger.people(db)).length,
+      categories: categories.where((c) => c['deleted'] != true).length,
     );
   }
 
@@ -35,6 +37,7 @@ class ImportService {
       people: (await _ledger.people(db)).values.toList(),
       groups: await _ledger.groups(db),
       expenses: await _ledger.expenses(db),
+      categories: await _ledger.customCategories(db),
     );
   }
 

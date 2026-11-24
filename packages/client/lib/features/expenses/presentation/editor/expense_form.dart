@@ -132,6 +132,24 @@ class ExpenseForm extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Starts the split from a group's default: its [method] and per-person
+  /// [values] (percent or shares; empty for equal, which includes everyone).
+  /// People without a value get none. The user can still change everything.
+  void applyDefault(SplitMethod value, Map<String, String> splitValues) {
+    method = value;
+    values.clear();
+    included
+      ..clear()
+      ..addAll(_people);
+    if (value != SplitMethod.equal) {
+      for (final id in _people) {
+        final v = splitValues[id];
+        if (v != null) values[id] = v;
+      }
+    }
+    notifyListeners();
+  }
+
   // -------------------------------------------------------------- computed
 
   String get singlePayer => payers.keys.firstOrNull ?? meId;

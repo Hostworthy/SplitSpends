@@ -17,6 +17,7 @@ import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/domain/groups_repository.dart';
+import 'package:splitspends/features/groups/presentation/default_split_section.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';
 
 const _emojis = [
@@ -288,6 +289,7 @@ class _SettingsState extends ConsumerState<_Settings> {
                     onPressed: () => _removeMember(m.id, self: false),
                   ),
           ),
+        DefaultSplitSection(group: group),
         const SectionHeader('Danger zone'),
         ListTile(
           leading: Icon(

@@ -138,7 +138,14 @@ class _EditorBodyState extends ConsumerState<_EditorBody> {
     final initial = widget.existing != null
         ? ExpenseInput.fromExpense(widget.existing!)
         : widget.draft;
-    if (initial != null) form.load(initial);
+    final preset = group?.defaultSplit;
+    if (initial != null) {
+      form.load(initial);
+    } else if (preset != null) {
+      // A new expense in a group with a default split (say rent 60/40)
+      // starts with it.
+      form.applyDefault(preset.method, preset.values);
+    }
   }
 
   @override

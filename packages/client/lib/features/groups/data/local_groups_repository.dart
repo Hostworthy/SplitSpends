@@ -19,6 +19,37 @@ class LocalGroupsRepository implements GroupsRepository {
 
   final LocalLedger _ledger;
 
+  /// The stored default split of a group record when it still matches the
+  /// members (the server's rule), else null.
+  static JsonMap? effectiveSplit(JsonMap group) {
+    final raw = group['defaultSplit'];
+    if (raw is! Map) return null;
+    final values = ((raw['values'] as Map?) ?? const {}).map(
+      (k, v) => MapEntry(k as String, '$v'),
+    );
+    final method = raw['method'] as String? ?? '';
+    if (!defaultSplitMatches(method, values, LocalLedger.memberIds(group))) {
+      return null;
+    }
+    return {'method': method, 'values': values};
+  }
+
+  /// Validates [split] against [members] like the server does.
+  static JsonMap _checkedSplit(DefaultSplit split, List<String> members) {
+    try {
+      return {
+        'method': split.method.wire,
+        'values': validateDefaultSplit(
+          split.method.wire,
+          split.values,
+          members,
+        ),
+      };
+    } on LedgerError catch (error) {
+      throw ApiError.validation(error.field, error.message);
+    }
+  }
+
   Future<Group> _view(DatabaseClient c, JsonMap g) async {
     final me = await _ledger.me(c);
     final people = await _ledger.directory(c);
@@ -28,6 +59,7 @@ class LocalGroupsRepository implements GroupsRepository {
     );
     return Group.fromJson({
       ...g,
+      'defaultSplit': effectiveSplit(g),
       'members': [
         for (final id in LocalLedger.memberIds(g))
           people[id] ?? {'id': id, 'name': 'Someone'},
@@ -89,6 +121,8 @@ class LocalGroupsRepository implements GroupsRepository {
         'color': input.color ?? '#00897B',
         'archived': false,
         'memberIds': members,
+        if (input.defaultSplit != null)
+          'defaultSplit': _checkedSplit(input.defaultSplit!, members),
         'createdAt': at,
         'updatedAt': at,
       });
@@ -121,6 +155,13 @@ class LocalGroupsRepository implements GroupsRepository {
         'emoji': ?input.emoji,
         'color': ?input.color,
         'archived': ?input.archived,
+        if (input.clearDefaultSplit)
+          'defaultSplit': null
+        else if (input.defaultSplit != null)
+          'defaultSplit': _checkedSplit(
+            input.defaultSplit!,
+            LocalLedger.memberIds(g),
+          ),
         'updatedAt': _ledger.stamp(),
       };
       await Stores.groups.record(id).put(txn, next);
@@ -297,6 +338,10 @@ class LocalGroupsRepository implements GroupsRepository {
       return d != null && !d.isBefore(from) && !d.isAfter(to);
     }
 
+    final liveCustom = {
+      for (final c in await _ledger.customCategories(db))
+        if (c['deleted'] != true) c['id'] as String,
+    };
     final byCategory = <String, int>{};
     final byMonth = <String, int>{};
     final byMember = <String, ({int paid, int owed})>{};
@@ -324,7 +369,11 @@ class LocalGroupsRepository implements GroupsRepository {
         if (mine == null || (mine['owed'] as int) <= 0) continue;
         amount = mine['owed'] as int;
       }
-      final cat = e['category'] as String;
+      var cat = e['category'] as String;
+      // Like the server: deleted custom categories count as General.
+      if (cat.startsWith('custom.') && !liveCustom.contains(cat)) {
+        cat = 'general';
+      }
       byCategory[cat] = (byCategory[cat] ?? 0) + amount;
       final month = (e['date'] as String).substring(0, 7);
       byMonth[month] = (byMonth[month] ?? 0) + amount;

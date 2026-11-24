@@ -27,6 +27,8 @@ class Category {
     required this.name,
     required this.group,
     this.icon,
+    this.custom = false,
+    this.mine = false,
   });
 
   factory Category.fromJson(JsonMap json) => Category(
@@ -34,12 +36,20 @@ class Category {
     name: (json['name'] as String?) ?? json['id'] as String,
     group: (json['group'] as String?) ?? 'Other',
     icon: json['icon'] as String?,
+    custom: (json['custom'] as bool?) ?? false,
+    mine: (json['mine'] as bool?) ?? false,
   );
 
   final String id;
   final String name;
   final String group;
+
+  /// A Material Symbols name such as `restaurant`.
   final String? icon;
+
+  /// User-defined (`custom.<uuid>`); [mine] when the caller owns it.
+  final bool custom;
+  final bool mine;
 }
 
 /// Public server configuration from `GET /config`.

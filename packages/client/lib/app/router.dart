@@ -7,6 +7,7 @@ import 'package:splitspends/app/shell.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/features/account/presentation/account_screen.dart';
 import 'package:splitspends/features/account/presentation/tokens_screen.dart';
+import 'package:splitspends/features/categories/presentation/manage_categories_screen.dart';
 import 'package:splitspends/features/activity/presentation/activity_screen.dart';
 import 'package:splitspends/features/auth/domain/auth_repository.dart';
 import 'package:splitspends/features/auth/presentation/local_setup_screen.dart';
@@ -190,6 +191,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'tokens',
                     builder: (context, state) => const TokensScreen(),
+                  ),
+                  GoRoute(
+                    path: 'categories',
+                    builder: (context, state) => const ManageCategoriesScreen(),
                   ),
                 ],
               ),

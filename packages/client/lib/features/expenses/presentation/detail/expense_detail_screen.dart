@@ -11,7 +11,8 @@ import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/utils/dates.dart';
-import 'package:splitspends/core/widgets/category_icon.dart';
+import 'package:splitspends/features/categories/presentation/category_badge.dart';
+import 'package:splitspends/features/categories/presentation/providers.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
@@ -154,7 +155,6 @@ class _Header extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final info = ref.watch(configValueProvider).currency(expense.currency);
-    final config = ref.watch(configValueProvider);
     final people = ref.watch(peopleProvider);
     final meId = ref.watch(meProvider)?.id;
     final text = Theme.of(context).textTheme;
@@ -172,7 +172,7 @@ class _Header extends ConsumerWidget {
         children: [
           Hero(
             tag: 'expense-icon-${expense.id}',
-            child: CategoryIcon(
+            child: CategoryBadge(
               category: expense.category,
               payment: expense.isPayment,
               size: 64,
@@ -197,7 +197,10 @@ class _Header extends ConsumerWidget {
                     DateFormat.yMMMMEEEEd().format(expense.day),
                     ?groupName,
                     if (!expense.isPayment)
-                      config.category(expense.category)?.name ?? '',
+                      ref
+                          .watch(categoryCatalogProvider)
+                          .find(expense.category)
+                          .name,
                   ].where((s) => s.isNotEmpty).join(' · '),
                   style: text.bodyMedium?.copyWith(color: muted),
                 ),

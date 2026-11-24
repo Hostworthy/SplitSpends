@@ -5,12 +5,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/core/auth/session.dart';
-import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/amount_field.dart';
-import 'package:splitspends/core/widgets/category_icon.dart';
 import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
+import 'package:splitspends/features/categories/domain/catalog.dart';
+import 'package:splitspends/features/categories/presentation/category_badge.dart';
+import 'package:splitspends/features/categories/presentation/category_picker.dart';
+import 'package:splitspends/features/categories/presentation/providers.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/presentation/editor/expense_form.dart';
 import 'package:splitspends/app/repositories.dart';
@@ -97,8 +99,9 @@ class _DetailsSectionState extends ConsumerState<DetailsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final config = ref.watch(configValueProvider);
-    final category = config.category(form.category);
+    final category = ref
+        .watch(categoryCatalogProvider)
+        .find(form.category ?? generalCategory.id);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Column(
@@ -107,8 +110,9 @@ class _DetailsSectionState extends ConsumerState<DetailsSection> {
           Row(
             children: [
               Tooltip(
-                message: category?.name ?? 'Category',
+                message: category.name,
                 child: InkWell(
+                  key: const Key('expense-category'),
                   borderRadius: BorderRadius.circular(16),
                   onTap: () async {
                     final id = await pickCategory(
@@ -117,7 +121,7 @@ class _DetailsSectionState extends ConsumerState<DetailsSection> {
                     );
                     if (id != null) form.update(() => form.category = id);
                   },
-                  child: CategoryIcon(category: form.category, size: 56),
+                  child: CategoryBadge(category: form.category, size: 56),
                 ),
               ),
               const SizedBox(width: 12),

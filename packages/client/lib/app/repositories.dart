@@ -20,6 +20,9 @@ import 'package:splitspends/features/activity/data/remote_activity_repository.da
 import 'package:splitspends/features/activity/domain/activity_repository.dart';
 import 'package:splitspends/features/auth/data/remote_auth_repository.dart';
 import 'package:splitspends/features/auth/domain/auth_repository.dart';
+import 'package:splitspends/features/categories/data/local_categories_repository.dart';
+import 'package:splitspends/features/categories/data/remote_categories_repository.dart';
+import 'package:splitspends/features/categories/domain/categories_repository.dart';
 import 'package:splitspends/features/expenses/data/remote_expenses_repository.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
 import 'package:splitspends/features/friends/data/remote_friends_repository.dart';
@@ -96,6 +99,14 @@ final activityRepositoryProvider = Provider<ActivityRepository>(
     ref,
     remote: RemoteActivityRepository.new,
     local: () => LocalActivityRepository(ref.watch(localLedgerProvider)),
+  ),
+);
+
+final categoriesRepositoryProvider = Provider<CategoriesRepository>(
+  (ref) => _select(
+    ref,
+    remote: RemoteCategoriesRepository.new,
+    local: () => LocalCategoriesRepository(ref.watch(localLedgerProvider)),
   ),
 );
 

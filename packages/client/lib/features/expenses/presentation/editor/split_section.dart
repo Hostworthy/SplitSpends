@@ -179,7 +179,7 @@ class _PersonRow extends StatelessWidget {
           subtitle: owedText,
           trailing: SizedBox(
             width: 110,
-            child: _NumberField(
+            child: DecimalField(
               initial: form.values[userId],
               suffix: form.method == SplitMethod.percent
                   ? '%'
@@ -200,8 +200,11 @@ class _PersonRow extends StatelessWidget {
   }
 }
 
-class _NumberField extends StatefulWidget {
-  const _NumberField({
+/// A right-aligned decimal input (percentages, shares). Reports dot-decimal
+/// text, or null when empty or not a number.
+class DecimalField extends StatefulWidget {
+  const DecimalField({
+    super.key,
     this.initial,
     required this.suffix,
     required this.onChanged,
@@ -214,10 +217,10 @@ class _NumberField extends StatefulWidget {
   final ValueChanged<String?> onChanged;
 
   @override
-  State<_NumberField> createState() => _NumberFieldState();
+  State<DecimalField> createState() => _DecimalFieldState();
 }
 
-class _NumberFieldState extends State<_NumberField> {
+class _DecimalFieldState extends State<DecimalField> {
   late final _controller = TextEditingController(text: widget.initial ?? '');
 
   @override
