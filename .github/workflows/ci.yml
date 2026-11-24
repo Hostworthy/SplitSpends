@@ -77,7 +77,7 @@ jobs:
         with:
           flutter-version: 3.50.1
           channel: stable
-      - run: flutter pub get
+      - run: flutter pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed packages/ledger packages/client apps/apk apps/ios apps/web
       - name: Analyze
         run: for d in packages/ledger packages/client apps/apk apps/ios apps/web; do (cd $d && flutter analyze) || exit 1; done
@@ -121,7 +121,7 @@ jobs:
         with:
           flutter-version: 3.50.1
           channel: stable
-      - run: flutter pub get
+      - run: flutter pub get --enforce-lockfile
       - name: Start a development server for the device test
         run: |
           go build -o bin/splitspends ./apps/api

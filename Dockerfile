@@ -20,7 +20,7 @@ COPY packages/client/pubspec.yaml packages/client/
 COPY apps/apk/pubspec.yaml apps/apk/
 COPY apps/ios/pubspec.yaml apps/ios/
 COPY apps/web/pubspec.yaml apps/web/
-RUN flutter pub get
+RUN flutter pub get --enforce-lockfile
 COPY packages/ledger packages/ledger
 COPY packages/client packages/client
 COPY apps/web apps/web

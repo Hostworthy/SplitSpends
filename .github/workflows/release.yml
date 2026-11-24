@@ -111,7 +111,7 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
-      - run: flutter pub get
+      - run: flutter pub get --enforce-lockfile
       - name: Build and package
         env:
           TAG: ${{ needs.version.outputs.tag }}
@@ -144,7 +144,7 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
-      - run: flutter pub get
+      - run: flutter pub get --enforce-lockfile
       - name: Build
         # Without the signing secrets the APK is signed with the debug key:
         # fine to install directly, not accepted by Google Play. The key is
@@ -188,7 +188,7 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
-      - run: flutter pub get
+      - run: flutter pub get --enforce-lockfile
       - name: Build an unsigned IPA
         # Installing needs your own signing (Xcode, AltStore, Sideloadly) until
         # the project has an Apple Developer account in CI.
