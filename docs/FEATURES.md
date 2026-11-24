@@ -26,6 +26,7 @@ Several of these sit behind Splitwise Pro today (receipt scanning, itemization, 
 | Non-group expenses with friends | Yes | Yes |
 | Multiple payers | Yes | Yes |
 | Split equally, exact, percent, shares, adjustment | Yes | Yes |
+| Default split per group (for example rent 60/40) | Pro | Yes, equal, percent or shares; set in group settings, used by new expenses on the server, on the device and in MCP |
 | Itemized split with tax and tip | Pro | Yes |
 | Receipt photo attachment | Yes | Yes |
 | AI receipt scanning | Pro | Yes, when the host configures an AI provider |
@@ -38,6 +39,7 @@ Several of these sit behind Splitwise Pro today (receipt scanning, itemization, 
 | Recurring expenses | Yes | Weekly, every two weeks, monthly, yearly |
 | Search and filters | Pro | Yes |
 | Charts by category, month and member | Pro | Yes |
+| Custom categories | No | Yes, with a name, icon and group; shared expenses show them to other members |
 | CSV export | Yes | Yes |
 | Restore deleted expenses | Yes | Yes (undo snackbar and restore) |
 | Daily expense limits or ads | Free tier | Never |

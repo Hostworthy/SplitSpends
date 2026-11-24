@@ -115,13 +115,14 @@ class _DefaultSplitSectionState extends ConsumerState<DefaultSplitSection> {
                 onSelectionChanged: (v) => _form.setMethod(v.first),
               ),
             ),
+            const SizedBox(height: 8),
             if (method == SplitMethod.percent || method == SplitMethod.shares)
               for (final m in widget.group.members)
                 ListTile(
                   leading: UserAvatar(user: m),
                   title: Text(m.id == meId ? 'You' : m.displayName),
                   trailing: SizedBox(
-                    width: 120,
+                    width: 136,
                     child: DecimalField(
                       key: ValueKey('default-${method!.name}-${m.id}'),
                       initial: _form.values[m.id],

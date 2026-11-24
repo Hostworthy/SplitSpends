@@ -53,8 +53,9 @@ flowchart TB
 | `user` | Identity, profile, notification preferences, invited users |
 | `auth` | Login codes, sessions, API tokens, signup policy |
 | `friend` | Friendships (explicit plus group co-members) |
-| `group` | Groups and membership |
-| `expense` | Expenses, payments, split rules, comments, recurrence, categories |
+| `group` | Groups, membership and default splits |
+| `expense` | Expenses, payments, split rules, comments, recurrence, built-in categories |
+| `category` | User-defined expense categories |
 | `balance` | Pure balance math over ledger entries: nets, pairwise debts, simplification |
 | `activity` | Append-only feed |
 | `receipt` | Receipt images and AI scanning |
