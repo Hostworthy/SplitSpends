@@ -12,6 +12,8 @@ flutter build appbundle         # for Google Play
 
 The APK lands in `build/app/outputs/flutter-apk/app-release.apk`; install it with `adb install` or by opening it on the phone.
 
+Every pull request builds the release APK in CI and runs the app on an Android emulator; download it from the `splitspends-apk` artifact of the CI run. See [Testing](../../docs/DEV.md#testing) to run the device test yourself.
+
 ## Release Signing
 
 Without a key, release builds are signed with the debug key: fine for installing and testing, not for Google Play. To sign with your upload key, create `android/key.properties` (it is git-ignored):

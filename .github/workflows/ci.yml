@@ -57,3 +57,70 @@ jobs:
         working-directory: packages/client
       - run: flutter build web --release --no-web-resources-cdn
         working-directory: apps/web
+
+  android:
+    name: android emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: splitspends
+          POSTGRES_PASSWORD: splitspends
+          POSTGRES_DB: splitspends
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U splitspends"
+          --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.50.1
+          channel: stable
+      - run: flutter pub get
+      - name: Start a development server for the device test
+        run: |
+          go build -o bin/splitspends ./apps/api
+          DATABASE_URL=postgres://splitspends:splitspends@localhost:5432/splitspends?sslmode=disable \
+          SECRET_KEY=$(openssl rand -hex 32) SIGNUP_MODE=open LOG_FORMAT=text ADDR=:8080 \
+            nohup ./bin/splitspends > server.log 2>&1 &
+          nohup python3 scripts/ci/codes.py server.log 8099 > codes.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8080/health && exit 0; sleep 1; done
+          cat server.log; exit 1
+      - name: Build the release APK
+        working-directory: apps/android
+        run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: splitspends-apk
+          path: apps/android/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run the app on an Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          disable-animations: true
+          working-directory: apps/android
+          script: flutter test integration_test --dart-define=SPLITSPENDS_TEST_SERVER=http://10.0.2.2:8080 --dart-define=SPLITSPENDS_TEST_CODES=http://10.0.2.2:8099
+      - name: The upload reached the server
+        run: python3 scripts/ci/codes.py server.log --check device-test@example.com Cabin
+      - name: Server log
+        if: failure()
+        run: cat server.log
