@@ -92,7 +92,6 @@ func (a *API) Routes() *http.ServeMux {
 
 	mux.Handle("GET "+p+"/activity", authed(a.listActivity))
 	mux.Handle("GET "+p+"/stats", authed(a.stats))
-	mux.Handle("GET "+p+"/rates", authed(a.rates))
 
 	mux.Handle("POST "+p+"/receipts", authed(a.uploadReceipt))
 	mux.Handle("GET "+p+"/receipts/{receiptId}", authed(a.getReceipt))

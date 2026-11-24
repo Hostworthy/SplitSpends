@@ -8,7 +8,6 @@ import 'package:splitspends/app/theme.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/money/money.dart';
-import 'package:splitspends/core/rates/rates.dart';
 import 'package:splitspends/core/widgets/category_icon.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/friends/presentation/people.dart';
@@ -25,7 +24,6 @@ class ExpenseTile extends ConsumerWidget {
     final people = ref.watch(peopleProvider);
     final meId = ref.watch(meProvider)?.id;
     final info = ref.watch(configValueProvider).currency(expense.currency);
-    final view = ref.watch(moneyViewProvider);
     final colors = BalanceColors.of(context);
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
@@ -119,7 +117,7 @@ class ExpenseTile extends ConsumerWidget {
             ),
             if (mine != 0)
               Text(
-                view.format(mine, expense.currency, absolute: true),
+                Money.format(mine, info, absolute: true),
                 style: theme.textTheme.titleSmall?.copyWith(
                   color: colors.forAmount(mine),
                   fontWeight: FontWeight.w700,

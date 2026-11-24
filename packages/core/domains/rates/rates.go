@@ -59,6 +59,12 @@ func (t Table) Rate(code string) (*big.Rat, bool) {
 	return r, ok
 }
 
+// Has reports whether code has a rate.
+func (t Table) Has(code string) bool {
+	_, ok := t.Rate(code)
+	return ok
+}
+
 // Codes lists the currencies in the table, sorted.
 func (t Table) Codes() []string {
 	out := make([]string, 0, len(t.Rates))

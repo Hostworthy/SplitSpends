@@ -15,6 +15,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/friend"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/rates"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
@@ -59,12 +60,13 @@ type Service struct {
 	groups   *group.Service
 	friends  friend.Repository
 	receipts *receipt.Service
+	rates    *rates.Service
 	clock    clock.Clock
 }
 
 // NewService builds a Service. reader may be nil when AI is disabled.
-func NewService(reader ports.ReceiptReader, users *user.Service, groups *group.Service, friends friend.Repository, receipts *receipt.Service, c clock.Clock) *Service {
-	return &Service{reader: reader, users: users, groups: groups, friends: friends, receipts: receipts, clock: c}
+func NewService(reader ports.ReceiptReader, users *user.Service, groups *group.Service, friends friend.Repository, receipts *receipt.Service, r *rates.Service, c clock.Clock) *Service {
+	return &Service{reader: reader, users: users, groups: groups, friends: friends, receipts: receipts, rates: r, clock: c}
 }
 
 // known is everything about the user that the model may refer to.
@@ -181,13 +183,27 @@ func (s *Service) Draft(ctx context.Context, actor uuid.UUID, req Request) (*Dra
 	if err != nil {
 		return nil, err
 	}
-	d := build(k, req, ext, today, currency)
-	return d, nil
+	table := func() *rates.Table {
+		if s.rates == nil {
+			return nil
+		}
+		t, err := s.rates.Latest(ctx)
+		if err != nil {
+			return nil
+		}
+		return t
+	}
+	return build(k, req, ext, today, currency, table)
 }
 
 // build turns the model's answer into a valid draft, dropping anything it
 // made up and explaining what changed in Warnings.
-func build(k *known, req Request, ext ports.DraftExtract, today, currency string) *Draft {
+//
+// Expenses always use the group's currency (or the user's own outside
+// groups). When the model reads amounts in another currency, typically from
+// a receipt abroad, they are converted here with today's rates from table,
+// exactly and line by line, rather than trusting the model's arithmetic.
+func build(k *known, req Request, ext ports.DraftExtract, today, currency string, table func() *rates.Table) (*Draft, error) {
 	d := &Draft{ReceiptID: req.ReceiptID, Description: strings.TrimSpace(ext.Description), Date: today,
 		Category: expense.DefaultCategory, Method: expense.MethodEqual}
 	warn := func(msg string) { d.Warnings = append(d.Warnings, msg) }
@@ -203,15 +219,27 @@ func build(k *known, req Request, ext ports.DraftExtract, today, currency string
 		d.GroupID = &g.ID
 		currency = g.DefaultCurrency
 	}
-	if c, ok := money.Lookup(ext.Currency); ok {
-		currency = c.Code
-	}
 	d.Currency = currency
-	cur, _ := money.Lookup(currency)
+	source := currency
+	if c, ok := money.Lookup(ext.Currency); ok {
+		source = c.Code
+	}
+	from, _ := money.Lookup(source)
+	var rate *rates.Table
+	if source != currency {
+		rate = table()
+		if rate == nil || !rate.Has(source) || !rate.Has(currency) {
+			return nil, errs.NoRates("These amounts are in " + source + ", and exchange rates are not available right now to convert them to " +
+				currency + ". Try again later, or enter the expense yourself.")
+		}
+	}
 	amount := func(s string) int64 {
-		v, ok := expense.ParseDecimal(s, cur.Exponent)
+		v, ok := expense.ParseDecimal(s, from.Exponent)
 		if !ok || v < 0 {
 			return 0
+		}
+		if rate != nil {
+			v, _ = rate.Convert(rates.Amount{Currency: source, Minor: v}, currency)
 		}
 		return v
 	}
@@ -315,7 +343,25 @@ func build(k *known, req Request, ext ports.DraftExtract, today, currency string
 			warn("Could not match “" + name + "” to anyone you know.")
 		}
 	}
-	return d
+	if rate != nil {
+		original, _ := expense.ParseDecimal(ext.Amount, from.Exponent)
+		note := "Converted from " + source + " to " + currency + " at 1 " + source + " = " + unitRate(rate, source, currency) + " " + currency
+		if !rate.Published.IsZero() {
+			note += " (rates of " + rate.Published.Format("2 Jan 2006") + ")"
+		}
+		if original > 0 {
+			note += "; the receipt total was " + money.Format(original, source)
+		}
+		warn(note + ".")
+	}
+	return d, nil
+}
+
+// unitRate is how much one unit of from buys in to, to four decimals.
+func unitRate(t *rates.Table, from, to string) string {
+	rf, _ := t.Rate(from)
+	rt, _ := t.Rate(to)
+	return new(big.Rat).Quo(rt, rf).FloatString(4)
 }
 
 // reconcile makes items + tax + tip equal the receipt total: a gap goes to

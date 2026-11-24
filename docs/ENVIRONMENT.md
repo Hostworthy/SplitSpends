@@ -19,7 +19,6 @@ The server reads everything from the environment. Invalid or missing required va
 | `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API from elsewhere, or `*` |
 | `TRUST_PROXY` | `false` | Use `X-Forwarded-For` for client IPs (rate limits) behind a reverse proxy |
 | `MCP_ENABLED` | `true` | Serve the MCP endpoint at `/mcp` |
-| `RATES_URL` | `https://open.er-api.com/v6/latest/USD` | Exchange rates for showing totals in each person's currency. Any URL returning the [open ExchangeRate-API](https://www.exchangerate-api.com/docs/free) or [Frankfurter](https://frankfurter.dev) format works, including a self-hosted Frankfurter (`https://<host>/v1/latest?base=USD`). `none` turns conversion off. Only the rate list is downloaded; no user data is sent |
 
 ## Serverless and Storage
 
@@ -93,5 +92,11 @@ Examples:
 | OpenRouter | `openai` | `https://openrouter.ai/api/v1` | any listed vision model |
 | Ollama (local) | `openai` | `http://localhost:11434/v1` | a local vision model |
 | Your own server | `openai` | its OpenAI-compatible root | its model id |
+
+### Exchange Rates for Receipts
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `RATES_URL` | `https://open.er-api.com/v6/latest/USD` | Exchange rates for converting a receipt in another currency into the group's currency. Fetched only when AI is on, at most about twice a day, and cached in the database. Any URL returning the [open ExchangeRate-API](https://www.exchangerate-api.com/docs/free) or [Frankfurter](https://frankfurter.dev) format works, including a self-hosted Frankfurter (`https://<host>/v1/latest?base=USD`). `none` turns conversion off. Only the rate list is downloaded; no user data is sent |
 
 The OpenAI-compatible provider must support JSON-schema response formats and, for receipts, image input. Receipt photos and instructions are sent to the configured provider, so pick one whose data handling you are comfortable with, or run a local model.

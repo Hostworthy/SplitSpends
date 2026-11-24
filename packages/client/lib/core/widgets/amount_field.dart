@@ -97,6 +97,9 @@ class _AmountFieldState extends ConsumerState<AmountField> {
   Widget build(BuildContext context) {
     final info = ref.watch(configValueProvider).currency(widget.currency);
     final theme = Theme.of(context);
+    final style = widget.large
+        ? theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700)
+        : null;
     return TextField(
       controller: _controller,
       autofocus: widget.autofocus,
@@ -112,15 +115,22 @@ class _AmountFieldState extends ConsumerState<AmountField> {
           RegExp(widget.allowNegative ? r'[0-9.,\-]' : r'[0-9.,]'),
         ),
       ],
-      style: widget.large
-          ? theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            )
-          : null,
+      style: style,
       decoration: InputDecoration(
         labelText: widget.label,
         hintText: Money.toPlain(0, info.exponent),
-        prefixText: '${info.symbol} ',
+        // Always visible (unlike prefixText), since the currency is set by
+        // the group or settings and never picked next to the amount.
+        prefixIcon: Padding(
+          padding: const EdgeInsetsDirectional.only(start: 16, end: 6),
+          child: Text(
+            info.symbol,
+            style: (style ?? theme.textTheme.bodyLarge)?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        prefixIconConstraints: const BoxConstraints(),
         errorText: _error,
       ),
     );

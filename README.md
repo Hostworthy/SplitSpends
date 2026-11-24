@@ -26,7 +26,7 @@ SplitSpends keeps track of who paid what and who owes whom, so shared costs neve
 ## Features
 
 - **Every split**: equal, exact, percent, shares, adjustment and itemized; multiple payers; recurring expenses.
-- **Groups and friends**: trips, homes and couples, expenses outside groups, people added by name or email, many currencies with totals shown in yours.
+- **Groups and friends**: trips, homes and couples, expenses outside groups, people added by name or email, balances per currency.
 - **Clear money**: amounts are stored as exact integers, so balances always add up to the cent.
 - **Everything else**: comments, activity feed, email notifications, search, charts, CSV export, undo delete, backup and restore, dark mode.
 - **Works offline**: on-device mode needs no network; connected mode queues changes and syncs when you are back online.

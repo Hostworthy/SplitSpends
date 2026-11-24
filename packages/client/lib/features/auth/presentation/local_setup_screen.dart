@@ -63,7 +63,7 @@ class _LocalSetupScreenState extends ConsumerState<LocalSetupScreen> {
           leading: const Icon(Icons.currency_exchange_rounded),
           title: const Text('Your currency'),
           subtitle: const Text(
-            'Totals are shown in it. You can change it later.',
+            'Used for your expenses. Each group can have its own.',
           ),
           trailing: Text(
             _currency,

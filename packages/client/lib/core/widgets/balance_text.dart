@@ -5,7 +5,6 @@ import 'package:splitspends/app/theme.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/models/balance.dart';
 import 'package:splitspends/core/money/money.dart';
-import 'package:splitspends/core/rates/rates.dart';
 
 /// Formats money with the server's currency metadata.
 class MoneyText extends ConsumerWidget {
@@ -55,21 +54,20 @@ class BalanceText extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = BalanceColors.of(context);
-    final view = ref.watch(moneyViewProvider);
+    final config = ref.watch(configValueProvider);
     final theme = Theme.of(context).textTheme;
-    final shown = view.combine(balances);
-    if (shown.isEmpty) {
+    final nonZero = balances.where((b) => !b.isZero).toList();
+    if (nonZero.isEmpty) {
       return Text(
         settledLabel,
         style: theme.bodySmall?.copyWith(color: colors.settled),
       );
     }
-    final breakdown = dense ? null : view.breakdown(balances);
     return Column(
       crossAxisAlignment: align,
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final b in shown)
+        for (final b in nonZero)
           Column(
             crossAxisAlignment: align,
             mainAxisSize: MainAxisSize.min,
@@ -82,20 +80,17 @@ class BalanceText extends ConsumerWidget {
                   ),
                 ),
               Text(
-                view.format(b.amount, b.currency, absolute: true),
+                Money.format(
+                  b.amount,
+                  config.currency(b.currency),
+                  absolute: true,
+                ),
                 style: theme.titleSmall?.copyWith(
                   color: colors.forAmount(b.amount),
                   fontWeight: FontWeight.w700,
                 ),
               ),
             ],
-          ),
-        if (breakdown != null)
-          Text(
-            breakdown,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.labelSmall?.copyWith(color: colors.settled),
           ),
       ],
     );
@@ -111,7 +106,7 @@ class BalancePill extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = BalanceColors.of(context);
-    final view = ref.watch(moneyViewProvider);
+    final info = ref.watch(configValueProvider).currency(balance.currency);
     final positive = balance.amount > 0;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -120,7 +115,7 @@ class BalancePill extends ConsumerWidget {
         borderRadius: BorderRadius.circular(99),
       ),
       child: Text(
-        '${positive ? '+' : '−'}${view.format(balance.amount, balance.currency, absolute: true)}',
+        '${positive ? '+' : '−'}${Money.format(balance.amount, info, absolute: true)}',
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
           color: colors.forAmount(balance.amount),
           fontWeight: FontWeight.w700,

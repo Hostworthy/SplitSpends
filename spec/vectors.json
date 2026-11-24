@@ -1,5 +1,5 @@
 {
- "description": "Shared test vectors for split, balance and conversion rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. Debts are sorted by currency, then amount descending, then from, then to. Conversions round half away from zero; totals add exact values and round once.",
+ "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. Debts are sorted by currency, then amount descending, then from, then to. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once.",
  "splits": [
   {
    "name": "equal three ways",
@@ -619,15 +619,6 @@
     "BHD": "0.376",
     "GBP": "0.75",
     "INR": "92.92"
-   },
-   "exponents": {
-    "USD": 2,
-    "EUR": 2,
-    "JPY": 0,
-    "BHD": 3,
-    "GBP": 2,
-    "INR": 2,
-    "SEK": 2
    }
   },
   "convert": [

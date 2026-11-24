@@ -2,8 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/theme.dart';
+import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/models/balance.dart';
-import 'package:splitspends/core/rates/rates.dart';
+import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/widgets/skeleton.dart';
 
 /// Hero card with the overall balance and the owed / owing split.
@@ -16,26 +17,20 @@ class SummaryCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final view = ref.watch(moneyViewProvider);
+    final config = ref.watch(configValueProvider);
     final colors = BalanceColors.of(context);
 
     String format(Balance b) =>
-        view.format(b.amount, b.currency, absolute: true);
+        Money.format(b.amount, config.currency(b.currency), absolute: true);
 
-    final net = view.combine(summary.balances);
-    final headline = summary.isSettled || net.isEmpty
+    final headline = summary.isSettled
         ? 'All settled up'
-        : net
+        : summary.balances
               .map((b) {
                 final sign = b.amount > 0 ? '+' : '−';
                 return '$sign${format(b)}';
               })
               .join('  ·  ');
-    final converted =
-        view.rates != null &&
-        [...summary.owed, ...summary.owing].any(
-          (b) => b.currency != view.currency && view.rates!.has(b.currency),
-        );
 
     return Card(
       color: scheme.primaryContainer,
@@ -63,7 +58,7 @@ class SummaryCard extends ConsumerWidget {
                 Expanded(
                   child: _Side(
                     label: 'You are owed',
-                    values: view.combine(summary.owed).map(format).toList(),
+                    values: summary.owed.map(format).toList(),
                     color: colors.owed,
                     icon: Icons.south_west_rounded,
                   ),
@@ -72,23 +67,13 @@ class SummaryCard extends ConsumerWidget {
                 Expanded(
                   child: _Side(
                     label: 'You owe',
-                    values: view.combine(summary.owing).map(format).toList(),
+                    values: summary.owing.map(format).toList(),
                     color: colors.owe,
                     icon: Icons.north_east_rounded,
                   ),
                 ),
               ],
             ),
-            if (converted) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Shown in ${view.currency} at today\'s exchange rates. '
-                'Each expense keeps its own currency.',
-                style: text.bodySmall?.copyWith(
-                  color: scheme.onPrimaryContainer.withValues(alpha: 0.75),
-                ),
-              ),
-            ],
           ],
         ),
       ),

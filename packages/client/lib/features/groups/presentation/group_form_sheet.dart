@@ -137,7 +137,8 @@ class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.currency_exchange_rounded),
-            title: const Text('Default currency'),
+            title: const Text('Currency'),
+            subtitle: const Text('Every expense in this group uses it.'),
             trailing: Text(_currency, style: text.titleMedium),
             onTap: () async {
               final code = await pickCurrency(context, selected: _currency);

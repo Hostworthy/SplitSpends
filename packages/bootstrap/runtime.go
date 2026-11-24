@@ -127,12 +127,15 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 	receipts := receipt.NewService(receiptRepo, blobs, reader, c)
 	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
 		Connections: friends, Receipts: receiptRepo, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+	// Rates only convert AI drafts read in another currency, so nothing is
+	// fetched unless AI is on.
 	var source rates.Source
-	if cfg.RatesURL != "" {
+	if cfg.RatesURL != "" && reader != nil {
 		source = exchange.New(cfg.RatesURL)
 	}
+	fx := rates.NewService(repositories.NewRates(db), source, c)
 	return &Services{
-		Rates:    rates.NewService(repositories.NewRates(db), source, c),
+		Rates:    fx,
 		Auth:     auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, notifier, tx, c),
 		Users:    users,
 		Friends:  friends,
@@ -142,7 +145,7 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 		Expenses: expenses,
 		Transfer: transfer.NewService(users, friendRepo, groups, expenses, tx),
 		Receipts: receipts,
-		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, c),
+		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, fx, c),
 		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users),
 	}
 }
@@ -163,7 +166,7 @@ func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 			break
 		}
 	}
-	// Rates only affect display, so a provider outage never fails the jobs.
+	// Rates are a convenience for AI drafts; an outage never fails the jobs.
 	if err := rt.Services.Rates.Refresh(ctx); err != nil {
 		rt.Log.Warn("jobs.rates.failed", "error", err)
 	}

@@ -14,9 +14,11 @@ Amounts are **integers in minor units** of their currency (`1250` in `USD` is `$
 
 Balance sign convention, always from the point of view of the caller unless noted: **positive means you are owed**, negative means you owe.
 
-### Display Currency
+### Currencies
 
-Balances are always per currency and never change with exchange rates. Clients show totals in the user's `defaultCurrency` by converting with `GET /rates`: `minor × 10^(exp(to) − exp(from)) × rate(to) / rate(from)`, computed with exact fractions and rounded half away from zero. A sum of several currencies adds exact values and rounds once. Amounts without a rate are shown in their own currency. `spec/vectors.json` (`conversions`) pins these rules for Go and Dart.
+Every group has one currency (`defaultCurrency`), and expenses outside groups use the user's own `defaultCurrency`. The app never asks for a currency per expense: `currency` may be left out of `POST /expenses` and `POST /payments`, and the server fills it in that way. API clients may still send one, and older data can hold several currencies, so balances stay per currency and are never converted. Changing a group's currency affects new expenses only.
+
+When AI reads amounts in another currency (a receipt from abroad), `POST /ai/expense-draft` converts them to the target currency with that day's exchange rate (`RATES_URL`), exactly and line by line: `minor × 10^(exp(to) − exp(from)) × rate(to) / rate(from)`, rounded half away from zero. A warning in the draft says which rate was used and what the receipt total was. If no rate is available the request fails with `RATES_UNAVAILABLE` rather than guessing. `spec/vectors.json` (`conversions`) pins the rule.
 
 ### Envelopes
 
@@ -27,7 +29,7 @@ Balances are always per currency and never change with exchange rates. Clients s
 | Delete | 204 | empty |
 | Error | 4xx/5xx | `{ "error": string, "code": string, "field"?: string, "requestId"?: string }` |
 
-Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `CONFLICT` (409), `RATE_LIMITED` (429), `AI_DISABLED` (503), `INTERNAL` (500).
+Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `CONFLICT` (409), `RATE_LIMITED` (429), `AI_DISABLED` (503), `RATES_UNAVAILABLE` (503), `INTERNAL` (500).
 
 Lists accept `limit` (default 50, max 200) and `offset` (default 0).
 
@@ -149,7 +151,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/expenses` | `?groupId=&friendId=&q=&category=&from=&to=&kind=&includeDeleted=` | List of `Expense`, newest `date` first |
-| POST | `/expenses` | `{ id?, groupId?, description, currency, total, date, category?, notes?, splitMethod, payers, splits?, items?, tax?, tip?, receiptId?, recurrence? }` | 201 `{ data: Expense }` |
+| POST | `/expenses` | `{ id?, groupId?, description, currency?, total, date, category?, notes?, splitMethod, payers, splits?, items?, tax?, tip?, receiptId?, recurrence? }` | 201 `{ data: Expense }` |
 | GET | `/expenses/{expenseId}` | | `{ data: Expense }` |
 | PUT | `/expenses/{expenseId}` | same as POST (full replace) | `{ data: Expense }` |
 | DELETE | `/expenses/{expenseId}` | | 204 (soft delete) |
@@ -157,14 +159,13 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | GET | `/expenses/{expenseId}/comments` | | List of `{ id, expenseId, user: User, body, createdAt }` |
 | POST | `/expenses/{expenseId}/comments` | `{ body }` | 201 `{ data: Comment }` |
 | DELETE | `/comments/{commentId}` | | 204 (author only) |
-| POST | `/payments` | `{ id?, groupId?, fromUserId, toUserId, amount, currency, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
+| POST | `/payments` | `{ id?, groupId?, fromUserId, toUserId, amount, currency?, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
 
 ### Activity and Stats
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/activity` | `?groupId=&expenseId=` | List of `Activity`, newest first |
-| GET | `/rates` | | `{ data: { enabled, base, publishedAt, fetchedAt, source, rates: { "EUR": "0.912", ... } } }`. Rates are decimal strings: units of each currency per one `base`. `enabled` is false when the host set `RATES_URL=none`; `rates` is empty when none could be fetched yet. The server refreshes them about twice a day and serves the last good table when the provider is down |
 | GET | `/stats` | `?groupId=&from=&to=&currency=` | `{ data: { currency, totalSpent, byCategory: [{ category, amount }], byMonth: [{ month: "2026-11", amount }], byMember: [{ userId, paid, owed }] } }`. `totalSpent` is your share (or the group total when `groupId` is set) |
 
 ### Receipts and AI
@@ -174,7 +175,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | POST | `/receipts` | `multipart/form-data` field `file` (jpeg, png, webp, heic; max 10 MB) | 201 `{ data: { id, contentType, size, createdAt } }` |
 | GET | `/receipts/{receiptId}` | | the image bytes |
 | POST | `/receipts/{receiptId}/scan` | `{ currency? }` | `{ data: ReceiptScan }`; 503 `AI_DISABLED` when the host did not configure AI |
-| POST | `/ai/expense-draft` | `{ text?, groupId?, receiptId? }` | `{ data: ExpenseDraft }`; 503 `AI_DISABLED` when the host did not configure AI |
+| POST | `/ai/expense-draft` | `{ text?, groupId?, receiptId? }` | `{ data: ExpenseDraft }` in the group's (or your) currency, converted when the receipt is in another one; 503 `AI_DISABLED` when the host did not configure AI, 503 `RATES_UNAVAILABLE` when a conversion is needed but no rate is available |
 
 ```jsonc
 // ReceiptScan

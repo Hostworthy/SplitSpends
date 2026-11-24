@@ -183,10 +183,35 @@ func newID(id *uuid.UUID) uuid.UUID {
 	return uuid.New()
 }
 
+// currency is the one a new expense or payment uses when the client leaves
+// it out: the group's, or the actor's own outside groups. People never pick
+// a currency per expense in the app.
+func (s *Service) currency(ctx context.Context, actor uuid.UUID, groupID *uuid.UUID, given string) (string, error) {
+	if given != "" {
+		return given, nil
+	}
+	if groupID != nil {
+		g, err := s.groups.Get(ctx, *groupID)
+		if err != nil {
+			return "", err
+		}
+		return g.DefaultCurrency, nil
+	}
+	u, err := s.users.Get(ctx, actor)
+	if err != nil {
+		return "", err
+	}
+	return u.DefaultCurrency, nil
+}
+
 // Create books a new expense.
 func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expense, error) {
 	if e, err := s.existing(ctx, actor, in.ID); e != nil || err != nil {
 		return e, err
+	}
+	var err error
+	if in.Currency, err = s.currency(ctx, actor, in.GroupID, in.Currency); err != nil {
+		return nil, err
 	}
 	now := s.clock.Now()
 	n, err := Normalize(in, clock.Today(s.clock))
@@ -225,6 +250,9 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		in.Method, in.Category = MethodExact, PaymentCategory
 	}
 	in.GroupID = e.GroupID
+	if in.Currency == "" {
+		in.Currency = e.Currency
+	}
 	n, err := Normalize(in, e.Date)
 	if err != nil {
 		return nil, err
@@ -340,6 +368,9 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	}
 	if people[in.From] == nil || people[in.To] == nil {
 		return nil, errs.Validation("toUserId", "Unknown person.")
+	}
+	if in.Currency, err = s.currency(ctx, actor, in.GroupID, in.Currency); err != nil {
+		return nil, err
 	}
 	n, err := Normalize(Input{
 		GroupID: in.GroupID, Description: "Payment", Currency: in.Currency, Total: in.Amount, Date: in.Date,

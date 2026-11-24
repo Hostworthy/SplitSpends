@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/features/expenses/presentation/editor/expense_form.dart';
@@ -60,6 +61,8 @@ class WithSection extends ConsumerWidget {
       form.update(() => form.currency = picked.defaultCurrency);
     } else if (picked == false && form.groupId != null) {
       form.setPeople([form.meId]);
+      final mine = ref.read(meProvider)?.defaultCurrency;
+      if (mine != null) form.update(() => form.currency = mine);
     }
   }
 

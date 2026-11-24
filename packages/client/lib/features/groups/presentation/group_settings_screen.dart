@@ -241,7 +241,10 @@ class _SettingsState extends ConsumerState<_Settings> {
         const SectionHeader('Money'),
         ListTile(
           leading: const Icon(Icons.currency_exchange_rounded),
-          title: const Text('Default currency'),
+          title: const Text('Currency'),
+          subtitle: const Text(
+            'New expenses in this group use it. Existing ones keep theirs.',
+          ),
           trailing: Text(group.defaultCurrency),
           onTap: () async {
             final code = await pickCurrency(

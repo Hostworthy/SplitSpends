@@ -15,7 +15,7 @@ import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/presentation/editor/expense_form.dart';
 import 'package:splitspends/app/repositories.dart';
 
-/// Description, category, amount, currency, date, repeat, notes, receipt.
+/// Description, category, amount, date, repeat, notes, receipt.
 class DetailsSection extends ConsumerStatefulWidget {
   const DetailsSection({super.key, required this.form, this.onSubmit});
 
@@ -138,36 +138,16 @@ class _DetailsSectionState extends ConsumerState<DetailsSection> {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              SizedBox(
-                width: 84,
-                height: 64,
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(padding: EdgeInsets.zero),
-                  onPressed: () async {
-                    final code = await pickCurrency(
-                      context,
-                      selected: form.currency,
-                    );
-                    if (code != null) form.update(() => form.currency = code);
-                  },
-                  child: Text(form.currency),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: AmountField(
-                  key: ValueKey('total-${form.currency}'),
-                  currency: form.currency,
-                  initial: form.total,
-                  large: true,
-                  onSubmitted: widget.onSubmit,
-                  textInputAction: TextInputAction.done,
-                  onChanged: (v) => form.update(() => form.total = v),
-                ),
-              ),
-            ],
+          // The currency comes from the group (or your Account settings for
+          // expenses outside groups); it is never picked per expense.
+          AmountField(
+            key: ValueKey('total-${form.currency}'),
+            currency: form.currency,
+            initial: form.total,
+            large: true,
+            onSubmitted: widget.onSubmit,
+            textInputAction: TextInputAction.done,
+            onChanged: (v) => form.update(() => form.total = v),
           ),
           const SizedBox(height: 12),
           Wrap(

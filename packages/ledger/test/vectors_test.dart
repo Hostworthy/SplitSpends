@@ -105,34 +105,4 @@ void main() {
       () => expect(simplify(nets(entries)), parse('simplified')),
     );
   });
-  group('conversion vectors', () {
-    final c = doc['conversions'] as Map<String, dynamic>;
-    final t = c['table'] as Map<String, dynamic>;
-    final table = RateTable.parse(
-      base: t['base'] as String,
-      rates: (t['rates'] as Map<String, dynamic>).cast<String, String>(),
-      exponents: (t['exponents'] as Map<String, dynamic>).cast<String, int>(),
-    );
-    Amount amount(dynamic a) =>
-        (currency: a['currency'] as String, minor: a['minor'] as int);
-
-    for (final v in (c['convert'] as List).cast<Map<String, dynamic>>()) {
-      test(v['name'] as String, () {
-        final a = amount(v['amount']);
-        expect(
-          table.convert(a.minor, a.currency, v['to'] as String),
-          v['expect'],
-        );
-      });
-    }
-    for (final v in (c['totals'] as List).cast<Map<String, dynamic>>()) {
-      test(v['name'] as String, () {
-        final got = table.total([
-          for (final a in v['amounts'] as List) amount(a),
-        ], v['to'] as String);
-        expect(got.total, v['expect']);
-        expect(got.missing, (v['missing'] as List).cast<String>());
-      });
-    }
-  });
 }

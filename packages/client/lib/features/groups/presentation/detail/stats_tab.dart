@@ -7,7 +7,6 @@ import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/category_icon.dart';
-import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/domain/stats.dart';
@@ -23,7 +22,7 @@ class GroupStatsTab extends ConsumerStatefulWidget {
 }
 
 class _GroupStatsTabState extends ConsumerState<GroupStatsTab> {
-  late String _currency = widget.group.defaultCurrency;
+  late final String _currency = widget.group.defaultCurrency;
 
   @override
   Widget build(BuildContext context) {
@@ -45,17 +44,6 @@ class _GroupStatsTabState extends ConsumerState<GroupStatsTab> {
               children: [
                 Expanded(
                   child: StatsTotal(stats: s, label: 'Group spending'),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.currency_exchange_rounded, size: 18),
-                  label: Text(_currency),
-                  onPressed: () async {
-                    final code = await pickCurrency(
-                      context,
-                      selected: _currency,
-                    );
-                    if (code != null) setState(() => _currency = code);
-                  },
                 ),
               ],
             ),

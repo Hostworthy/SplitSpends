@@ -247,6 +247,7 @@ var statusByKind = map[errs.Kind]int{
 	errs.KindConflict:     http.StatusConflict,
 	errs.KindRateLimited:  http.StatusTooManyRequests,
 	errs.KindUnavailable:  http.StatusServiceUnavailable,
+	errs.KindNoRates:      http.StatusServiceUnavailable,
 }
 
 // WriteError maps err to the error envelope. Unknown errors become 500s and
