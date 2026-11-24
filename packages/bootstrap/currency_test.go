@@ -1,10 +1,11 @@
-package bootstrap
+package bootstrap_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
@@ -15,14 +16,9 @@ import (
 // a currency: group expenses take the group's, others the person's own.
 func TestCurrencyComesFromGroupOrPerson(t *testing.T) {
 	ctx := context.Background()
-	svc, notes := setup(t, time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC))
-	if err := svc.Auth.RequestCode(ctx, "ada@example.com", ""); err != nil {
-		t.Fatal(err)
-	}
-	login, err := svc.Auth.Verify(ctx, "ada@example.com", notes.codes["ada@example.com"], "Ada", "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	env := bootstraptest.Open(t, bootstraptest.Options{Now: time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)})
+	svc := env.Services
+	login := env.SignIn(t, "ada@example.com", "Ada")
 	ada := login.User.ID
 	inr := "INR"
 	if _, err := svc.Users.Update(ctx, ada, user.Patch{DefaultCurrency: &inr}); err != nil {

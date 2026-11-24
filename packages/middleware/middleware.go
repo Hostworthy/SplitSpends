@@ -258,8 +258,13 @@ func WriteError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err er
 	body := platform.Error{RequestID: RequestID(r.Context())}
 	status := http.StatusInternalServerError
 	if de, ok := errs.As(err); ok {
-		status = statusByKind[de.Kind]
 		body.Error, body.Code, body.Field = de.Message, string(de.Kind), de.Field
+		if mapped, known := statusByKind[de.Kind]; known {
+			status = mapped
+		} else {
+			// A kind added to errs without a status still answers, as a 500.
+			log.Error("middleware.error.unmapped", "requestId", body.RequestID, "path", r.URL.Path, "kind", de.Kind)
+		}
 	} else {
 		body.Error, body.Code = "Something went wrong. Please try again.", "INTERNAL"
 		log.Error("middleware.error.internal", "requestId", body.RequestID, "path", r.URL.Path, "error", err)

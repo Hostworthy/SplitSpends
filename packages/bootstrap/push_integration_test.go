@@ -1,26 +1,21 @@
-package bootstrap
+package bootstrap_test
 
 import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
-	"github.com/Hostworthy/SplitSpends/packages/core/shared/clock"
-	"github.com/Hostworthy/SplitSpends/packages/database"
 	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
-	"github.com/Hostworthy/SplitSpends/packages/storage"
 	"github.com/Hostworthy/SplitSpends/packages/webpush"
-	"github.com/google/uuid"
 )
 
 // fakeSender stands in for the push service: it records what each
@@ -44,48 +39,14 @@ func (f *fakeSender) Send(_ context.Context, s *push.Subscription, payload []byt
 	return nil
 }
 
-func pushSetup(t *testing.T, now time.Time) (*Services, *fakeNotifier, *fakeSender, *database.DB) {
+// pushSetup wires services with push turned on and delivered before Notify
+// returns.
+func pushSetup(t *testing.T, now time.Time) (*bootstraptest.Env, *fakeSender) {
 	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	ctx := context.Background()
-	pool, err := database.Connect(ctx, url, 4)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	if _, err := pool.Exec(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
-	blobs, err := storage.NewLocal(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	db := &database.DB{Pool: pool}
-	notes := &fakeNotifier{codes: map[string]string{}}
+	cfg := bootstraptest.Defaults()
+	cfg.Serverless, cfg.VAPIDPublicKey = true, "test-key"
 	sender := &fakeSender{sent: map[string][]push.Message{}}
-	cfg := &Config{Secret: []byte("0123456789abcdef0123456789abcdef"), SignupMode: "open", BaseURL: "http://test",
-		AppName: "SplitSpends", Serverless: true, VAPIDPublicKey: "test-key"}
-	svc := WireWithPush(db, notes, blobs, nil, sender, clock.Fixed{At: now}, cfg, slog.New(slog.DiscardHandler))
-	return svc, notes, sender, db
-}
-
-func signIn(t *testing.T, svc *Services, notes *fakeNotifier, email, name string) uuid.UUID {
-	t.Helper()
-	ctx := context.Background()
-	if err := svc.Auth.RequestCode(ctx, email, ""); err != nil {
-		t.Fatal(err)
-	}
-	login, err := svc.Auth.Verify(ctx, email, notes.codes[email], name, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return login.User.ID
+	return bootstraptest.Open(t, bootstraptest.Options{Config: cfg, Now: now, Sender: sender}), sender
 }
 
 func deviceKeys(t *testing.T) (string, string) {
@@ -101,9 +62,10 @@ func deviceKeys(t *testing.T) (string, string) {
 func TestPushSubscriptionsAndDelivery(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
-	svc, notes, sender, _ := pushSetup(t, now)
-	ada := signIn(t, svc, notes, "ada@example.com", "Ada")
-	ben := signIn(t, svc, notes, "ben@example.com", "Ben")
+	env, sender := pushSetup(t, now)
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
 	p256dh, auth := deviceKeys(t)
 
 	phone := push.Input{Endpoint: "https://ntfy.example.com/upAbc?up=1", P256dh: p256dh, Auth: auth, Platform: "unifiedpush", Label: "Pixel"}
@@ -155,7 +117,7 @@ func TestPushSubscriptionsAndDelivery(t *testing.T) {
 	if !strings.Contains(got[1].Title, "Rent") || !strings.Contains(got[1].Body, "€500.00") || got[1].URL != "http://test" {
 		t.Fatalf("unexpected expense push %+v", got[1])
 	}
-	for _, n := range notes.sent {
+	for _, n := range env.Notifier.Sent() {
 		if n.To == "ben@example.com" && strings.Contains(n.Subject, "Rent") {
 			t.Fatalf("Ben turned off expense emails but got one: %+v", n)
 		}
@@ -177,9 +139,9 @@ func TestPushSubscriptionsAndDelivery(t *testing.T) {
 }
 
 func TestVAPIDKeysAreShared(t *testing.T) {
-	_, _, _, db := pushSetup(t, time.Now())
+	env, _ := pushSetup(t, time.Now())
 	ctx := context.Background()
-	keys := repositories.NewVAPIDKeys(db)
+	keys := repositories.NewVAPIDKeys(env.DB)
 	pub1, priv1, _ := webpush.Keys()
 	gotPub, gotPriv, err := keys.Ensure(ctx, pub1, priv1)
 	if err != nil || gotPub != pub1 || gotPriv != priv1 {

@@ -98,7 +98,9 @@ Follow [ADR-001](adr/001-domain-driven-design.md):
 
 - Pure domain logic (splits, balances, receipt reconciliation) has table-style unit tests in `packages/core`.
 - `packages/archtest` fails when a package imports across a forbidden boundary.
-- `packages/bootstrap/integration_test.go` runs services against a real database.
+- Database tests skip unless `TEST_DATABASE_URL` is set. Each one calls `bootstraptest.Open(t, bootstraptest.Options{})` (`packages/bootstrap/bootstraptest`), which wipes and migrates the schema, wires every service with a recorded notifier (`env.Notifier.Code(email)`, `Sent()`) and a clock that moves only on `env.Clock.Add`, and holds a database lock so packages never run database tests at the same time. `env.SignIn(t, email, name)` returns a session. `packages/bootstrap` tests services this way.
+- `apps/api/routes` tests the HTTP API: `s := newServer(t, bootstraptest.Options{})` serves the wired routes behind the middleware chain of `apps/api/main.go`; `s.signIn(t, email, name).Token` signs in over HTTP, and `s.call(t, method, path, token, body).want(t, status)` sends JSON, with `data[T]`, `items[T]` and `failure` decoding the envelopes. The sign-in routes are rate limited, so one server takes about ten sign-ins. `TestRoutesRequireAuth` reads `router.go` and expects 401 without a token from every route that is not in its `anonymous` list; add a route there only when it must work signed out.
+- `packages/middleware` has plain `httptest` unit tests.
 - `packages/ledger/test` runs `spec/vectors.json` against the Dart rules; `packages/client/test` has unit and widget tests.
 - `apps/apk/integration_test` runs the real app on an Android device or emulator: on-device mode, then signing in to a server and uploading. CI runs it on an Android 13 emulator against a development server when started by hand (Actions, CI, Run workflow), checks the upload through the API, and publishes the release APK as the `splitspends-apk` artifact. To run it yourself, start the API with `SIGNUP_MODE=open` and no SMTP, then:
 
