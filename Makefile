@@ -3,9 +3,12 @@
 .DEFAULT_GOAL := help
 TEST_DATABASE_URL ?= postgres://splitspends:splitspends@localhost:5432/splitspends_test?sslmode=disable
 DART_MEMBERS := packages/ledger packages/client apps/apk apps/ios apps/web
-# Built with the project's Go toolchain, so it understands this Go version.
-GOLANGCI ?= go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
-GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.10.0
+# `go run pkg@version` picks the toolchain from the tool's own go.mod, and a
+# tool built with an older Go refuses this module, so pin go.mod's version.
+# CI builds the same golangci-lint version (.github/workflows/ci.yml).
+GO_VERSION := $(shell sed -n 's/^go //p' go.mod)
+GOLANGCI ?= GOTOOLCHAIN=go$(GO_VERSION) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+GOVULNCHECK ?= GOTOOLCHAIN=go$(GO_VERSION) go run golang.org/x/vuln/cmd/govulncheck@v1.10.0
 
 help:
 	@echo "Targets:"
