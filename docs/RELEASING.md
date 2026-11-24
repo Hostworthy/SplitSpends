@@ -21,11 +21,18 @@ To stop anyone tagging by mistake, add a tag ruleset for `v*` (Settings, Rules, 
 | Container image `ghcr.io/hostworthy/splitspends:<tag>` | Ubuntu | linux/amd64; includes the server and the web app |
 | `SHA256SUMS` | | Checksums of every file |
 
+Every file and the image also get a signed build provenance attestation, and the image carries a software bill of materials. The release notes print the image digest and the commands to check them; checksums alone only catch a damaged download, because they are published next to the files.
+
+```bash
+gh attestation verify splitspends-server-v0.1.0-linux-amd64.tar.gz -R Hostworthy/SplitSpends
+gh attestation verify oci://ghcr.io/hostworthy/splitspends:v0.1.0 -R Hostworthy/SplitSpends
+```
+
 App versions use the tag without the `v` and the suffix (`0.1.0`) and the workflow run number as the build number.
 
 ## Redoing a Release
 
-If a run fails, fix the workflow on `main`, then move the tag to the fixed commit and push it again; the workflow runs from scratch and replaces any files already attached to that release.
+If a run fails before the release is published, fix the workflow on `main`, then move the tag to the fixed commit and push it again; the workflow runs from scratch and replaces any files already attached to that release.
 
 ```bash
 git checkout main && git pull
@@ -33,7 +40,7 @@ git tag -f -a v0.1.0-alpha.1 -m "Split Spends v0.1.0-alpha.1"
 git push -f origin v0.1.0-alpha.1
 ```
 
-Move a tag only before people have downloaded the release; afterwards publish the next version (`v0.1.0-alpha.2`) instead.
+Never move a tag once its release is published, even if nobody seems to have downloaded it yet: people and their scripts expect a version to name one build. Publish the next version (`v0.1.0-alpha.2`) instead.
 
 ## Workflow Actions
 
