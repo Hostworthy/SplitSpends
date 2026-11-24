@@ -110,17 +110,24 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Run the app on an Android emulator
+        timeout-minutes: 30
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 33
           arch: x86_64
           target: google_apis
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
           disable-animations: true
           working-directory: apps/android
-          script: flutter test integration_test --dart-define=SPLITSPENDS_TEST_SERVER=http://10.0.2.2:8080 --dart-define=SPLITSPENDS_TEST_CODES=http://10.0.2.2:8099
+          script: ../../scripts/ci/device-test.sh --dart-define=SPLITSPENDS_TEST_SERVER=http://10.0.2.2:8080 --dart-define=SPLITSPENDS_TEST_CODES=http://10.0.2.2:8099
       - name: The upload reached the server
         run: python3 scripts/ci/codes.py server.log --check device-test@example.com Cabin
       - name: Server log
-        if: failure()
+        if: failure() || cancelled()
         run: cat server.log
+      - uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: device-logcat
+          path: device-logcat.txt
+          if-no-files-found: ignore
