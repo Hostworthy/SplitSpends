@@ -12,6 +12,31 @@ Self-hosted expense splitting for friends, flatmates and trips. Everything you w
 - **No account needed**: use it entirely on your phone or in your browser. Connect a server only when you want sync, sharing and emails.
 - **One app** for iOS, Android and the web (Flutter), backed by a small Go server and PostgreSQL.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/phone-home.png" alt="Home: total balance, groups and recent activity" width="240">
+  <img src="docs/images/phone-group-expenses.png" alt="Group expenses by month" width="240">
+  <img src="docs/images/phone-group-balances.png" alt="Simplified settle-up plan and member balances" width="240">
+</p>
+<p align="center">
+  <img src="docs/images/phone-expense-editor.png" alt="Expense editor with a shares split" width="240">
+  <img src="docs/images/phone-expense-detail.png" alt="Itemized dinner with tax and tip" width="240">
+  <img src="docs/images/phone-group-stats.png" alt="Spending by category" width="240">
+</p>
+
+On a desktop browser the same app switches to a side rail with list and detail side by side:
+
+<p align="center">
+  <img src="docs/images/desktop-group-expenses.png" alt="Desktop layout with groups list and group detail" width="860">
+</p>
+
+And it starts with an honest choice, no account required:
+
+<p align="center">
+  <img src="docs/images/desktop-welcome.png" alt="Welcome screen: use on this device or connect to a server" width="860">
+</p>
+
 ## Hosting
 
 Home lab, any VPS, Render (one click), Google Cloud Run or AWS Lambda, including free options: see [docs/HOSTING.md](docs/HOSTING.md).
