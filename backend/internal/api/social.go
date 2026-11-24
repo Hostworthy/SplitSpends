@@ -48,6 +48,25 @@ func (a *API) getFriend(w http.ResponseWriter, r *http.Request) error {
 	return details(w, http.StatusOK, out)
 }
 
+func (a *API) inviteFriend(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r, "userId", "Friend")
+	if err != nil {
+		return err
+	}
+	in, err := decode[platform.FriendInvite](r)
+	if err != nil {
+		return err
+	}
+	if _, err := a.svc.Users.Invite(r.Context(), me(r), id, in.Email); err != nil {
+		return err
+	}
+	d, err := a.svc.Friends.Detail(r.Context(), me(r), id)
+	if err != nil {
+		return err
+	}
+	return details(w, http.StatusOK, toFriend(d.Summary))
+}
+
 func (a *API) removeFriend(w http.ResponseWriter, r *http.Request) error {
 	id, err := pathID(r, "userId", "Friend")
 	if err != nil {
@@ -87,6 +106,9 @@ func (a *API) createGroup(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	create := group.CreateInput{Patch: toPatch(in.GroupPatch)}
+	if create.ID, err = optionalID(in.ID, "id"); err != nil {
+		return err
+	}
 	for _, m := range in.Members {
 		create.Members = append(create.Members, group.Invitee{Email: m.Email, Name: m.Name})
 	}

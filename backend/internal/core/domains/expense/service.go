@@ -157,8 +157,37 @@ func (s *Service) record(ctx context.Context, actor uuid.UUID, kind activity.Kin
 	return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: e.GroupID, ExpenseID: &e.ID, Kind: kind, Data: data, Involved: involved})
 }
 
+// existing returns the expense with a client-chosen id when it already
+// exists and the actor may see it, so retried creates are idempotent.
+func (s *Service) existing(ctx context.Context, actor uuid.UUID, id *uuid.UUID) (*Expense, error) {
+	if id == nil || *id == uuid.Nil {
+		return nil, nil
+	}
+	e, _, err := s.load(ctx, actor, *id)
+	if err == nil {
+		return e, nil
+	}
+	if !errs.Is(err, errs.KindNotFound) {
+		return nil, err
+	}
+	if _, err := s.repo.Get(ctx, *id); err == nil {
+		return nil, errs.Conflict("That expense id is already in use.")
+	}
+	return nil, nil
+}
+
+func newID(id *uuid.UUID) uuid.UUID {
+	if id != nil && *id != uuid.Nil {
+		return *id
+	}
+	return uuid.New()
+}
+
 // Create books a new expense.
 func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expense, error) {
+	if e, err := s.existing(ctx, actor, in.ID); e != nil || err != nil {
+		return e, err
+	}
 	now := s.clock.Now()
 	n, err := Normalize(in, clock.Today(s.clock))
 	if err != nil {
@@ -168,7 +197,7 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expen
 	if err != nil {
 		return nil, err
 	}
-	e := &Expense{ID: uuid.New(), GroupID: in.GroupID, Kind: KindExpense, CreatedBy: actor, CreatedAt: now}
+	e := &Expense{ID: newID(in.ID), GroupID: in.GroupID, Kind: KindExpense, CreatedBy: actor, CreatedAt: now}
 	s.build(e, n, actor, now)
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
 		if err := s.repo.Create(ctx, e); err != nil {
@@ -284,6 +313,7 @@ func (s *Service) Restore(ctx context.Context, actor, id uuid.UUID) (*Expense, e
 
 // PaymentInput records money changing hands.
 type PaymentInput struct {
+	ID       *uuid.UUID
 	GroupID  *uuid.UUID
 	From     uuid.UUID
 	To       uuid.UUID
@@ -295,6 +325,9 @@ type PaymentInput struct {
 
 // RecordPayment books a settle-up payment.
 func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in PaymentInput) (*Expense, error) {
+	if e, err := s.existing(ctx, actor, in.ID); e != nil || err != nil {
+		return e, err
+	}
 	if in.From == in.To || in.From == uuid.Nil || in.To == uuid.Nil {
 		return nil, errs.Validation("toUserId", "Choose two different people.")
 	}
@@ -325,7 +358,7 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 		return nil, err
 	}
 	now := s.clock.Now()
-	e := &Expense{ID: uuid.New(), GroupID: in.GroupID, Kind: KindPayment, CreatedBy: actor, CreatedAt: now}
+	e := &Expense{ID: newID(in.ID), GroupID: in.GroupID, Kind: KindPayment, CreatedBy: actor, CreatedAt: now}
 	s.build(e, n, actor, now)
 	extra := map[string]any{"fromName": people[in.From].Name, "toName": people[in.To].Name}
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
@@ -337,7 +370,7 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	if err != nil {
 		return nil, err
 	}
-	if to := people[in.To]; to.ID != actor && to.Status == user.StatusActive && to.Notifications.PaymentReceived {
+	if to := people[in.To]; !ports.IsQuiet(ctx) && to.ID != actor && to.Status == user.StatusActive && to.Notifications.PaymentReceived {
 		s.notifier.Notify(ctx, ports.Notification{To: to.Email, Name: to.Name,
 			Subject: people[in.From].Name + " paid you " + money.Format(e.Total, e.Currency),
 			Lines:   []string{people[in.From].Name + " recorded a payment of " + money.Format(e.Total, e.Currency) + " to you."},
@@ -347,6 +380,9 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 }
 
 func (s *Service) notify(ctx context.Context, actor uuid.UUID, e *Expense, g *group.Group, updated bool) {
+	if ports.IsQuiet(ctx) {
+		return
+	}
 	people, err := s.users.List(ctx, e.Participants())
 	if err != nil {
 		return

@@ -42,8 +42,21 @@ func Connect(ctx context.Context, url string, maxConns int32) (*pgxpool.Pool, er
 	return pool, nil
 }
 
+// migrateLock is a fixed advisory lock id so concurrent cold starts (several
+// serverless instances) apply migrations one at a time.
+const migrateLock = 7_301_451_982
+
 // Migrate applies every pending migration.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("database.migrate.lock.failed: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateLock); err != nil {
+		return fmt.Errorf("database.migrate.lock.failed: %w", err)
+	}
+	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, migrateLock) //nolint:errcheck
 	goose.SetBaseFS(migrations)
 	goose.SetLogger(goose.NopLogger())
 	if err := goose.SetDialect("postgres"); err != nil {

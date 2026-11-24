@@ -2,9 +2,11 @@ package user
 
 import (
 	"context"
+	"strings"
 
 	"github.com/atb00ker/splitspends/backend/internal/core/ports"
 	"github.com/atb00ker/splitspends/backend/internal/core/shared/clock"
+	"github.com/atb00ker/splitspends/backend/internal/core/shared/errs"
 	"github.com/google/uuid"
 )
 
@@ -62,8 +64,16 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, p Patch) (*User, err
 }
 
 // Ensure returns the user with email, creating an invited user (and sending
-// an invite email) when none exists. created reports whether a new user was made.
+// an invite email) when none exists. Without an email it creates a
+// placeholder known only by name. created reports whether a new user was made.
 func (s *Service) Ensure(ctx context.Context, email, name string, inviter *User) (u *User, created bool, err error) {
+	if strings.TrimSpace(email) == "" {
+		if inviter == nil {
+			return nil, false, errs.Validation("email", "Email is required.")
+		}
+		u, err := s.Placeholder(ctx, nil, name, inviter.ID)
+		return u, err == nil, err
+	}
 	normalized, err := NormalizeEmail(email)
 	if err != nil {
 		return nil, false, err
@@ -85,8 +95,64 @@ func (s *Service) Ensure(ctx context.Context, email, name string, inviter *User)
 	if err := s.repo.Create(ctx, u); err != nil {
 		return nil, false, err
 	}
-	if inviter != nil && s.notifier != nil {
+	if inviter != nil && s.notifier != nil && !ports.IsQuiet(ctx) {
 		_ = s.notifier.Invite(ctx, u.Email, inviter.Name)
 	}
 	return u, true, nil
+}
+
+// Placeholder creates (or, when id already names the creator's placeholder,
+// returns) a person known only by name.
+func (s *Service) Placeholder(ctx context.Context, id *uuid.UUID, name string, createdBy uuid.UUID) (*User, error) {
+	if id != nil {
+		existing, err := s.repo.Get(ctx, *id)
+		if err == nil {
+			if existing.Status == StatusPlaceholder && existing.CreatedBy != nil && *existing.CreatedBy == createdBy {
+				return existing, nil
+			}
+			return nil, errs.Conflict("That person id is already in use.")
+		}
+		if !errs.Is(err, errs.KindNotFound) {
+			return nil, err
+		}
+	}
+	u, err := NewPlaceholder(id, name, createdBy, s.clock.Now())
+	if err != nil {
+		return nil, err
+	}
+	if inviter, err := s.repo.Get(ctx, createdBy); err == nil {
+		u.DefaultCurrency = inviter.DefaultCurrency
+	}
+	return u, s.repo.Create(ctx, u)
+}
+
+// Invite attaches an email to a placeholder the actor created, turning it
+// into an invited user who can sign in.
+func (s *Service) Invite(ctx context.Context, actor, id uuid.UUID, email string) (*User, error) {
+	u, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if u.Status != StatusPlaceholder || u.CreatedBy == nil || *u.CreatedBy != actor {
+		return nil, errs.Conflict("Only people you added by name can be given an email.")
+	}
+	normalized, err := NormalizeEmail(email)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := s.repo.FindByEmail(ctx, normalized)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, errs.Conflict(existing.Name + " already has an account with that email. Add them directly instead.")
+	}
+	u.Email, u.Status, u.UpdatedAt = normalized, StatusInvited, s.clock.Now()
+	if err := s.repo.Update(ctx, u); err != nil {
+		return nil, err
+	}
+	if inviter, err := s.repo.Get(ctx, actor); err == nil && s.notifier != nil {
+		_ = s.notifier.Invite(ctx, u.Email, inviter.Name)
+	}
+	return u, nil
 }

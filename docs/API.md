@@ -32,9 +32,9 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 ## Shared Shapes
 
 ```jsonc
-// User
-{ "id": "uuid", "email": "a@b.c", "name": "Ada", "defaultCurrency": "USD",
-  "avatarColor": "#7C4DFF", "status": "active" | "invited" }
+// User (email is null for people added by name only)
+{ "id": "uuid", "email": "a@b.c" | null, "name": "Ada", "defaultCurrency": "USD",
+  "avatarColor": "#7C4DFF", "status": "active" | "invited" | "placeholder" }
 
 // Me (User plus private settings)
 { ...User, "timezone": "Europe/Berlin",
@@ -121,7 +121,8 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/friends` | | List of `{ user: User, balances: [Balance] }` (positive: friend owes you) |
-| POST | `/friends` | `{ email, name? }` | 201 `{ data: { user, balances } }`; creates an invited user when the email is new and emails an invite |
+| POST | `/friends` | `{ email?, name? }` | 201 `{ data: { user, balances } }`; with an email, creates an invited user when new and emails an invite; with only a name, creates a `placeholder` person |
+| PATCH | `/friends/{userId}` | `{ email }` | `{ data: { user, balances } }`; gives a placeholder you created an email and invites them. 409 when the email already has an account |
 | GET | `/friends/{userId}` | | `{ data: { user, balances, groups: [{ groupId, groupName, balances }], nonGroup: [Balance] } }` |
 | DELETE | `/friends/{userId}` | | 204; 409 when balances are not settled |
 
@@ -130,11 +131,11 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/groups` | `?archived=true` | List of `Group` |
-| POST | `/groups` | `{ name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, members?: [{ email, name? }] }` | 201 `{ data: Group }` |
+| POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, members?: [{ email, name? }] }` | 201 `{ data: Group }` |
 | GET | `/groups/{groupId}` | | `{ data: Group }` |
 | PATCH | `/groups/{groupId}` | `{ name?, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, archived? }` | `{ data: Group }` |
 | DELETE | `/groups/{groupId}` | | 204; 409 when not settled |
-| POST | `/groups/{groupId}/members` | `{ email, name? }` | 201 `{ data: Group }` |
+| POST | `/groups/{groupId}/members` | `{ email?, name? }` | 201 `{ data: Group }` (name only adds a placeholder) |
 | DELETE | `/groups/{groupId}/members/{userId}` | | 204; 409 when that member is not settled. A member may remove themselves (leave) |
 | GET | `/groups/{groupId}/balances` | | `{ data: { members: [{ userId, balances: [Balance] }], debts: [Debt] } }` (debts are simplified when `simplifyDebts` is on) |
 | GET | `/groups/{groupId}/export` | | `text/csv` of all expenses and payments |
@@ -144,7 +145,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/expenses` | `?groupId=&friendId=&q=&category=&from=&to=&kind=&includeDeleted=` | List of `Expense`, newest `date` first |
-| POST | `/expenses` | `{ groupId?, description, currency, total, date, category?, notes?, splitMethod, payers, splits?, items?, tax?, tip?, receiptId?, recurrence? }` | 201 `{ data: Expense }` |
+| POST | `/expenses` | `{ id?, groupId?, description, currency, total, date, category?, notes?, splitMethod, payers, splits?, items?, tax?, tip?, receiptId?, recurrence? }` | 201 `{ data: Expense }` |
 | GET | `/expenses/{expenseId}` | | `{ data: Expense }` |
 | PUT | `/expenses/{expenseId}` | same as POST (full replace) | `{ data: Expense }` |
 | DELETE | `/expenses/{expenseId}` | | 204 (soft delete) |
@@ -152,7 +153,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | GET | `/expenses/{expenseId}/comments` | | List of `{ id, expenseId, user: User, body, createdAt }` |
 | POST | `/expenses/{expenseId}/comments` | `{ body }` | 201 `{ data: Comment }` |
 | DELETE | `/comments/{commentId}` | | 204 (author only) |
-| POST | `/payments` | `{ groupId?, fromUserId, toUserId, amount, currency, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
+| POST | `/payments` | `{ id?, groupId?, fromUserId, toUserId, amount, currency, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
 
 ### Activity and Stats
 
@@ -182,6 +183,32 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
   "payers": [{ "userId": "uuid", "amount": 6000 }], "splits": [{ "userId": "uuid" }],
   "warnings": ["Could not match “Sam” to a friend"] }
 ```
+
+### Offline Clients and Import
+
+`POST /groups`, `POST /expenses` and `POST /payments` accept an optional client-generated `id` (UUID). Repeating the request with the same `id` returns the existing object instead of creating a duplicate, so an offline outbox can retry safely. An `id` that belongs to something the caller cannot see returns 409.
+
+| Method | Path | Body | Response |
+| ------ | ---- | ---- | -------- |
+| POST | `/import` | `ImportRequest` (max 16 MB) | `{ data: { people: { localId: serverUserId }, groups, expenses } }` |
+
+```jsonc
+// ImportRequest: everything recorded in local-only mode. All ids are UUIDs chosen by the device.
+{ "meId": "uuid",                       // the local person that stands for the device owner
+  "people": [{ "id": "uuid", "name": "Sam", "email": "sam@x.com" /* optional */ }],
+  "groups": [{ "id": "uuid", "name": "Camping", "kind": "trip", "defaultCurrency": "EUR",
+               "simplifyDebts": true, "emoji": "⛺", "color": "#00897B", "archived": false,
+               "memberIds": ["uuid"] }],
+  "expenses": [{ "id": "uuid", "kind": "expense" | "payment", ...ExpenseInput }] }
+```
+
+Rules: runs in one transaction and sends no emails. People with an email resolve to the existing (or a newly invited) user, so their server id may differ from the local id: use the returned `people` map to rewrite local references. People without an email become placeholders that keep the local id. The caller becomes friends with everyone imported. Payments use `kind: "payment"` with one payer and one split (the recipient). Validation errors name the failing item in `field`, for example `expenses[3].total`. Retrying the same import is safe.
+
+### Maintenance
+
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| POST | `/internal/jobs` | Outside `/api/v1`. Runs recurring expenses and cleanup once. Requires `Authorization: Bearer <JOBS_SECRET>`; only mounted when `JOBS_SECRET` is set. For serverless schedulers |
 
 ## MCP
 

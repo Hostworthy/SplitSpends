@@ -11,17 +11,29 @@ import (
 	"github.com/atb00ker/splitspends/backend/internal/platform"
 )
 
+// Deps are what the API needs from the runtime.
+type Deps struct {
+	Services *bootstrap.Services
+	Config   *bootstrap.Config
+	Log      *slog.Logger
+	// Ping checks dependencies for /health.
+	Ping func(ctx context.Context) error
+	// Jobs runs background maintenance once, for /internal/jobs.
+	Jobs func(ctx context.Context) error
+}
+
 // API holds handler dependencies.
 type API struct {
 	svc  *bootstrap.Services
 	cfg  *bootstrap.Config
 	log  *slog.Logger
 	ping func(ctx context.Context) error
+	jobs func(ctx context.Context) error
 }
 
-// New builds the API. ping checks dependencies for /health.
-func New(svc *bootstrap.Services, cfg *bootstrap.Config, log *slog.Logger, ping func(ctx context.Context) error) *API {
-	return &API{svc: svc, cfg: cfg, log: log, ping: ping}
+// New builds the API.
+func New(d Deps) *API {
+	return &API{svc: d.Services, cfg: d.Config, log: d.Log, ping: d.Ping, jobs: d.Jobs}
 }
 
 // Routes returns the API handler mounted at platform.Prefix plus /health.
@@ -35,6 +47,9 @@ func (a *API) Routes() *http.ServeMux {
 
 	mux.Handle("GET /health", public(a.health))
 	mux.Handle("GET "+p+"/config", public(a.config))
+	if a.cfg.JobsSecret != "" && a.jobs != nil {
+		mux.Handle("POST /internal/jobs", public(a.runJobs))
+	}
 
 	mux.Handle("POST "+p+"/auth/otp/request", limited(a.requestCode))
 	mux.Handle("POST "+p+"/auth/otp/verify", limited(a.verifyCode))
@@ -50,7 +65,9 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("GET "+p+"/friends", authed(a.listFriends))
 	mux.Handle("POST "+p+"/friends", authed(a.addFriend))
 	mux.Handle("GET "+p+"/friends/{userId}", authed(a.getFriend))
+	mux.Handle("PATCH "+p+"/friends/{userId}", authed(a.inviteFriend))
 	mux.Handle("DELETE "+p+"/friends/{userId}", authed(a.removeFriend))
+	mux.Handle("POST "+p+"/import", authed(a.importBundle))
 
 	mux.Handle("GET "+p+"/groups", authed(a.listGroups))
 	mux.Handle("POST "+p+"/groups", authed(a.createGroup))

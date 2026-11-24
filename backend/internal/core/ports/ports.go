@@ -102,3 +102,12 @@ type DraftExtract struct {
 	ParticipantIDs []string
 	Unmatched      []string
 }
+
+type quietKey struct{}
+
+// Quiet marks ctx so services skip notifications, for example during a bulk
+// import of someone's offline history.
+func Quiet(ctx context.Context) context.Context { return context.WithValue(ctx, quietKey{}, true) }
+
+// IsQuiet reports whether notifications are suppressed for ctx.
+func IsQuiet(ctx context.Context) bool { v, _ := ctx.Value(quietKey{}).(bool); return v }

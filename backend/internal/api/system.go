@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
 	"time"
 
@@ -35,6 +36,21 @@ func (a *API) config(w http.ResponseWriter, _ *http.Request) error {
 	}
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	return details(w, http.StatusOK, cfg)
+}
+
+// runJobs lets a scheduler (EventBridge, Cloud Scheduler, cron) trigger
+// maintenance on serverless hosts. It requires the JOBS_SECRET bearer token.
+func (a *API) runJobs(w http.ResponseWriter, r *http.Request) error {
+	token := middleware.BearerToken(r)
+	if subtle.ConstantTimeCompare([]byte(token), []byte(a.cfg.JobsSecret)) != 1 {
+		return errs.Unauthorized("Invalid jobs token.")
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+	if err := a.jobs(ctx); err != nil {
+		return err
+	}
+	return noContent(w)
 }
 
 func (a *API) notFound(http.ResponseWriter, *http.Request) error {

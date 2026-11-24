@@ -28,8 +28,12 @@ func (a *API) wrap(h handler) http.HandlerFunc {
 }
 
 func decode[T any](r *http.Request) (T, error) {
+	return decodeLimit[T](r, maxBody)
+}
+
+func decodeLimit[T any](r *http.Request, limit int64) (T, error) {
 	var v T
-	dec := json.NewDecoder(io.LimitReader(r.Body, maxBody))
+	dec := json.NewDecoder(io.LimitReader(r.Body, limit))
 	dec.UseNumber()
 	if err := dec.Decode(&v); err != nil {
 		if errors.Is(err, io.EOF) {

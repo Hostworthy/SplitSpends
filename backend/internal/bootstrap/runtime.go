@@ -15,6 +15,7 @@ import (
 	"github.com/atb00ker/splitspends/backend/internal/core/domains/group"
 	"github.com/atb00ker/splitspends/backend/internal/core/domains/receipt"
 	"github.com/atb00ker/splitspends/backend/internal/core/domains/stats"
+	"github.com/atb00ker/splitspends/backend/internal/core/domains/transfer"
 	"github.com/atb00ker/splitspends/backend/internal/core/domains/user"
 	"github.com/atb00ker/splitspends/backend/internal/core/ports"
 	"github.com/atb00ker/splitspends/backend/internal/core/shared/clock"
@@ -36,6 +37,7 @@ type Services struct {
 	Receipts *receipt.Service
 	Assist   *assist.Service
 	Stats    *stats.Service
+	Transfer *transfer.Service
 }
 
 // Runtime is a fully wired application.
@@ -62,17 +64,27 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 
 	notifier, err := notifications.New(notifications.Config{
 		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword,
-		From: cfg.SMTPFrom, Security: cfg.SMTPSecurity, AppName: cfg.AppName, BaseURL: cfg.BaseURL,
+		From: cfg.SMTPFrom, Security: cfg.SMTPSecurity, AppName: cfg.AppName, BaseURL: cfg.BaseURL, Sync: cfg.Serverless,
 	}, log)
 	if err != nil {
 		pool.Close()
 		return nil, err
 	}
-	blobs, err := storage.NewLocal(cfg.DataDir)
+	var blobs ports.BlobStore
+	switch cfg.BlobStore {
+	case "s3":
+		blobs, err = storage.NewS3(storage.S3Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, Endpoint: cfg.S3Endpoint,
+			AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey, Prefix: cfg.S3Prefix})
+	case "postgres":
+		blobs = repositories.NewBlobs(db)
+	default:
+		blobs, err = storage.NewLocal(cfg.DataDir)
+	}
 	if err != nil {
 		pool.Close()
 		return nil, err
 	}
+	log.Info("bootstrap.storage.ready", "store", cfg.BlobStore)
 
 	var reader ports.ReceiptReader
 	switch cfg.AIProvider {
@@ -109,6 +121,8 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 	balances := balance.NewService(expenseRepo)
 	groups := group.NewService(groupRepo, users, balances, act, notifier, tx, c, cfg.BaseURL)
 	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
+	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
+		Connections: friends, Receipts: receiptRepo, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	return &Services{
 		Auth:     auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, notifier, tx, c),
 		Users:    users,
@@ -116,35 +130,40 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 		Groups:   groups,
 		Balances: balances,
 		Activity: act,
-		Expenses: expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
-			Connections: friends, Receipts: receiptRepo, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL}),
+		Expenses: expenses,
+		Transfer: transfer.NewService(users, friendRepo, groups, expenses, tx),
 		Receipts: receipt.NewService(receiptRepo, blobs, reader, c),
 		Assist:   assist.NewService(reader, users, groups, friendRepo, c),
 		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users),
 	}
 }
 
-// RunJobs runs periodic maintenance until ctx ends: recurring expenses and
-// credential cleanup.
-func (rt *Runtime) RunJobs(ctx context.Context) {
-	tick := func() {
-		for pass := 0; pass < 50; pass++ {
-			n, err := rt.Services.Expenses.RunRecurring(ctx)
-			if err != nil {
-				rt.Log.Error("jobs.recurring.failed", "error", err)
-				break
-			}
-			if n > 0 {
-				rt.Log.Info("jobs.recurring.created", "count", n)
-			}
-			if n == 0 {
-				break
-			}
+// RunJobsOnce creates due recurring expenses and removes expired
+// credentials. Serverless hosts call it from a scheduler via /internal/jobs.
+func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
+	for pass := 0; pass < 50; pass++ {
+		n, err := rt.Services.Expenses.RunRecurring(ctx)
+		if err != nil {
+			rt.Log.Error("jobs.recurring.failed", "error", err)
+			return err
 		}
-		if err := rt.Services.Auth.Cleanup(ctx); err != nil {
-			rt.Log.Error("jobs.cleanup.failed", "error", err)
+		if n > 0 {
+			rt.Log.Info("jobs.recurring.created", "count", n)
+		}
+		if n == 0 {
+			break
 		}
 	}
+	if err := rt.Services.Auth.Cleanup(ctx); err != nil {
+		rt.Log.Error("jobs.cleanup.failed", "error", err)
+		return err
+	}
+	return nil
+}
+
+// RunJobs runs RunJobsOnce every 15 minutes until ctx ends.
+func (rt *Runtime) RunJobs(ctx context.Context) {
+	tick := func() { _ = rt.RunJobsOnce(ctx) }
 	tick()
 	t := time.NewTicker(15 * time.Minute)
 	defer t.Stop()

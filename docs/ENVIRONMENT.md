@@ -20,6 +20,21 @@ The server reads everything from the environment. Invalid or missing required va
 | `TRUST_PROXY` | `false` | Use `X-Forwarded-For` for client IPs (rate limits) behind a reverse proxy |
 | `MCP_ENABLED` | `true` | Serve the MCP endpoint at `/mcp` |
 
+## Serverless and Storage
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `SERVERLESS` | `false` | Set on Lambda, Cloud Run and similar: no in-process background jobs, emails are sent before the response returns |
+| `JOBS_SECRET` | empty | At least 32 characters. Enables `POST /internal/jobs` for an external scheduler (needed when `SERVERLESS=true`, every 15 to 60 minutes) |
+| `BLOB_STORE` | `local` | Where receipt images go: `local` (`DATA_DIR`), `s3` or `postgres` (in the database; good for small free-tier hosts) |
+| `S3_BUCKET` | empty | Bucket for `BLOB_STORE=s3` |
+| `S3_REGION` | `AWS_REGION` | Bucket region |
+| `S3_ENDPOINT` | AWS | Other S3-compatible services: `<account>.r2.cloudflarestorage.com`, `storage.googleapis.com`, `minio:9000` |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | empty | Static keys; without them the standard `AWS_*` variables and instance or function roles are used |
+| `S3_PREFIX` | empty | Optional key prefix |
+
+Buckets stay private: the API checks access and streams receipts itself.
+
 ## Sign-in
 
 | Variable | Default | Purpose |

@@ -28,6 +28,9 @@ func toInput(in platform.ExpenseInput) (expense.Input, error) {
 	out := expense.Input{Description: in.Description, Currency: in.Currency, Total: in.Total, Date: in.Date, Category: in.Category,
 		Notes: in.Notes, Method: expense.Method(in.SplitMethod), Tax: in.Tax, Tip: in.Tip, Recurrence: expense.Recurrence(in.Recurrence)}
 	var err error
+	if out.ID, err = optionalID(in.ID, "id"); err != nil {
+		return out, err
+	}
 	if out.GroupID, err = optionalID(in.GroupID, "groupId"); err != nil {
 		return out, err
 	}
@@ -231,6 +234,9 @@ func (a *API) createPayment(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	in := expense.PaymentInput{Amount: body.Amount, Currency: body.Currency, Date: body.Date, Notes: body.Notes}
+	if in.ID, err = optionalID(body.ID, "id"); err != nil {
+		return err
+	}
 	if in.GroupID, err = optionalID(body.GroupID, "groupId"); err != nil {
 		return err
 	}

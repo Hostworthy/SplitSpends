@@ -26,6 +26,9 @@ type Config struct {
 	Security string
 	AppName  string
 	BaseURL  string
+	// Sync sends every email before returning, for serverless hosts that
+	// freeze the process between requests.
+	Sync bool
 }
 
 // Sender delivers one message.
@@ -65,12 +68,16 @@ func (n *Notifier) Close() { close(n.queue) }
 
 func (n *Notifier) work() {
 	for msg := range n.queue {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		text, html := n.render(msg.Name, msg.Lines, msg.Link, "Open "+n.cfg.AppName)
-		if err := n.sender.Send(ctx, msg.To, msg.Subject, text, html); err != nil {
-			n.log.Error("notifications.send.failed", "subject", msg.Subject, "error", err)
-		}
-		cancel()
+		n.deliver(msg)
+	}
+}
+
+func (n *Notifier) deliver(msg ports.Notification) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	text, html := n.render(msg.Name, msg.Lines, msg.Link, "Open "+n.cfg.AppName)
+	if err := n.sender.Send(ctx, msg.To, msg.Subject, text, html); err != nil {
+		n.log.Error("notifications.send.failed", "subject", msg.Subject, "error", err)
 	}
 }
 
@@ -92,6 +99,10 @@ func (n *Notifier) Invite(ctx context.Context, to, inviter string) error {
 }
 
 func (n *Notifier) Notify(_ context.Context, msg ports.Notification) {
+	if n.cfg.Sync {
+		n.deliver(msg)
+		return
+	}
 	select {
 	case n.queue <- msg:
 	default:

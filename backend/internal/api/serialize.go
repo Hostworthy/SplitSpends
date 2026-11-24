@@ -43,7 +43,11 @@ func toBalances(b money.Balances) []platform.Balance {
 }
 
 func toUser(u *user.User) platform.User {
-	return platform.User{ID: u.ID.String(), Email: u.Email, Name: u.Name, DefaultCurrency: u.DefaultCurrency, AvatarColor: u.AvatarColor, Status: string(u.Status)}
+	var email *string
+	if u.Email != "" {
+		email = &u.Email
+	}
+	return platform.User{ID: u.ID.String(), Email: email, Name: u.Name, DefaultCurrency: u.DefaultCurrency, AvatarColor: u.AvatarColor, Status: string(u.Status)}
 }
 
 func toMe(u *user.User) platform.Me {

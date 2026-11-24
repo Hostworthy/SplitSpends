@@ -49,12 +49,15 @@ func run() error {
 		return err
 	}
 	defer rt.Close()
-	go rt.RunJobs(ctx)
+	if !cfg.Serverless {
+		go rt.RunJobs(ctx)
+	}
 
 	mux := http.NewServeMux()
-	routes := api.New(rt.Services, cfg, log, rt.Ping).Routes()
+	routes := api.New(api.Deps{Services: rt.Services, Config: cfg, Log: log, Ping: rt.Ping, Jobs: rt.RunJobsOnce}).Routes()
 	mux.Handle("/api/", routes)
 	mux.Handle("/health", routes)
+	mux.Handle("/internal/", routes)
 	if cfg.MCPEnabled {
 		mux.Handle("/mcp", mcp.HTTPHandler(loopback(cfg.Addr), version, nil, log))
 	}
@@ -66,7 +69,7 @@ func run() error {
 	srv := &http.Server{Addr: cfg.Addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
 	errc := make(chan error, 1)
 	go func() {
-		log.Info("api.server.listening", "addr", cfg.Addr, "baseUrl", cfg.BaseURL, "web", cfg.WebDir != "", "mcp", cfg.MCPEnabled)
+		log.Info("api.server.listening", "addr", cfg.Addr, "baseUrl", cfg.BaseURL, "web", cfg.WebDir != "", "mcp", cfg.MCPEnabled, "serverless", cfg.Serverless)
 		errc <- srv.ListenAndServe()
 	}()
 	select {

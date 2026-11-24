@@ -43,12 +43,13 @@ type Debt struct {
 
 // User is a public profile.
 type User struct {
-	ID              string `json:"id"`
-	Email           string `json:"email"`
-	Name            string `json:"name"`
-	DefaultCurrency string `json:"defaultCurrency"`
-	AvatarColor     string `json:"avatarColor"`
-	Status          string `json:"status"`
+	ID string `json:"id"`
+	// Email is null for people added by name only.
+	Email           *string `json:"email"`
+	Name            string  `json:"name"`
+	DefaultCurrency string  `json:"defaultCurrency"`
+	AvatarColor     string  `json:"avatarColor"`
+	Status          string  `json:"status"`
 }
 
 // Notifications are email preferences.
@@ -147,10 +148,15 @@ type TokenCreate struct {
 	Name string `json:"name"`
 }
 
-// Invitee identifies a person by email.
+// Invitee identifies a person by email, or by name only when email is empty.
 type Invitee struct {
-	Email string `json:"email"`
+	Email string `json:"email,omitempty"`
 	Name  string `json:"name,omitempty"`
+}
+
+// FriendInvite attaches an email to someone added by name only.
+type FriendInvite struct {
+	Email string `json:"email"`
 }
 
 // Friend is a friend and the balance with them.
@@ -191,6 +197,7 @@ type Group struct {
 
 // GroupCreate creates a group.
 type GroupCreate struct {
+	ID *string `json:"id,omitempty"`
 	GroupPatch
 	Members []Invitee `json:"members,omitempty"`
 }
@@ -275,6 +282,7 @@ type Split struct {
 
 // ExpenseInput creates or replaces an expense.
 type ExpenseInput struct {
+	ID          *string `json:"id,omitempty"`
 	GroupID     *string `json:"groupId,omitempty"`
 	Description string  `json:"description"`
 	Currency    string  `json:"currency"`
@@ -294,6 +302,7 @@ type ExpenseInput struct {
 
 // PaymentInput records a settle-up payment.
 type PaymentInput struct {
+	ID         *string `json:"id,omitempty"`
 	GroupID    *string `json:"groupId,omitempty"`
 	FromUserID string  `json:"fromUserId"`
 	ToUserID   string  `json:"toUserId"`
@@ -413,4 +422,40 @@ type ExpenseDraft struct {
 // Health is the liveness response.
 type Health struct {
 	OK bool `json:"ok"`
+}
+
+// ImportPerson is someone from the device's local address book.
+type ImportPerson struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email,omitempty"`
+}
+
+// ImportGroup is a local group; memberIds are local person ids.
+type ImportGroup struct {
+	ID string `json:"id"`
+	GroupPatch
+	MemberIDs []string `json:"memberIds"`
+}
+
+// ImportExpense is a local expense or payment using local person ids.
+type ImportExpense struct {
+	Kind string `json:"kind,omitempty"`
+	ExpenseInput
+}
+
+// ImportRequest uploads local-only data to an account. meId is the local
+// person id that stands for the device owner.
+type ImportRequest struct {
+	MeID     string          `json:"meId"`
+	People   []ImportPerson  `json:"people"`
+	Groups   []ImportGroup   `json:"groups"`
+	Expenses []ImportExpense `json:"expenses"`
+}
+
+// ImportResult maps local person ids to server user ids.
+type ImportResult struct {
+	People   map[string]string `json:"people"`
+	Groups   int               `json:"groups"`
+	Expenses int               `json:"expenses"`
 }

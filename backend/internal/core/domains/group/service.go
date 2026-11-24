@@ -45,8 +45,13 @@ type Invitee struct {
 
 // CreateInput creates a group.
 type CreateInput struct {
+	// ID lets offline clients choose the id so retries are idempotent.
+	ID *uuid.UUID
 	Patch
 	Members []Invitee
+	// People are existing users added directly, for example during an import
+	// where the caller has just connected with them.
+	People []uuid.UUID
 }
 
 // Member returns the group if actor is an active member.
@@ -63,6 +68,18 @@ func (s *Service) Member(ctx context.Context, actor, id uuid.UUID) (*Group, erro
 
 // Create makes a group with the actor and invitees as members.
 func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (*View, error) {
+	if in.ID != nil && *in.ID != uuid.Nil {
+		g, err := s.repo.Get(ctx, *in.ID)
+		if err == nil {
+			if g.HasMember(actor) {
+				return s.view(ctx, actor, g)
+			}
+			return nil, errs.Conflict("That group id is already in use.")
+		}
+		if !errs.Is(err, errs.KindNotFound) {
+			return nil, err
+		}
+	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
 		return nil, err
@@ -75,6 +92,9 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	g, err := New(name, actor, me.DefaultCurrency, now)
 	if err != nil {
 		return nil, err
+	}
+	if in.ID != nil && *in.ID != uuid.Nil {
+		g.ID = *in.ID
 	}
 	in.Name = nil
 	if err := g.Apply(in.Patch, now); err != nil {
@@ -103,6 +123,15 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 			g.Members = append(g.Members, u.ID)
 			added = append(added, u)
 		}
+		for _, id := range in.People {
+			if g.HasMember(id) {
+				continue
+			}
+			if err := s.repo.AddMember(ctx, g.ID, id, now); err != nil {
+				return err
+			}
+			g.Members = append(g.Members, id)
+		}
 		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: &g.ID, Kind: activity.GroupCreated,
 			Involved: g.Members, Data: map[string]any{"groupName": g.Name}})
 	})
@@ -110,7 +139,9 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		return nil, err
 	}
 	for _, u := range added {
-		s.notifyAdded(ctx, u, me, g)
+		if !ports.IsQuiet(ctx) {
+			s.notifyAdded(ctx, u, me, g)
+		}
 	}
 	return s.View(ctx, actor, g.ID)
 }

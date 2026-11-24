@@ -21,6 +21,9 @@ const (
 	StatusActive Status = "active"
 	// StatusInvited users were added by someone else and never logged in.
 	StatusInvited Status = "invited"
+	// StatusPlaceholder people were added by name only and cannot sign in
+	// until someone attaches an email.
+	StatusPlaceholder Status = "placeholder"
 )
 
 // Notifications are per-user email preferences.
@@ -46,8 +49,10 @@ type User struct {
 	Timezone        string
 	Status          Status
 	Notifications   Notifications
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// CreatedBy is who added a placeholder; nil for everyone else.
+	CreatedBy *uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 var palette = []string{"#00897B", "#5E35B1", "#E53935", "#FB8C00", "#3949AB", "#43A047", "#D81B60", "#00ACC1", "#6D4C41", "#8E24AA"}
@@ -71,6 +76,9 @@ func NormalizeEmail(raw string) (string, error) {
 // email's local part.
 func NormalizeName(raw, email string) (string, error) {
 	name := strings.Join(strings.Fields(raw), " ")
+	if name == "" && email == "" {
+		return "", errs.Validation("name", "Add a name.")
+	}
 	if name == "" {
 		name = strings.SplitN(email, "@", 2)[0]
 	}
@@ -103,6 +111,21 @@ func New(email, name string, status Status, now time.Time) (*User, error) {
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}, nil
+}
+
+// NewPlaceholder creates a person known only by name. id may be nil.
+func NewPlaceholder(id *uuid.UUID, name string, createdBy uuid.UUID, now time.Time) (*User, error) {
+	name, err := NormalizeName(name, "")
+	if err != nil {
+		return nil, err
+	}
+	u := &User{ID: uuid.New(), Name: name, DefaultCurrency: "USD", Timezone: "UTC", Status: StatusPlaceholder,
+		Notifications: DefaultNotifications(), CreatedBy: &createdBy, CreatedAt: now, UpdatedAt: now}
+	if id != nil && *id != uuid.Nil {
+		u.ID = *id
+	}
+	u.AvatarColor = palette[int(u.ID[0])%len(palette)]
+	return u, nil
 }
 
 // Patch is a partial profile update.

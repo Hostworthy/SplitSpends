@@ -45,6 +45,18 @@ type Config struct {
 	AIEffort   string
 
 	MCPEnabled bool
+
+	// Serverless disables in-process background jobs and queued emails.
+	Serverless bool
+	JobsSecret string
+
+	BlobStore   string
+	S3Bucket    string
+	S3Region    string
+	S3Endpoint  string
+	S3AccessKey string
+	S3SecretKey string
+	S3Prefix    string
 }
 
 func env(key, fallback string) string {
@@ -131,6 +143,23 @@ func LoadConfig() (*Config, error) {
 	}
 	c.TrustProxy, _ = strconv.ParseBool(env("TRUST_PROXY", "false"))
 	c.MCPEnabled, _ = strconv.ParseBool(env("MCP_ENABLED", "true"))
+	c.Serverless, _ = strconv.ParseBool(env("SERVERLESS", "false"))
+	c.JobsSecret = env("JOBS_SECRET", "")
+	if c.JobsSecret != "" && len(c.JobsSecret) < 32 {
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.JOBS_SECRET: use at least 32 random characters")
+	}
+	c.BlobStore = strings.ToLower(env("BLOB_STORE", "local"))
+	c.S3Bucket, c.S3Region, c.S3Endpoint = env("S3_BUCKET", ""), env("S3_REGION", env("AWS_REGION", "")), env("S3_ENDPOINT", "")
+	c.S3AccessKey, c.S3SecretKey, c.S3Prefix = env("S3_ACCESS_KEY_ID", ""), env("S3_SECRET_ACCESS_KEY", ""), env("S3_PREFIX", "")
+	switch c.BlobStore {
+	case "local", "postgres":
+	case "s3":
+		if c.S3Bucket == "" {
+			return nil, fmt.Errorf("bootstrap.config.env.required.not-found.S3_BUCKET")
+		}
+	default:
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.BLOB_STORE: use local, s3 or postgres")
+	}
 	switch c.AIProvider {
 	case "", "none":
 		c.AIProvider = ""

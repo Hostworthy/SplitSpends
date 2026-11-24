@@ -140,14 +140,14 @@ func (t *tools) overview(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (
 		return fail(err)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are %s <%s> (id %s), default currency %s.\n", me.Name, me.Email, me.ID, me.DefaultCurrency)
+	fmt.Fprintf(&b, "You are %s <%s> (id %s), default currency %s.\n", me.Name, email(me.Email), me.ID, me.DefaultCurrency)
 	fmt.Fprintf(&b, "Net balance: %s. Owed to you: %s. You owe: %s.\n\nGroups:\n", t.balances(ctx, totals.Balances), t.balances(ctx, totals.Owed), t.balances(ctx, totals.Owing))
 	for _, g := range groups.Items {
 		fmt.Fprintf(&b, "- %s %s (id %s, %d members): %s\n", g.Emoji, g.Name, g.ID, len(g.Members), t.balances(ctx, g.Balances))
 	}
 	b.WriteString("\nFriends:\n")
 	for _, f := range friends.Items {
-		fmt.Fprintf(&b, "- %s <%s> (id %s): %s\n", f.User.Name, f.User.Email, f.User.ID, t.balances(ctx, f.Balances))
+		fmt.Fprintf(&b, "- %s <%s> (id %s): %s\n", f.User.Name, email(f.User.Email), f.User.ID, t.balances(ctx, f.Balances))
 	}
 	return text(b.String()), nil, nil
 }
@@ -220,7 +220,7 @@ func (t *tools) listFriends(ctx context.Context, _ *sdk.CallToolRequest, _ empty
 	}
 	var b strings.Builder
 	for _, f := range friends.Items {
-		fmt.Fprintf(&b, "- %s <%s> (id %s): %s\n", f.User.Name, f.User.Email, f.User.ID, t.balances(ctx, f.Balances))
+		fmt.Fprintf(&b, "- %s <%s> (id %s): %s\n", f.User.Name, email(f.User.Email), f.User.ID, t.balances(ctx, f.Balances))
 	}
 	if b.Len() == 0 {
 		return text("No friends yet."), nil, nil
@@ -524,4 +524,11 @@ func unique(list []string) []string {
 		}
 	}
 	return out
+}
+
+func email(e *string) string {
+	if e == nil {
+		return "no email"
+	}
+	return *e
 }

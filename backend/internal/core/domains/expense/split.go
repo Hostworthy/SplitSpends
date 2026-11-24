@@ -30,6 +30,8 @@ type SplitInput struct {
 
 // Input is everything needed to create or replace an expense.
 type Input struct {
+	// ID lets offline clients choose the id so retries are idempotent.
+	ID          *uuid.UUID
 	GroupID     *uuid.UUID
 	Description string
 	Currency    string
