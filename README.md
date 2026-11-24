@@ -1,6 +1,6 @@
 <p align="center"><img src="packages/brand/icon.svg" width="88" height="88" alt=""></p>
 
-<h1 align="center">SplitSpends</h1>
+<h1 align="center">Split Spends</h1>
 
 <p align="center">
   <strong>Split bills with friends, flatmates and trips. Self-hosted, private, and every feature included.</strong>
