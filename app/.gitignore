@@ -46,3 +46,7 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Fallback fonts downloaded by tool/fallback_fonts.sh (OFL.txt is tracked).
+/web/fonts/fallback/*
+!/web/fonts/fallback/OFL.txt

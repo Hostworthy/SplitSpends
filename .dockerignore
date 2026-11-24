@@ -6,3 +6,5 @@ app/android/.gradle
 backend/data
 deploy/.env
 *.log
+app/web/fonts/fallback/*
+!app/web/fonts/fallback/OFL.txt

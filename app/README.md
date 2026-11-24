@@ -37,12 +37,32 @@ To connect, pick **Connect to a server** and enter the server address (for examp
 ## Build
 
 ```bash
-flutter build web --release        # output: build/web (served by the backend)
+tool/fallback_fonts.sh             # web fallback fonts, see below
+flutter build web --release --no-web-resources-cdn   # output: build/web (served by the backend)
 flutter build ipa                  # iOS, needs signing
 flutter build appbundle            # Android
 ```
 
+### Web fonts
+
+The web build makes no third-party requests. `--no-web-resources-cdn` bundles CanvasKit, Inter is an app asset, and the Flutter engine's fallback fonts (Noto Color Emoji and Noto Sans for other scripts) are served from `web/fonts/fallback/`, set as `fontFallbackBaseUrl` in `web/flutter_bootstrap.js`.
+
+`tool/fallback_fonts.sh` downloads those fonts from Google Fonts at build time and checks each against the SHA-256 in `tool/fallback_fonts.lock`. The files are not committed (SIL OFL 1.1, see `web/fonts/fallback/OFL.txt`). `make web-build`, the Dockerfile and CI run it for you.
+
+| `FALLBACK_FONTS` | Size | Renders |
+| ---------------- | ---- | ------- |
+| `all` (default) | about 36 MB, 727 files | Emoji and every script the engine knows (CJK is 26 MB of it) |
+| `notocoloremoji` | about 2 MB, 10 files | Emoji only; other non-Latin text shows as empty boxes |
+
+The size is disk only: the browser downloads just the subsets it needs to draw the text on screen, as it did from Google. For emoji only, run `FALLBACK_FONTS=notocoloremoji tool/fallback_fonts.sh` (it removes fonts that are not selected) (Docker: `--build-arg FALLBACK_FONTS=notocoloremoji`). Without the fonts the app still works, but emoji show as empty boxes.
+
+After upgrading Flutter, run `tool/fallback_fonts.sh --check`. If the engine's font list changed, run `tool/fallback_fonts.sh --lock` and commit the new lock file. CI runs the check.
+
 The web build uses clean path URLs (`/groups/<id>`). Whatever serves `build/web` must fall back to `index.html` for unknown non-API paths.
+
+### Screenshots
+
+The images in [`docs/screenshots`](../docs/screenshots) come from `tool/screenshots.js`, which enters English demo data through the UI in on-device mode and captures desktop and phone views (light and dark). Serve a release build with SPA fallback, then run `NODE_PATH=$(npm root -g) node tool/screenshots.js http://localhost:8080/` (needs Playwright). The committed images are quantized to 256 colors to keep them small.
 
 ## Checks
 

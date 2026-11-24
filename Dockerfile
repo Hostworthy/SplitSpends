@@ -5,6 +5,12 @@ FROM ghcr.io/cirruslabs/flutter:3.50.1 AS web
 WORKDIR /src/app
 COPY app/pubspec.yaml app/pubspec.lock* ./
 RUN flutter pub get
+# Fallback fonts (emoji, non-Latin scripts) served by this image instead of
+# Google Fonts. Its own layer, so it is cached until the lock file changes.
+# --build-arg FALLBACK_FONTS=notocoloremoji keeps only emoji (about 2 MB).
+ARG FALLBACK_FONTS=all
+COPY app/tool/fallback_fonts.sh app/tool/fallback_fonts.lock ./tool/
+RUN FALLBACK_FONTS="$FALLBACK_FONTS" tool/fallback_fonts.sh
 COPY app/ ./
 RUN flutter build web --release --no-web-resources-cdn
 

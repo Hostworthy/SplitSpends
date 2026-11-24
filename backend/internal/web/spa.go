@@ -21,7 +21,7 @@ func Handler(dir string) http.Handler {
 			switch {
 			case strings.HasSuffix(clean, ".html"), clean == "/flutter_service_worker.js", clean == "/version.json", clean == "/manifest.json":
 				w.Header().Set("Cache-Control", "no-cache")
-			case strings.HasPrefix(clean, "/assets/"), strings.HasPrefix(clean, "/canvaskit/"), strings.HasPrefix(clean, "/icons/"):
+			case strings.HasPrefix(clean, "/assets/"), strings.HasPrefix(clean, "/canvaskit/"), strings.HasPrefix(clean, "/icons/"), strings.HasPrefix(clean, "/fonts/"):
 				w.Header().Set("Cache-Control", "public, max-age=604800")
 			}
 			files.ServeHTTP(w, r)

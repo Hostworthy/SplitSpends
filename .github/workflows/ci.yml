@@ -53,4 +53,10 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed .
       - run: flutter analyze
       - run: flutter test
+      - run: tool/fallback_fonts.sh --check
+      - uses: actions/cache@v4
+        with:
+          path: app/web/fonts/fallback
+          key: fallback-fonts-${{ hashFiles('app/tool/fallback_fonts.lock') }}
+      - run: tool/fallback_fonts.sh
       - run: flutter build web --release --no-web-resources-cdn

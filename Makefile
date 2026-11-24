@@ -1,4 +1,4 @@
-.PHONY: help setup dev api web check test test-integration lint fmt build docker web-build lambda
+.PHONY: help setup dev api web check test test-integration lint fmt build docker web-build web-fonts lambda
 
 .DEFAULT_GOAL := help
 TEST_DATABASE_URL ?= postgres://splitspends:splitspends@localhost:5432/splitspends_test?sslmode=disable
@@ -14,6 +14,7 @@ help:
 	@echo "  build             Build server and MCP binaries into bin/"
 	@echo "  docker            Build the production image"
 	@echo "  web-build         Build the Flutter web app into app/build/web"
+	@echo "  web-fonts         Download the web fallback fonts (emoji, other scripts)"
 	@echo "  lambda            Build the arm64 Lambda bundle for deploy/aws"
 
 setup:
@@ -27,7 +28,7 @@ setup:
 api:
 	cd backend && set -a && . ./.env && set +a && go run ./cmd/server
 
-web:
+web: web-fonts
 	cd app && flutter run -d web-server --web-port 5173 --dart-define=SPLITSPENDS_URL=http://localhost:8080
 
 dev:
@@ -58,7 +59,10 @@ build:
 docker:
 	docker build -t splitspends:latest .
 
-web-build:
+web-fonts:
+	app/tool/fallback_fonts.sh
+
+web-build: web-fonts
 	cd app && flutter build web --release --no-web-resources-cdn
 
 lambda:

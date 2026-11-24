@@ -2,6 +2,8 @@
 
 Self-hosted expense splitting for friends, flatmates and trips. Everything you would use Splitwise for, with no paid tier, no ads and no limits, on your own server.
 
+![SplitSpends dashboard with two groups and a total balance](docs/screenshots/dashboard.png)
+
 - **Every split**: equal, exact amounts, percentages, shares, adjustments, and itemized bills with tax and tip.
 - **Groups and friends**: trips, homes, couples; non-group expenses; multiple payers; per-currency balances.
 - **Settle up**: simplified debts, recorded payments, friend and group balances that always add up.
@@ -11,6 +13,22 @@ Self-hosted expense splitting for friends, flatmates and trips. Everything you w
 - **MCP server** so assistants like Claude can check balances and add expenses for you.
 - **No account needed**: use it entirely on your phone or in your browser. Connect a server only when you want sync, sharing and emails.
 - **One app** for iOS, Android and the web (Flutter), backed by a small Go server and PostgreSQL.
+
+## Screenshots
+
+| Group expenses | Simplified balances |
+| -------------- | ------------------- |
+| ![Expenses in a trip group, with who paid and what you lent or borrowed](docs/screenshots/group.png) | ![Simplified debts and member balances in a group](docs/screenshots/balances.png) |
+| **Split by shares** | **New group** |
+| ![Expense editor splitting a bill by shares](docs/screenshots/editor.png) | ![New group sheet with Home, Trip, Couple and Other kinds](docs/screenshots/new-group.png) |
+
+On a phone, in light and dark mode:
+
+| | | | |
+| - | - | - | - |
+| ![Phone dashboard, light](docs/screenshots/mobile-dashboard.png) | ![Phone group, light](docs/screenshots/mobile-group.png) | ![Phone dashboard, dark](docs/screenshots/mobile-dashboard-dark.png) | ![Phone group, dark](docs/screenshots/mobile-group-dark.png) |
+
+The web app shown here runs entirely in the browser with no account, and makes no requests to any server other than its own.
 
 ## Hosting
 
