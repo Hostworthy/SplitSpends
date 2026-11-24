@@ -1,0 +1,103 @@
+import 'package:intl/intl.dart';
+
+import 'package:splitspends/core/config/app_config.dart';
+
+/// Money helpers. Amounts are always integers in minor units; floats are
+/// never used for arithmetic.
+abstract final class Money {
+  /// Formats [minor] units of [currency], e.g. `1250, USD` → `$12.50`.
+  static String format(
+    int minor,
+    CurrencyInfo currency, {
+    bool absolute = false,
+    bool compact = false,
+    String? locale,
+  }) {
+    final value = absolute ? minor.abs() : minor;
+    final digits = compact && value % pow10(currency.exponent) == 0
+        ? 0
+        : currency.exponent;
+    final formatter = NumberFormat.currency(
+      locale: locale,
+      symbol: currency.symbol,
+      decimalDigits: digits,
+    );
+    return formatter.format(value / pow10(currency.exponent));
+  }
+
+  /// Plain decimal text for editing: `1250, exponent 2` → `12.50`.
+  static String toPlain(int minor, int exponent) {
+    final negative = minor < 0;
+    final abs = minor.abs();
+    if (exponent == 0) return '${negative ? '-' : ''}$abs';
+    final unit = pow10(exponent);
+    final whole = abs ~/ unit;
+    final frac = (abs % unit).toString().padLeft(exponent, '0');
+    return '${negative ? '-' : ''}$whole.$frac';
+  }
+
+  /// Parses user input like `12.5`, `12,50`, `1,234.56` or `-3` into minor
+  /// units. Returns null when the text is not a valid amount or has more
+  /// decimals than the currency allows.
+  static int? parse(String input, int exponent) {
+    var text = input.trim().replaceAll(RegExp(r'[\s_]'), '');
+    if (text.isEmpty) return null;
+    var negative = false;
+    if (text.startsWith('-')) {
+      negative = true;
+      text = text.substring(1);
+    } else if (text.startsWith('+')) {
+      text = text.substring(1);
+    }
+    text = text.replaceAll(RegExp(r'[^0-9.,]'), '');
+    if (text.isEmpty) return null;
+
+    // Decide which separator is the decimal one: the last of `.`/`,` when
+    // followed by 1..exponent digits (or any digits when it is the only one).
+    final lastDot = text.lastIndexOf('.');
+    final lastComma = text.lastIndexOf(',');
+    final sepIndex = lastDot > lastComma ? lastDot : lastComma;
+    String whole = text;
+    String frac = '';
+    if (sepIndex >= 0) {
+      final tail = text.substring(sepIndex + 1);
+      final sep = text[sepIndex];
+      final count = sep.allMatches(text).length;
+      final head = text.substring(0, text.indexOf(sep));
+      final looksLikeThousands =
+          count > 1 ||
+          (tail.length == 3 &&
+              exponent < 3 &&
+              RegExp(r'^[1-9]\d{0,2}$').hasMatch(head));
+      final otherSepPresent = sep == '.' ? lastComma >= 0 : lastDot >= 0;
+      if (!looksLikeThousands || otherSepPresent) {
+        whole = text.substring(0, sepIndex);
+        frac = tail;
+      }
+    }
+    whole = whole.replaceAll(RegExp(r'[.,]'), '');
+    if (whole.isEmpty) whole = '0';
+    if (frac.contains(RegExp(r'[^0-9]'))) return null;
+    if (frac.length > exponent) {
+      // Allow trailing zeros beyond the exponent ("12.500" for 2 decimals).
+      final extra = frac.substring(exponent);
+      if (extra.replaceAll('0', '').isNotEmpty) return null;
+      frac = frac.substring(0, exponent);
+    }
+    final wholeValue = int.tryParse(whole);
+    if (wholeValue == null) return null;
+    final fracValue = frac.isEmpty
+        ? 0
+        : int.parse(frac.padRight(exponent, '0'));
+    final value = wholeValue * pow10(exponent) + fracValue;
+    return negative ? -value : value;
+  }
+
+  static int pow10(int exponent) {
+    var result = 1;
+    for (var i = 0; i < exponent; i++) {
+      result *= 10;
+    }
+    return result;
+  }
+}
