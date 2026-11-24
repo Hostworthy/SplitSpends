@@ -45,7 +45,7 @@ Split Spends keeps track of who paid what and who owes whom, so shared costs nev
 **Hosting a server for your group?** With Docker:
 
 ```bash
-git clone https://github.com/Hostworthy/SplitSpends && cd Split Spends
+git clone https://github.com/Hostworthy/SplitSpends && cd SplitSpends
 cp deploy/.env.example deploy/.env    # set SECRET_KEY, BASE_URL, POSTGRES_PASSWORD and SMTP
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
