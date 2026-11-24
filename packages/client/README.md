@@ -1,6 +1,6 @@
 # SplitSpends Client
 
-The Flutter package behind every SplitSpends app: all screens, the on-device store, sync and assets. The runnable apps are thin shells in [`apps/android`](../../apps/android), [`apps/ios`](../../apps/ios) and [`apps/web`](../../apps/web), so **iOS, Android and the web** share one codebase. It works in two modes, chosen on the first screen:
+The Flutter package behind every SplitSpends app: all screens, the on-device store, sync and assets. The runnable apps are thin shells in [`apps/apk`](../../apps/apk), [`apps/ios`](../../apps/ios) and [`apps/web`](../../apps/web), so **iOS, Android and the web** share one codebase. It works in two modes, chosen on the first screen:
 
 | Mode | What it means |
 | ---- | ------------- |
@@ -28,7 +28,7 @@ open -a Simulator
 cd apps/ios && flutter run
 
 # Android emulator or device
-cd apps/android && flutter run
+cd apps/apk && flutter run
 ```
 
 To connect, pick **Connect to a server** and enter the server address (for example `https://splitspends.example.com`). On a phone talking to a backend on your computer, use your computer's LAN address (`http://192.168.1.20:8080`); the Android emulator reaches the host as `http://10.0.2.2:8080`.
@@ -38,7 +38,7 @@ To connect, pick **Connect to a server** and enter the server address (for examp
 ```bash
 cd apps/web && flutter build web --release --no-web-resources-cdn   # output: apps/web/build/web
 cd apps/ios && flutter build ipa                                      # iOS, needs signing
-cd apps/android && flutter build appbundle                            # Android
+cd apps/apk && flutter build appbundle                            # Android
 ```
 
 The web build uses clean path URLs (`/groups/<id>`). Whatever serves `build/web` must fall back to `index.html` for unknown non-API paths.

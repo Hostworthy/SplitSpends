@@ -72,7 +72,7 @@ flowchart TB
 
 ### Repository Layout
 
-`apps/` holds only runnable apps: `api` (Go HTTP server), `mcp` (Go stdio MCP host), and the `android`, `ios` and `web` Flutter shells. Everything they are built from lives in `packages/`: the Go packages above, `packages/ledger` (the Dart twin of `packages/core`) and `packages/client` (the shared Flutter UI). Packages never import apps. The repository root is one Go module and one Dart workspace.
+`apps/` holds only runnable apps: `api` (Go HTTP server), `mcp` (Go stdio MCP host), and the `apk` (Android), `ios` and `web` Flutter shells. Everything they are built from lives in `packages/`: the Go packages above, `packages/ledger` (the Dart twin of `packages/core`) and `packages/client` (the shared Flutter UI). Packages never import apps. The repository root is one Go module and one Dart workspace.
 
 ### Rules
 

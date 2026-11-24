@@ -50,7 +50,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 Open `http://localhost:8080` and sign in with your email: the first account belongs to you, and others join when you add them. For HTTPS, a homelab setup with automatic certificates, free cloud options and a security checklist, see the [hosting guide](docs/HOSTING.md). Every setting is in [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
 
-**Mobile apps:** [`apps/android`](apps/android) and [`apps/ios`](apps/ios) build the phone apps from the same code as the web app ([`packages/client`](packages/client/README.md)); `make apk` builds the Android app.
+**Mobile apps:** [`apps/apk`](apps/apk) and [`apps/ios`](apps/ios) build the phone apps from the same code as the web app ([`packages/client`](packages/client/README.md)); `make apk` builds the Android app.
 
 ## Documentation
 

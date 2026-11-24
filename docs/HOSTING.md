@@ -41,12 +41,12 @@ Every option needs an email account that can send mail over SMTP (for example Gm
 Requires Docker, a domain name pointing at your home IP, and ports 80 and 443 forwarded to the machine.
 
 ```bash
-git clone https://github.com/Hostworthy/SplitSpends && cd SplitSpends/deploy/homelab
+git clone https://github.com/Hostworthy/SplitSpends && cd SplitSpends/deploy/docker
 cp ../.env.example .env          # set DOMAIN, BASE_URL=https://DOMAIN, POSTGRES_PASSWORD, SECRET_KEY, SMTP
 docker compose up -d --build
 ```
 
-This runs PostgreSQL, SplitSpends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly `pg_dump` into `deploy/homelab/backups/`. Copy those backups off the machine now and then, and delete old ones when you no longer need them.
+This runs PostgreSQL, SplitSpends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly `pg_dump` into `deploy/docker/backups/`. Copy those backups off the machine now and then, and delete old ones when you no longer need them.
 
 LAN or VPN only (no public domain): skip Caddy and use `deploy/docker-compose.yml`, then reach the server at `http://<machine-ip>:8080` over your LAN or a VPN such as Tailscale or WireGuard. Browsers and phones treat plain HTTP as insecure, so prefer a VPN with HTTPS (for example Tailscale's built-in certificates) over exposing port 8080.
 

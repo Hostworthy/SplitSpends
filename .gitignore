@@ -25,3 +25,6 @@ coverage/
 .widget_preview/
 **/android/.kotlin/
 .claude/worktrees/
+
+# Database dumps from deploy/docker hold personal data
+deploy/docker/backups/

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs the Android integration test on the connected emulator or device and
 # prints the app's log when it fails, so a crash or hang is visible in CI.
-# Usage, from apps/android: ../../scripts/ci/device-test.sh [flutter test args]
+# Usage, from apps/apk: ../../scripts/ci/device-test.sh [flutter test args]
 set -u
 adb logcat -c || true
 timeout 1200 flutter test integration_test --reporter expanded "$@"

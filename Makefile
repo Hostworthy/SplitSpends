@@ -2,7 +2,7 @@
 
 .DEFAULT_GOAL := help
 TEST_DATABASE_URL ?= postgres://splitspends:splitspends@localhost:5432/splitspends_test?sslmode=disable
-DART_MEMBERS := packages/ledger packages/client apps/android apps/ios apps/web
+DART_MEMBERS := packages/ledger packages/client apps/apk apps/ios apps/web
 
 help:
 	@echo "Targets:"
@@ -14,7 +14,7 @@ help:
 	@echo "  test-integration  Database tests (needs TEST_DATABASE_URL)"
 	@echo "  build             Build the API and MCP binaries into bin/"
 	@echo "  web-build         Build the web app into apps/web/build/web"
-	@echo "  apk               Build the Android app into apps/android/build"
+	@echo "  apk               Build the Android app into apps/apk/build"
 	@echo "  docker            Build the production image"
 	@echo "  lambda            Build the arm64 Lambda bundle for deploy/aws"
 
@@ -64,7 +64,7 @@ web-build:
 	cd apps/web && flutter build web --release --no-web-resources-cdn
 
 apk:
-	cd apps/android && flutter build apk --release
+	cd apps/apk && flutter build apk --release
 
 docker:
 	docker build -t splitspends:latest .

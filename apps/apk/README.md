@@ -4,7 +4,7 @@ A thin shell around [`packages/client`](../../packages/client/README.md): this f
 
 ```bash
 flutter pub get                 # once, at the repository root
-cd apps/android
+cd apps/apk
 flutter run                     # emulator or connected device
 flutter build apk --release     # or: make apk (repository root)
 flutter build appbundle         # for Google Play

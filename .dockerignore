@@ -2,7 +2,7 @@
 **/.dart_tool
 **/build
 apps/ios/ios/Pods
-apps/android/android/.gradle
+apps/apk/android/.gradle
 apps/api/data
 deploy/.env
 deploy/aws/.terraform
