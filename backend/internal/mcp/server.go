@@ -14,7 +14,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/atb00ker/splitspends/backend/internal/platform"
+	"github.com/Hostworthy/SplitSpends/backend/internal/platform"
 )
 
 const instructions = `SplitSpends tracks shared expenses between friends and groups, like Splitwise.

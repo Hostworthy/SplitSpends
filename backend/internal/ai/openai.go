@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/ports"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/ports"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/errs"
 )
 
 // OpenAICompatible talks to any server implementing the OpenAI chat

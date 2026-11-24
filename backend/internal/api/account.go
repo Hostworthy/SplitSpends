@@ -3,9 +3,9 @@ package api
 import (
 	"net/http"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/user"
-	"github.com/atb00ker/splitspends/backend/internal/middleware"
-	"github.com/atb00ker/splitspends/backend/internal/platform"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/user"
+	"github.com/Hostworthy/SplitSpends/backend/internal/middleware"
+	"github.com/Hostworthy/SplitSpends/backend/internal/platform"
 )
 
 func (a *API) requestCode(w http.ResponseWriter, r *http.Request) error {

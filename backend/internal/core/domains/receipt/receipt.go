@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/expense"
-	"github.com/atb00ker/splitspends/backend/internal/core/ports"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/clock"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/errs"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/money"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/expense"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/ports"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/clock"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/money"
 	"github.com/google/uuid"
 )
 

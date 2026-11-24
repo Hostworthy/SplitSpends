@@ -5,10 +5,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/group"
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/receipt"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/errs"
-	"github.com/atb00ker/splitspends/backend/internal/database"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/receipt"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/backend/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )

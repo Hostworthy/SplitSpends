@@ -1,4 +1,4 @@
-# Render Blueprint: https://render.com/deploy?repo=https://github.com/atb00ker/SplitSpends
+# Render Blueprint: https://render.com/deploy?repo=https://github.com/Hostworthy/SplitSpends
 # Free web service plus a free PostgreSQL database. Render's free database
 # expires after 30 days: for a lasting free setup, remove the database below
 # and set DATABASE_URL to a Neon or Supabase free database instead.

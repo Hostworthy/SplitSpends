@@ -1,4 +1,4 @@
-module github.com/atb00ker/splitspends/backend
+module github.com/Hostworthy/SplitSpends/backend
 
 go 1.26.10
 

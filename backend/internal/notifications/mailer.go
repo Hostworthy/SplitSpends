@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/ports"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/ports"
 	"github.com/wneessen/go-mail"
 )
 

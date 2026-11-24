@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/auth"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/errs"
-	"github.com/atb00ker/splitspends/backend/internal/platform"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/auth"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/backend/internal/platform"
 )
 
 type ctxKey int

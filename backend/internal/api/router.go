@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/bootstrap"
-	"github.com/atb00ker/splitspends/backend/internal/middleware"
-	"github.com/atb00ker/splitspends/backend/internal/platform"
+	"github.com/Hostworthy/SplitSpends/backend/internal/bootstrap"
+	"github.com/Hostworthy/SplitSpends/backend/internal/middleware"
+	"github.com/Hostworthy/SplitSpends/backend/internal/platform"
 )
 
 // Deps are what the API needs from the runtime.

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/auth"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/auth"
 )
 
 // Config is the full runtime configuration, read from the environment.

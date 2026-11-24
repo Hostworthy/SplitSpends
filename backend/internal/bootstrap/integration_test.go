@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/expense"
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/group"
-	"github.com/atb00ker/splitspends/backend/internal/core/ports"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/clock"
-	"github.com/atb00ker/splitspends/backend/internal/database"
-	"github.com/atb00ker/splitspends/backend/internal/storage"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/expense"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/ports"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/clock"
+	"github.com/Hostworthy/SplitSpends/backend/internal/database"
+	"github.com/Hostworthy/SplitSpends/backend/internal/storage"
 	"github.com/google/uuid"
 )
 

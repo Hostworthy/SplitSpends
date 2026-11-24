@@ -7,13 +7,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/activity"
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/group"
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/user"
-	"github.com/atb00ker/splitspends/backend/internal/core/ports"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/clock"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/errs"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/money"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/activity"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/user"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/ports"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/clock"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/money"
 	"github.com/google/uuid"
 )
 

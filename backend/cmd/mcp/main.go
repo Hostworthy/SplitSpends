@@ -13,7 +13,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/atb00ker/splitspends/backend/internal/mcp"
+	"github.com/Hostworthy/SplitSpends/backend/internal/mcp"
 )
 
 var version = "dev"

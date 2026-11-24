@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/errs"
-	"github.com/atb00ker/splitspends/backend/internal/middleware"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/backend/internal/middleware"
 	"github.com/google/uuid"
 )
 

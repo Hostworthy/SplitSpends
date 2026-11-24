@@ -3,7 +3,7 @@ package balance
 import (
 	"context"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/money"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/money"
 	"github.com/google/uuid"
 )
 

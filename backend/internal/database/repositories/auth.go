@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/auth"
-	"github.com/atb00ker/splitspends/backend/internal/database"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/auth"
+	"github.com/Hostworthy/SplitSpends/backend/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )

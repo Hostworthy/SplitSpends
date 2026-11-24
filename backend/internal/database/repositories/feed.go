@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/activity"
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/stats"
-	"github.com/atb00ker/splitspends/backend/internal/database"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/activity"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/stats"
+	"github.com/Hostworthy/SplitSpends/backend/internal/database"
 	"github.com/jackc/pgx/v5"
 )
 

@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/receipt"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/errs"
-	"github.com/atb00ker/splitspends/backend/internal/platform"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/receipt"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/backend/internal/platform"
 )
 
 func (a *API) uploadReceipt(w http.ResponseWriter, r *http.Request) error {

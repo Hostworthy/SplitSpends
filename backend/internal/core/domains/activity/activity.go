@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/clock"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/clock"
 	"github.com/google/uuid"
 )
 

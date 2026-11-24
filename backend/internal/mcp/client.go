@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/platform"
+	"github.com/Hostworthy/SplitSpends/backend/internal/platform"
 )
 
 // Client calls the SplitSpends HTTP API with a bearer token.

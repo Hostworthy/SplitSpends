@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/ports"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/errs"
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
-	"github.com/atb00ker/splitspends/backend/internal/core/ports"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/errs"
 )
 
 // DefaultAnthropicModel is used when AI_MODEL is empty.

@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/api"
-	"github.com/atb00ker/splitspends/backend/internal/bootstrap"
-	"github.com/atb00ker/splitspends/backend/internal/logger"
-	"github.com/atb00ker/splitspends/backend/internal/mcp"
-	"github.com/atb00ker/splitspends/backend/internal/middleware"
-	"github.com/atb00ker/splitspends/backend/internal/web"
+	"github.com/Hostworthy/SplitSpends/backend/internal/api"
+	"github.com/Hostworthy/SplitSpends/backend/internal/bootstrap"
+	"github.com/Hostworthy/SplitSpends/backend/internal/logger"
+	"github.com/Hostworthy/SplitSpends/backend/internal/mcp"
+	"github.com/Hostworthy/SplitSpends/backend/internal/middleware"
+	"github.com/Hostworthy/SplitSpends/backend/internal/web"
 )
 
 var version = "dev"

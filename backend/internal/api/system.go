@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/expense"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/errs"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/money"
-	"github.com/atb00ker/splitspends/backend/internal/middleware"
-	"github.com/atb00ker/splitspends/backend/internal/platform"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/expense"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/money"
+	"github.com/Hostworthy/SplitSpends/backend/internal/middleware"
+	"github.com/Hostworthy/SplitSpends/backend/internal/platform"
 )
 
 func (a *API) health(w http.ResponseWriter, r *http.Request) error {

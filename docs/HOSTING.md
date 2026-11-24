@@ -41,7 +41,7 @@ Every option needs an email account that can send mail over SMTP (for example Gm
 Requires Docker, a domain name pointing at your home IP, and ports 80 and 443 forwarded to the machine.
 
 ```bash
-git clone https://github.com/atb00ker/SplitSpends && cd SplitSpends/deploy/homelab
+git clone https://github.com/Hostworthy/SplitSpends && cd SplitSpends/deploy/homelab
 cp ../.env.example .env          # set DOMAIN, BASE_URL=https://DOMAIN, POSTGRES_PASSWORD, SECRET_KEY, SMTP
 docker compose up -d --build
 ```
@@ -56,7 +56,7 @@ The same as the home lab, on a small Linux VPS from any provider (1 vCPU and 1 G
 
 ### Render (One Click)
 
-[Deploy to Render](https://render.com/deploy?repo=https://github.com/atb00ker/SplitSpends) uses [`render.yaml`](../render.yaml): a free web service and a free database. After it deploys, set `BASE_URL` to the service URL and fill in the SMTP variables in the Render dashboard.
+[Deploy to Render](https://render.com/deploy?repo=https://github.com/Hostworthy/SplitSpends) uses [`render.yaml`](../render.yaml): a free web service and a free database. After it deploys, set `BASE_URL` to the service URL and fill in the SMTP variables in the Render dashboard.
 
 Limits: free services sleep after 15 minutes without traffic (the first request takes about a minute), and Render's free database is deleted after 30 days. For anything beyond a trial, replace it with a Neon database: remove the database from the blueprint and set `DATABASE_URL`.
 

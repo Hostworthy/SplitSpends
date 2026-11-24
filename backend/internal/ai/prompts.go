@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/ports"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/ports"
 )
 
 const receiptPrompt = `You read photos of receipts and bills for an expense-splitting app.

@@ -3,10 +3,10 @@ package api
 import (
 	"net/http"
 
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/expense"
-	"github.com/atb00ker/splitspends/backend/internal/core/domains/transfer"
-	"github.com/atb00ker/splitspends/backend/internal/core/shared/errs"
-	"github.com/atb00ker/splitspends/backend/internal/platform"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/expense"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/domains/transfer"
+	"github.com/Hostworthy/SplitSpends/backend/internal/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/backend/internal/platform"
 	"github.com/google/uuid"
 )
 

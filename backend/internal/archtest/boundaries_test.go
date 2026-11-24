@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-const module = "github.com/atb00ker/splitspends/backend/"
+const module = "github.com/Hostworthy/SplitSpends/backend/"
 
 type rule struct {
 	name   string
