@@ -1,10 +1,11 @@
-.PHONY: help setup dev api web check test test-integration lint fmt hooks brand build docker web-build apk lambda
+.PHONY: help setup dev api web check test test-integration lint vuln fmt hooks brand build docker web-build apk lambda
 
 .DEFAULT_GOAL := help
 TEST_DATABASE_URL ?= postgres://splitspends:splitspends@localhost:5432/splitspends_test?sslmode=disable
 DART_MEMBERS := packages/ledger packages/client apps/apk apps/ios apps/web
 # Built with the project's Go toolchain, so it understands this Go version.
 GOLANGCI ?= go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.10.0
 
 help:
 	@echo "Targets:"
@@ -12,8 +13,9 @@ help:
 	@echo "  dev               Run the API (:8080) and the web app (:5173)"
 	@echo "  api               Run only the API (apps/api)"
 	@echo "  web               Run only the web app (apps/web) against the local API"
-	@echo "  check             lint and test"
+	@echo "  check             lint, vuln and test"
 	@echo "  lint              gofmt, go vet, golangci-lint, dart format, flutter analyze, fonts"
+	@echo "  vuln              Known vulnerabilities in Go code and the standard library"
 	@echo "  fmt               Format Go and Dart and apply Dart fixes"
 	@echo "  hooks             Run quick format checks before every commit"
 	@echo "  brand             Render icons, splash images and banners"
@@ -61,6 +63,9 @@ lint:
 	for d in $(DART_MEMBERS); do (cd $$d && flutter analyze) || exit 1; done
 	scripts/fonts/fallback.sh check
 
+vuln:
+	$(GOVULNCHECK) ./...
+
 test:
 	go test -count=1 ./...
 	cd packages/ledger && dart test
@@ -69,7 +74,7 @@ test:
 test-integration:
 	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -count=1 ./packages/bootstrap/...
 
-check: lint test
+check: lint vuln test
 
 build:
 	CGO_ENABLED=0 go build -trimpath -o bin/splitspends ./apps/api

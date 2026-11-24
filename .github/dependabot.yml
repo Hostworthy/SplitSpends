@@ -11,3 +11,29 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go:
+        patterns: ["*"]
+
+  # One entry for the whole pub workspace: pubspec.lock lives at the root.
+  - package-ecosystem: pub
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      pub:
+        patterns: ["*"]
+
+  # Base images in the root Dockerfile.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      images:
+        patterns: ["*"]

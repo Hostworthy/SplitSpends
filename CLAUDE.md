@@ -12,7 +12,8 @@ Self-hosted Splitwise alternative: Go API and MCP server on PostgreSQL, Flutter 
 | `make lint` | gofmt, go vet, golangci-lint (`.golangci.yml`), dart format, flutter analyze on every Dart member (root `analysis_options.yaml` is shared) |
 | `make fmt` | gofmt, dart fix and dart format |
 | `make test` | Go tests, `packages/ledger` (dart test), `packages/client` (flutter test) |
-| `make check` | `lint` and `test` |
+| `make vuln` | govulncheck on the Go code and standard library |
+| `make check` | `lint`, `vuln` and `test` |
 
 Run the relevant checks before considering work done. If a check needs infrastructure that is not running, say so instead of skipping it silently.
 

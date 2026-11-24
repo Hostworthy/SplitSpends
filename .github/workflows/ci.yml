@@ -7,6 +7,9 @@ on:
   # The Android emulator job is slow (about 15 minutes), so it only runs when
   # started by hand: Actions, CI, Run workflow.
   workflow_dispatch:
+  # Weekly, so advisories published after the last push still fail a run.
+  schedule:
+    - cron: "17 5 * * 1"
 
 permissions:
   contents: read
@@ -47,6 +50,19 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://splitspends:splitspends@localhost:5432/splitspends_test?sslmode=disable
         run: go test -count=1 ./...
+
+  vuln:
+    name: vuln
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: govulncheck
+        run: make vuln
 
   dart:
     name: app
