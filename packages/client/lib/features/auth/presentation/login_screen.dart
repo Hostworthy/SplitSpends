@@ -105,10 +105,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   keyboardType: TextInputType.url,
                   textInputAction: TextInputAction.go,
                   onSubmitted: (_) => _submit(),
-                  decoration: const InputDecoration(
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
                     labelText: 'Server',
                     hintText: 'https://splitspends.example.com',
-                    prefixIcon: Icon(Icons.dns_outlined),
+                    prefixIcon: const Icon(Icons.dns_outlined),
+                    helperText: insecureServer(_server.text)
+                        ? 'Not encrypted. Fine on your home network; use '
+                              'https:// anywhere else.'
+                        : null,
+                    helperMaxLines: 2,
                   ),
                 )
               : Align(
@@ -143,3 +149,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 }
+
+/// True for `http://` addresses, which send sign-in codes unencrypted.
+bool insecureServer(String url) =>
+    url.trim().toLowerCase().startsWith('http://');
