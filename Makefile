@@ -10,7 +10,7 @@ help:
 	@echo "  dev               Run the API (:8080) and the web app (:5173)"
 	@echo "  api               Run only the API (apps/api)"
 	@echo "  web               Run only the web app (apps/web) against the local API"
-	@echo "  check             Format check, vet, unit tests, boundaries, analyze, Dart tests"
+	@echo "  check             Format check, vet, unit tests, boundaries, analyze, fonts, Dart tests"
 	@echo "  test-integration  Database tests (needs TEST_DATABASE_URL)"
 	@echo "  build             Build the API and MCP binaries into bin/"
 	@echo "  web-build         Build the web app into apps/web/build/web"
@@ -44,6 +44,7 @@ lint:
 	go vet ./...
 	dart format --output=none --set-exit-if-changed $(DART_MEMBERS)
 	for d in $(DART_MEMBERS); do (cd $$d && flutter analyze) || exit 1; done
+	scripts/fonts/fallback.sh check
 
 test:
 	go test -count=1 ./...
