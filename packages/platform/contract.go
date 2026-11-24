@@ -99,6 +99,23 @@ type Category struct {
 	Icon  string `json:"icon"`
 }
 
+// CategoryEntry is a category as GET /categories lists it. Custom ones have
+// ids of the form custom.<uuid>; Mine marks the caller's own.
+type CategoryEntry struct {
+	Category
+	Custom bool `json:"custom"`
+	Mine   bool `json:"mine"`
+}
+
+// CategoryInput creates or changes a custom category. Group is the display
+// group (one of the built-in category groups, "Other" when empty).
+type CategoryInput struct {
+	ID    *string `json:"id,omitempty"`
+	Name  *string `json:"name,omitempty"`
+	Icon  *string `json:"icon,omitempty"`
+	Group *string `json:"group,omitempty"`
+}
+
 // Config is public instance configuration.
 type Config struct {
 	AppName    string     `json:"appName"`
@@ -193,7 +210,52 @@ type Group struct {
 	UpdatedAt       string    `json:"updatedAt"`
 	Members         []User    `json:"members"`
 	Balances        []Balance `json:"balances"`
+	// DefaultSplit is null when the group has none, or when a percent or
+	// shares default no longer matches the members.
+	DefaultSplit *DefaultSplit `json:"defaultSplit"`
 }
+
+// DefaultSplit is what new expenses in a group start with. Method is
+// "equal", "percent" or "shares"; Values maps user ids to decimal strings
+// (empty for equal; every member for percent and shares, "0" leaves someone
+// out).
+type DefaultSplit struct {
+	Method string            `json:"method"`
+	Values map[string]string `json:"values"`
+}
+
+// Nullable is a patch field that tells "absent" (leave unchanged) apart from
+// null (clear). Use it with the omitzero tag option.
+type Nullable[T any] struct {
+	Set   bool
+	Value *T
+}
+
+// UnmarshalJSON records that the field was present; null leaves Value nil.
+func (n *Nullable[T]) UnmarshalJSON(b []byte) error {
+	n.Set = true
+	if string(b) == "null" {
+		n.Value = nil
+		return nil
+	}
+	var v T
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	n.Value = &v
+	return nil
+}
+
+// MarshalJSON writes the value or null.
+func (n Nullable[T]) MarshalJSON() ([]byte, error) {
+	if n.Value == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(*n.Value)
+}
+
+// IsZero lets omitzero drop an unset field.
+func (n Nullable[T]) IsZero() bool { return !n.Set }
 
 // GroupCreate creates a group.
 type GroupCreate struct {
@@ -211,6 +273,8 @@ type GroupPatch struct {
 	Emoji           *string `json:"emoji,omitempty"`
 	Color           *string `json:"color,omitempty"`
 	Archived        *bool   `json:"archived,omitempty"`
+	// DefaultSplit sets the default split; null clears it.
+	DefaultSplit Nullable[DefaultSplit] `json:"defaultSplit,omitzero"`
 }
 
 // MemberBalance is one member's balance in a group.
@@ -338,9 +402,11 @@ type Activity struct {
 	CreatedAt string         `json:"createdAt"`
 }
 
-// Amount is a labelled total.
+// CategoryAmount is the total of one category. Name is its display name;
+// spending under deleted custom categories counts as "general".
 type CategoryAmount struct {
 	Category string `json:"category"`
+	Name     string `json:"name"`
 	Amount   int64  `json:"amount"`
 }
 
@@ -438,7 +504,18 @@ type ImportPerson struct {
 	Email string `json:"email,omitempty"`
 }
 
-// ImportGroup is a local group; memberIds are local person ids.
+// ImportCategory is a custom category from the device. Deleted ones are
+// sent too so expenses that still use them keep their id.
+type ImportCategory struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Icon    string `json:"icon,omitempty"`
+	Group   string `json:"group,omitempty"`
+	Deleted bool   `json:"deleted,omitempty"`
+}
+
+// ImportGroup is a local group; memberIds and the keys of
+// defaultSplit.values are local person ids.
 type ImportGroup struct {
 	ID string `json:"id"`
 	GroupPatch
@@ -454,15 +531,17 @@ type ImportExpense struct {
 // ImportRequest uploads local-only data to an account. meId is the local
 // person id that stands for the device owner.
 type ImportRequest struct {
-	MeID     string          `json:"meId"`
-	People   []ImportPerson  `json:"people"`
-	Groups   []ImportGroup   `json:"groups"`
-	Expenses []ImportExpense `json:"expenses"`
+	MeID       string           `json:"meId"`
+	People     []ImportPerson   `json:"people"`
+	Categories []ImportCategory `json:"categories,omitempty"`
+	Groups     []ImportGroup    `json:"groups"`
+	Expenses   []ImportExpense  `json:"expenses"`
 }
 
 // ImportResult maps local person ids to server user ids.
 type ImportResult struct {
-	People   map[string]string `json:"people"`
-	Groups   int               `json:"groups"`
-	Expenses int               `json:"expenses"`
+	People     map[string]string `json:"people"`
+	Categories int               `json:"categories"`
+	Groups     int               `json:"groups"`
+	Expenses   int               `json:"expenses"`
 }

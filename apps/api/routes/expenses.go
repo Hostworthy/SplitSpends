@@ -403,7 +403,7 @@ func (a *API) stats(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := platform.Stats{Currency: s.Currency, TotalSpent: s.Total, ByCategory: []platform.CategoryAmount{}, ByMonth: []platform.MonthAmount{}, ByMember: []platform.MemberSpend{}}
 	for _, c := range s.ByCategory {
-		out.ByCategory = append(out.ByCategory, platform.CategoryAmount{Category: c.Key, Amount: c.Amount})
+		out.ByCategory = append(out.ByCategory, platform.CategoryAmount{Category: c.Key, Name: c.Name, Amount: c.Amount})
 	}
 	for _, m := range s.ByMonth {
 		out.ByMonth = append(out.ByMonth, platform.MonthAmount{Month: m.Key, Amount: m.Amount})

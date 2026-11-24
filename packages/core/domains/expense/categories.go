@@ -1,5 +1,11 @@
 package expense
 
+import (
+	"strings"
+
+	"github.com/google/uuid"
+)
+
 // Category is a spending category. Icon is a Material Symbols name the
 // clients render.
 type Category struct {
@@ -78,8 +84,30 @@ func CategoryIDs() []string {
 	return out
 }
 
-// KnownCategory reports whether id is a valid category.
+// KnownCategory reports whether id is a built-in category.
 func KnownCategory(id string) bool {
 	_, ok := categoryIndex[id]
 	return ok
+}
+
+// BuiltIn returns the built-in category with id.
+func BuiltIn(id string) (Category, bool) {
+	c, ok := categoryIndex[id]
+	return c, ok
+}
+
+// CustomPrefix starts the id of every user-defined category:
+// custom.<uuid>.
+const CustomPrefix = "custom."
+
+// CustomCategory reports whether id is shaped like a user-defined category
+// id (lowercase canonical UUID after the prefix). Whether the category exists
+// and who may use it is checked by the service through Categories.
+func CustomCategory(id string) bool {
+	rest, ok := strings.CutPrefix(id, CustomPrefix)
+	if !ok {
+		return false
+	}
+	u, err := uuid.Parse(rest)
+	return err == nil && u.String() == rest
 }

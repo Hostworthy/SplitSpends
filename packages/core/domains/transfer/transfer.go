@@ -1,14 +1,17 @@
 // Package transfer imports data someone recorded in local-only mode into a
 // server account, in one transaction and without sending notifications.
-// Retrying an import is safe: groups, expenses and name-only people keep the
-// ids the device chose, and people with an email resolve to the same user.
+// Retrying an import is safe: groups, expenses, custom categories and
+// name-only people keep the ids the device chose, and people with an email
+// resolve to the same user.
 package transfer
 
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/category"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/friend"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
@@ -20,9 +23,10 @@ import (
 
 // Limits keep a single request bounded.
 const (
-	MaxPeople   = 1000
-	MaxGroups   = 500
-	MaxExpenses = 20000
+	MaxPeople     = 1000
+	MaxGroups     = 500
+	MaxExpenses   = 20000
+	MaxCategories = category.MaxPerUser
 )
 
 // Person is someone from the device's address book.
@@ -32,7 +36,16 @@ type Person struct {
 	Email string
 }
 
-// Group is a local group; Members are local person ids.
+// Category is a custom category from the device. Deleted ones are imported
+// too, so expenses that still use them keep their id, and are deleted once
+// the expenses are in.
+type Category struct {
+	Input   category.Input
+	Deleted bool
+}
+
+// Group is a local group; Members and the keys of Patch.DefaultSplit are
+// local person ids.
 type Group struct {
 	ID      uuid.UUID
 	Patch   group.Patch
@@ -48,37 +61,41 @@ type Expense struct {
 // Bundle is everything recorded on the device. Me is the local id that
 // stands for the device owner.
 type Bundle struct {
-	Me       uuid.UUID
-	People   []Person
-	Groups   []Group
-	Expenses []Expense
+	Me         uuid.UUID
+	People     []Person
+	Categories []Category
+	Groups     []Group
+	Expenses   []Expense
 }
 
 // Result maps local person ids to server user ids.
 type Result struct {
-	People   map[uuid.UUID]uuid.UUID
-	Groups   int
-	Expenses int
+	People     map[uuid.UUID]uuid.UUID
+	Categories int
+	Groups     int
+	Expenses   int
 }
 
 // Service runs imports.
 type Service struct {
-	users    *user.Service
-	friends  friend.Repository
-	groups   *group.Service
-	expenses *expense.Service
-	tx       ports.Tx
+	users      *user.Service
+	friends    friend.Repository
+	groups     *group.Service
+	expenses   *expense.Service
+	categories *category.Service
+	tx         ports.Tx
 }
 
 // NewService builds a Service.
-func NewService(users *user.Service, friends friend.Repository, groups *group.Service, expenses *expense.Service, tx ports.Tx) *Service {
-	return &Service{users: users, friends: friends, groups: groups, expenses: expenses, tx: tx}
+func NewService(users *user.Service, friends friend.Repository, groups *group.Service, expenses *expense.Service, categories *category.Service, tx ports.Tx) *Service {
+	return &Service{users: users, friends: friends, groups: groups, expenses: expenses, categories: categories, tx: tx}
 }
 
 // Import copies b into actor's account.
 func (s *Service) Import(ctx context.Context, actor uuid.UUID, b Bundle) (*Result, error) {
-	if len(b.People) > MaxPeople || len(b.Groups) > MaxGroups || len(b.Expenses) > MaxExpenses {
-		return nil, errs.Validation("", fmt.Sprintf("Import at most %d people, %d groups and %d expenses at a time.", MaxPeople, MaxGroups, MaxExpenses))
+	if len(b.People) > MaxPeople || len(b.Groups) > MaxGroups || len(b.Expenses) > MaxExpenses || len(b.Categories) > MaxCategories {
+		return nil, errs.Validation("", fmt.Sprintf("Import at most %d people, %d categories, %d groups and %d expenses at a time.",
+			MaxPeople, MaxCategories, MaxGroups, MaxExpenses))
 	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
@@ -94,13 +111,19 @@ func (s *Service) Import(ctx context.Context, actor uuid.UUID, b Bundle) (*Resul
 			}
 			res.People[p.ID] = id
 		}
+		for i, c := range b.Categories {
+			if _, err := s.categories.Create(ctx, actor, c.Input); err != nil {
+				return wrap(err, fmt.Sprintf("categories[%d]", i), name(c.Input.Name))
+			}
+			res.Categories++
+		}
 		for i, g := range b.Groups {
-			members, err := remapAll(res.People, g.Members)
+			patch, members, err := remapGroup(res.People, g)
 			if err != nil {
 				return wrap(err, fmt.Sprintf("groups[%d]", i), name(g.Patch.Name))
 			}
 			id := g.ID
-			if _, err := s.groups.Create(ctx, actor, group.CreateInput{ID: &id, Patch: g.Patch, People: members}); err != nil {
+			if _, err := s.groups.Create(ctx, actor, group.CreateInput{ID: &id, Patch: patch, People: members}); err != nil {
 				return wrap(err, fmt.Sprintf("groups[%d]", i), name(g.Patch.Name))
 			}
 			res.Groups++
@@ -110,6 +133,15 @@ func (s *Service) Import(ctx context.Context, actor uuid.UUID, b Bundle) (*Resul
 				return wrap(err, fmt.Sprintf("expenses[%d]", i), e.Input.Description)
 			}
 			res.Expenses++
+		}
+		for i, c := range b.Categories {
+			if !c.Deleted || c.Input.ID == nil {
+				continue
+			}
+			err := s.categories.Delete(ctx, actor, *c.Input.ID)
+			if err != nil && !errs.Is(err, errs.KindNotFound) {
+				return wrap(err, fmt.Sprintf("categories[%d]", i), name(c.Input.Name))
+			}
 		}
 		return nil
 	})
@@ -145,6 +177,8 @@ func (s *Service) person(ctx context.Context, me *user.User, p Person) (uuid.UUI
 
 func (s *Service) expense(ctx context.Context, actor uuid.UUID, people map[uuid.UUID]uuid.UUID, e Expense) error {
 	in := e.Input
+	// Copy before remapping so the bundle stays intact (retries, shared slices).
+	in.Payers, in.Splits = slices.Clone(in.Payers), slices.Clone(in.Splits)
 	var err error
 	for i := range in.Payers {
 		if in.Payers[i].UserID, err = remap(people, in.Payers[i].UserID); err != nil {
@@ -176,6 +210,28 @@ func (s *Service) expense(ctx context.Context, actor uuid.UUID, people map[uuid.
 	}
 	_, err = s.expenses.Create(ctx, actor, in)
 	return err
+}
+
+// remapGroup rewrites local person ids in a group's members and default
+// split.
+func remapGroup(people map[uuid.UUID]uuid.UUID, g Group) (group.Patch, []uuid.UUID, error) {
+	members, err := remapAll(people, g.Members)
+	if err != nil {
+		return group.Patch{}, nil, err
+	}
+	patch := g.Patch
+	if d := patch.DefaultSplit; d != nil && d.Method != "" {
+		values := make(map[uuid.UUID]string, len(d.Values))
+		for local, v := range d.Values {
+			id, err := remap(people, local)
+			if err != nil {
+				return group.Patch{}, nil, err
+			}
+			values[id] = v
+		}
+		patch.DefaultSplit = &group.DefaultSplit{Method: d.Method, Values: values}
+	}
+	return patch, members, nil
 }
 
 func remap(people map[uuid.UUID]uuid.UUID, local uuid.UUID) (uuid.UUID, error) {

@@ -96,7 +96,10 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	if in.ID != nil && *in.ID != uuid.Nil {
 		g.ID = *in.ID
 	}
-	in.Name = nil
+	// The default split is checked against the members, so it is applied
+	// once they are known.
+	split := in.DefaultSplit
+	in.Name, in.DefaultSplit = nil, nil
 	if err := g.Apply(in.Patch, now); err != nil {
 		return nil, err
 	}
@@ -131,6 +134,14 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 				return err
 			}
 			g.Members = append(g.Members, id)
+		}
+		if split != nil {
+			if err := g.Apply(Patch{DefaultSplit: split}, now); err != nil {
+				return err
+			}
+			if err := s.repo.Update(ctx, g); err != nil {
+				return err
+			}
 		}
 		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: &g.ID, Kind: activity.GroupCreated,
 			Involved: g.Members, Data: map[string]any{"groupName": g.Name}})

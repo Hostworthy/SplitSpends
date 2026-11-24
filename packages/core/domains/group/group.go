@@ -46,6 +46,9 @@ type Group struct {
 	ArchivedAt      *time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	// DefaultSplit is the stored default split; Effective says whether it
+	// still applies to the current members.
+	DefaultSplit *DefaultSplit
 	// Members is a read-model field with active member ids.
 	Members []uuid.UUID
 }
@@ -59,6 +62,9 @@ type Patch struct {
 	Emoji           *string
 	Color           *string
 	Archived        *bool
+	// DefaultSplit sets the default split, validated against the current
+	// members. One with an empty Method clears it.
+	DefaultSplit *DefaultSplit
 }
 
 // New creates a group.
@@ -110,6 +116,17 @@ func (g *Group) Apply(p Patch, now time.Time) error {
 			return errs.Validation("color", "Use a hex color such as #00897B.")
 		}
 		g.Color = strings.ToUpper(*p.Color)
+	}
+	if p.DefaultSplit != nil {
+		if p.DefaultSplit.Method == "" {
+			g.DefaultSplit = nil
+		} else {
+			d, err := p.DefaultSplit.Validate(g.Members)
+			if err != nil {
+				return err
+			}
+			g.DefaultSplit = d
+		}
 	}
 	if p.Archived != nil {
 		if *p.Archived && g.ArchivedAt == nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/assist"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/balance"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/category"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/friend"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
@@ -38,6 +39,8 @@ type Services struct {
 	Assist   *assist.Service
 	Stats    *stats.Service
 	Transfer *transfer.Service
+	// Categories are the built-in plus user-defined expense categories.
+	Categories *category.Service
 }
 
 // Runtime is a fully wired application.
@@ -122,8 +125,9 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 	groups := group.NewService(groupRepo, users, balances, act, notifier, tx, c, cfg.BaseURL)
 	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
 	receipts := receipt.NewService(receiptRepo, blobs, reader, c)
+	categories := category.NewService(repositories.NewCategories(db), c)
 	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
-		Connections: friends, Receipts: receiptRepo, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+		Connections: friends, Receipts: receiptRepo, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	return &Services{
 		Auth:     auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, notifier, tx, c),
 		Users:    users,
@@ -132,10 +136,12 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 		Balances: balances,
 		Activity: act,
 		Expenses: expenses,
-		Transfer: transfer.NewService(users, friendRepo, groups, expenses, tx),
+		Transfer: transfer.NewService(users, friendRepo, groups, expenses, categories, tx),
 		Receipts: receipts,
 		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, c),
-		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users),
+		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users, categories),
+
+		Categories: categories,
 	}
 }
 

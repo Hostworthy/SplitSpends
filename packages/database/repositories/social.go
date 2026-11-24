@@ -2,7 +2,9 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
@@ -74,18 +76,54 @@ type Groups struct{ db *database.DB }
 func NewGroups(db *database.DB) *Groups { return &Groups{db: db} }
 
 const groupColumns = `g.id, g.created_by, g.archived_at, g.created_at, g.updated_at, g.simplify_debts, g.name, g.kind, g.default_currency, g.emoji, g.color,
-	COALESCE((SELECT array_agg(m.user_id ORDER BY m.joined_at) FROM group_members m WHERE m.group_id = g.id AND m.left_at IS NULL), '{}')`
+	g.default_split, COALESCE((SELECT array_agg(m.user_id ORDER BY m.joined_at) FROM group_members m WHERE m.group_id = g.id AND m.left_at IS NULL), '{}')`
+
+// splitRow is the stored JSON shape of a group's default split.
+type splitRow struct {
+	Method group.SplitMethod    `json:"method"`
+	Values map[uuid.UUID]string `json:"values"`
+}
+
+func splitJSON(d *group.DefaultSplit) (any, error) {
+	if d == nil {
+		return nil, nil
+	}
+	values := d.Values
+	if values == nil {
+		values = map[uuid.UUID]string{}
+	}
+	b, err := json.Marshal(splitRow{Method: d.Method, Values: values})
+	if err != nil {
+		return nil, fmt.Errorf("database.group.default-split.encode: %w", err)
+	}
+	return b, nil
+}
 
 func scanGroup(row pgx.Row) (*group.Group, error) {
 	var g group.Group
-	err := row.Scan(&g.ID, &g.CreatedBy, &g.ArchivedAt, &g.CreatedAt, &g.UpdatedAt, &g.SimplifyDebts, &g.Name, &g.Kind, &g.DefaultCurrency, &g.Emoji, &g.Color, &g.Members)
-	return &g, err
+	var split []byte
+	err := row.Scan(&g.ID, &g.CreatedBy, &g.ArchivedAt, &g.CreatedAt, &g.UpdatedAt, &g.SimplifyDebts, &g.Name, &g.Kind, &g.DefaultCurrency, &g.Emoji, &g.Color, &split, &g.Members)
+	if err != nil {
+		return &g, err
+	}
+	if len(split) > 0 {
+		var s splitRow
+		if err := json.Unmarshal(split, &s); err != nil {
+			return nil, fmt.Errorf("database.group.default-split.invalid: %w", err)
+		}
+		g.DefaultSplit = &group.DefaultSplit{Method: s.Method, Values: s.Values}
+	}
+	return &g, nil
 }
 
 func (r *Groups) Create(ctx context.Context, g *group.Group) error {
-	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO groups (id, created_by, archived_at, created_at, updated_at, simplify_debts, name, kind, default_currency, emoji, color)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		g.ID, g.CreatedBy, g.ArchivedAt, g.CreatedAt, g.UpdatedAt, g.SimplifyDebts, g.Name, g.Kind, g.DefaultCurrency, g.Emoji, g.Color)
+	split, err := splitJSON(g.DefaultSplit)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Q(ctx).Exec(ctx, `INSERT INTO groups (id, created_by, archived_at, created_at, updated_at, simplify_debts, name, kind, default_currency, emoji, color, default_split)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		g.ID, g.CreatedBy, g.ArchivedAt, g.CreatedAt, g.UpdatedAt, g.SimplifyDebts, g.Name, g.Kind, g.DefaultCurrency, g.Emoji, g.Color, split)
 	return err
 }
 
@@ -98,8 +136,13 @@ func (r *Groups) Get(ctx context.Context, id uuid.UUID) (*group.Group, error) {
 }
 
 func (r *Groups) Update(ctx context.Context, g *group.Group) error {
-	_, err := r.db.Q(ctx).Exec(ctx, `UPDATE groups SET archived_at=$2, updated_at=$3, simplify_debts=$4, name=$5, kind=$6, default_currency=$7, emoji=$8, color=$9 WHERE id=$1`,
-		g.ID, g.ArchivedAt, g.UpdatedAt, g.SimplifyDebts, g.Name, g.Kind, g.DefaultCurrency, g.Emoji, g.Color)
+	split, err := splitJSON(g.DefaultSplit)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Q(ctx).Exec(ctx, `UPDATE groups SET archived_at=$2, updated_at=$3, simplify_debts=$4, name=$5, kind=$6, default_currency=$7, emoji=$8, color=$9,
+		default_split=$10 WHERE id=$1`,
+		g.ID, g.ArchivedAt, g.UpdatedAt, g.SimplifyDebts, g.Name, g.Kind, g.DefaultCurrency, g.Emoji, g.Color, split)
 	return err
 }
 
