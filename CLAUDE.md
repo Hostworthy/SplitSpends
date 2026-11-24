@@ -25,6 +25,7 @@ Run the relevant checks before considering work done. If a check needs infrastru
 | Environment variables | [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) |
 | Architecture decisions | [docs/adr/README.md](docs/adr/README.md) |
 | MCP | [docs/MCP.md](docs/MCP.md) |
+| Releases | [docs/RELEASING.md](docs/RELEASING.md) |
 
 ## Non-Negotiables
 
