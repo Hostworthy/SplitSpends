@@ -57,3 +57,9 @@ type CommentRepository interface {
 type Receipts interface {
 	Owned(ctx context.Context, receiptID, userID uuid.UUID) (bool, error)
 }
+
+// Catalog says who may file expenses under a custom category.
+type Catalog interface {
+	// Usable reports whether userID owns the live custom category id.
+	Usable(ctx context.Context, userID uuid.UUID, id string) (bool, error)
+}

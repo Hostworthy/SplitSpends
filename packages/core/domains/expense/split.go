@@ -82,7 +82,7 @@ func Normalize(in Input, today time.Time) (*Normalized, error) {
 	if in.Category == "" {
 		in.Category = DefaultCategory
 	}
-	if !KnownCategory(in.Category) {
+	if !KnownCategory(in.Category) && !CustomCategory(in.Category) {
 		return nil, errs.Validation("category", "Unknown category.")
 	}
 	if in.Recurrence == "" {

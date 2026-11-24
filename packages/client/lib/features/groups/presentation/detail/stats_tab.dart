@@ -7,7 +7,8 @@ import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/category_icon.dart';
-import 'package:splitspends/core/widgets/pickers.dart';
+import 'package:splitspends/features/categories/presentation/category_badge.dart';
+import 'package:splitspends/features/categories/presentation/providers.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/domain/stats.dart';
@@ -23,7 +24,7 @@ class GroupStatsTab extends ConsumerStatefulWidget {
 }
 
 class _GroupStatsTabState extends ConsumerState<GroupStatsTab> {
-  late String _currency = widget.group.defaultCurrency;
+  late final String _currency = widget.group.defaultCurrency;
 
   @override
   Widget build(BuildContext context) {
@@ -45,17 +46,6 @@ class _GroupStatsTabState extends ConsumerState<GroupStatsTab> {
               children: [
                 Expanded(
                   child: StatsTotal(stats: s, label: 'Group spending'),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.currency_exchange_rounded, size: 18),
-                  label: Text(_currency),
-                  onPressed: () async {
-                    final code = await pickCurrency(
-                      context,
-                      selected: _currency,
-                    );
-                    if (code != null) setState(() => _currency = code);
-                  },
                 ),
               ],
             ),
@@ -109,6 +99,7 @@ class CategoryChart extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final config = ref.watch(configValueProvider);
+    final catalog = ref.watch(categoryCatalogProvider);
     final info = config.currency(stats.currency);
     final total = stats.byCategory.fold<int>(0, (a, c) => a + c.amount);
     final items = [...stats.byCategory]
@@ -131,7 +122,11 @@ class CategoryChart extends ConsumerWidget {
                     for (final c in items)
                       PieChartSectionData(
                         value: c.amount.toDouble(),
-                        color: categoryVisual(c.category).color,
+                        color: categoryVisual(
+                          c.category,
+                          icon: catalog.find(c.category).icon,
+                          group: catalog.find(c.category).group,
+                        ).color,
                         radius: 34,
                         showTitle: false,
                       ),
@@ -145,13 +140,9 @@ class CategoryChart extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   children: [
-                    CategoryIcon(category: c.category, size: 28),
+                    CategoryBadge(category: c.category, size: 28),
                     const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        config.category(c.category)?.name ?? c.category,
-                      ),
-                    ),
+                    Expanded(child: Text(catalog.find(c.category).name)),
                     Text(
                       total == 0
                           ? ''

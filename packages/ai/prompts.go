@@ -38,7 +38,7 @@ Groups the user belongs to (id, name, currency, member ids):
 How to fill the answer:
 - "description": a short title such as "Dinner at the market" or the store name.
 - "amount": the total paid, as a plain decimal string with a dot and no symbol, for example "60" or "132.40".
-- "currency": an ISO 4217 code. Use the group's currency, a currency printed on the receipt, or the default.
+- "currency": the ISO 4217 code of the amounts you give. With a receipt, use the currency printed on it and copy its amounts exactly as printed; never convert them yourself, the app converts them to the group's currency with today's exchange rate. Without a receipt, use the currency the user names, else the group's currency, else the default.
 - "date": YYYY-MM-DD. Resolve words like "yesterday" against today. Use the receipt date when there is one.
 - "category": one of: %s.
 - "groupId": the id of the group the user names (by name, loosely matched), else an empty string.

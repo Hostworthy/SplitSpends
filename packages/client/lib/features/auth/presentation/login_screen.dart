@@ -9,6 +9,7 @@ import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/auth/presentation/auth_layout.dart';
+import 'package:splitspends/features/invites/presentation/providers.dart';
 
 final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
 
@@ -62,7 +63,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (ref.read(sessionProvider).value?.serverUrl != server) {
         await session.setServerUrl(server);
       }
-      await ref.read(authRepositoryProvider).requestCode(server, email);
+      await ref
+          .read(authRepositoryProvider)
+          .requestCode(
+            server,
+            email,
+            inviteToken: ref.read(pendingInviteProvider)?.token,
+          );
       if (!mounted) return;
       context.go('${Routes.verify}?email=${Uri.encodeQueryComponent(email)}');
     } on ApiError catch (error) {
@@ -75,10 +82,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final invited = ref.watch(pendingInviteProvider) != null;
     return AuthLayout(
       showBack: true,
       title: 'Connect to a server',
-      subtitle: 'Sign in with your email to sync and share. We will email you a 6-digit code.',
+      subtitle: invited
+          ? 'Sign in with your email to join the group. We will email you a '
+                '6-digit code.'
+          : 'Sign in with your email to sync and share. We will email you a 6-digit code.',
       children: [
         TextField(
           key: const Key('login-email'),

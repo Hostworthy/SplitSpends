@@ -6,6 +6,7 @@ import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/app/theme.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
+import 'package:splitspends/core/models/balance.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
@@ -13,6 +14,7 @@ import 'package:splitspends/core/widgets/balance_text.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';
+import 'package:splitspends/features/reminders/presentation/remind_button.dart';
 
 class GroupBalancesTab extends ConsumerWidget {
   const GroupBalancesTab({super.key, required this.group});
@@ -28,6 +30,12 @@ class GroupBalancesTab extends ConsumerWidget {
     final colors = BalanceColors.of(context);
     String name(String id) =>
         id == meId ? 'You' : (group.member(id)?.firstName ?? 'Someone');
+    // Everything one person owes you in this group, for a reminder.
+    List<Balance> owedBy(GroupBalances data, String id) => [
+      for (final d in data.debts)
+        if (d.from == id && d.to == meId)
+          Balance(currency: d.currency, amount: d.amount),
+    ];
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -80,18 +88,30 @@ class GroupBalancesTab extends ConsumerWidget {
                         : null,
                   ),
                 ),
-                trailing: FilledButton.tonal(
-                  onPressed: () => context.push(
-                    Routes.settle,
-                    extra: SettleArgs(
-                      groupId: group.id,
-                      fromUserId: debt.from,
-                      toUserId: debt.to,
-                      amount: debt.amount,
-                      currency: debt.currency,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (debt.to == meId && group.member(debt.from) != null)
+                      RemindButton(
+                        user: group.member(debt.from)!,
+                        owed: owedBy(data, debt.from),
+                        groupId: group.id,
+                        groupName: group.name,
+                      ),
+                    FilledButton.tonal(
+                      onPressed: () => context.push(
+                        Routes.settle,
+                        extra: SettleArgs(
+                          groupId: group.id,
+                          fromUserId: debt.from,
+                          toUserId: debt.to,
+                          amount: debt.amount,
+                          currency: debt.currency,
+                        ),
+                      ),
+                      child: const Text('Settle'),
                     ),
-                  ),
-                  child: const Text('Settle'),
+                  ],
                 ),
               ),
             const SectionHeader('Members'),

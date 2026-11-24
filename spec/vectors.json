@@ -1,5 +1,5 @@
 {
- "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. Debts are sorted by currency, then amount descending, then from, then to.",
+ "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. Debts are sorted by currency, then amount descending, then from, then to. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members (error names the failing field); when current is given, effective says whether the saved split still applies to those members.",
  "splits": [
   {
    "name": "equal three ways",
@@ -608,5 +608,515 @@
     "amount": 1000
    }
   ]
- }
+ },
+ "conversions": {
+  "table": {
+   "base": "USD",
+   "rates": {
+    "USD": "1",
+    "EUR": "0.912",
+    "JPY": "159.07",
+    "BHD": "0.376",
+    "GBP": "0.75",
+    "INR": "92.92"
+   }
+  },
+  "convert": [
+   {
+    "name": "5000 EUR to USD",
+    "amount": {
+     "currency": "EUR",
+     "minor": 5000
+    },
+    "to": "USD",
+    "expect": 5482
+   },
+   {
+    "name": "1000 USD to JPY",
+    "amount": {
+     "currency": "USD",
+     "minor": 1000
+    },
+    "to": "JPY",
+    "expect": 1591
+   },
+   {
+    "name": "1000 JPY to USD",
+    "amount": {
+     "currency": "JPY",
+     "minor": 1000
+    },
+    "to": "USD",
+    "expect": 629
+   },
+   {
+    "name": "1 USD to BHD",
+    "amount": {
+     "currency": "USD",
+     "minor": 1
+    },
+    "to": "BHD",
+    "expect": 4
+   },
+   {
+    "name": "6 USD to GBP",
+    "amount": {
+     "currency": "USD",
+     "minor": 6
+    },
+    "to": "GBP",
+    "expect": 5
+   },
+   {
+    "name": "-6 USD to GBP",
+    "amount": {
+     "currency": "USD",
+     "minor": -6
+    },
+    "to": "GBP",
+    "expect": -5
+   },
+   {
+    "name": "2 USD to GBP",
+    "amount": {
+     "currency": "USD",
+     "minor": 2
+    },
+    "to": "GBP",
+    "expect": 2
+   },
+   {
+    "name": "123 EUR to EUR",
+    "amount": {
+     "currency": "EUR",
+     "minor": 123
+    },
+    "to": "EUR",
+    "expect": 123
+   },
+   {
+    "name": "100000 INR to EUR",
+    "amount": {
+     "currency": "INR",
+     "minor": 100000
+    },
+    "to": "EUR",
+    "expect": 981
+   },
+   {
+    "name": "100 SEK to USD",
+    "amount": {
+     "currency": "SEK",
+     "minor": 100
+    },
+    "to": "USD",
+    "expect": null
+   },
+   {
+    "name": "100 USD to SEK",
+    "amount": {
+     "currency": "USD",
+     "minor": 100
+    },
+    "to": "SEK",
+    "expect": null
+   },
+   {
+    "name": "1234 BHD to JPY",
+    "amount": {
+     "currency": "BHD",
+     "minor": 1234
+    },
+    "to": "JPY",
+    "expect": 522
+   }
+  ],
+  "totals": [
+   {
+    "name": "rounds once at the end",
+    "amounts": [
+     {
+      "currency": "USD",
+      "minor": 2
+     },
+     {
+      "currency": "USD",
+      "minor": 2
+     }
+    ],
+    "to": "GBP",
+    "expect": 3,
+    "missing": []
+   },
+   {
+    "name": "mixed currencies",
+    "amounts": [
+     {
+      "currency": "EUR",
+      "minor": 5000
+     },
+     {
+      "currency": "JPY",
+      "minor": 1000
+     },
+     {
+      "currency": "USD",
+      "minor": -2000
+     }
+    ],
+    "to": "USD",
+    "expect": 4111,
+    "missing": []
+   },
+   {
+    "name": "skips currencies without a rate",
+    "amounts": [
+     {
+      "currency": "EUR",
+      "minor": 5000
+     },
+     {
+      "currency": "SEK",
+      "minor": 100
+     },
+     {
+      "currency": "SEK",
+      "minor": 5
+     }
+    ],
+    "to": "USD",
+    "expect": 5482,
+    "missing": [
+     "SEK"
+    ]
+   }
+  ]
+ },
+ "defaultSplits": [
+  {
+   "name": "rent 60/40 by percent",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "60",
+     "00000000-0000-0000-0000-00000000000b": "40"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "current": [
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000a"
+   ],
+   "effective": true
+  },
+  {
+   "name": "percent thirds with decimals",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "33.3333",
+     "00000000-0000-0000-0000-00000000000b": "33.3333",
+     "00000000-0000-0000-0000-00000000000c": "33.3334"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000c"
+   ],
+   "current": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000c"
+   ],
+   "effective": true
+  },
+  {
+   "name": "percent with a member left out at zero",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "50",
+     "00000000-0000-0000-0000-00000000000b": "50",
+     "00000000-0000-0000-0000-00000000000c": "0"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000c"
+   ],
+   "current": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000c"
+   ],
+   "effective": true
+  },
+  {
+   "name": "percent must add up to 100",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "60",
+     "00000000-0000-0000-0000-00000000000b": "30"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "percent over 100",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "60",
+     "00000000-0000-0000-0000-00000000000b": "50"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "percent needs every member",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "100"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "only current members",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "50",
+     "00000000-0000-0000-0000-00000000000d": "50"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "negative values are rejected",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "120",
+     "00000000-0000-0000-0000-00000000000b": "-20"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "at most four decimal places",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "33.33333",
+     "00000000-0000-0000-0000-00000000000b": "66.66667"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "plain decimals only",
+   "split": {
+    "method": "shares",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "1e1",
+     "00000000-0000-0000-0000-00000000000b": "1"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "shares",
+   "split": {
+    "method": "shares",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "2",
+     "00000000-0000-0000-0000-00000000000b": "1",
+     "00000000-0000-0000-0000-00000000000c": "1.5"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000c"
+   ],
+   "current": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000c"
+   ],
+   "effective": true
+  },
+  {
+   "name": "shares need one above zero",
+   "split": {
+    "method": "shares",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "0",
+     "00000000-0000-0000-0000-00000000000b": "0"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "equal takes no values",
+   "split": {
+    "method": "equal",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "1"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "exact is not a default method",
+   "split": {
+    "method": "exact",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "100",
+     "00000000-0000-0000-0000-00000000000b": "100"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "adjustment is not a default method",
+   "split": {
+    "method": "adjustment",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "0",
+     "00000000-0000-0000-0000-00000000000b": "0"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "equal survives member changes",
+   "split": {
+    "method": "equal",
+    "values": {}
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "current": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000c"
+   ],
+   "effective": true
+  },
+  {
+   "name": "percent is absent after someone joins",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "60",
+     "00000000-0000-0000-0000-00000000000b": "40"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "current": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000c"
+   ],
+   "effective": false
+  },
+  {
+   "name": "shares are absent after someone leaves",
+   "split": {
+    "method": "shares",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "1",
+     "00000000-0000-0000-0000-00000000000b": "1",
+     "00000000-0000-0000-0000-00000000000c": "1"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000c"
+   ],
+   "current": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "effective": false
+  },
+  {
+   "name": "percent is absent after a swap",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "50",
+     "00000000-0000-0000-0000-00000000000b": "50"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "current": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000c"
+   ],
+   "effective": false
+  }
+ ]
 }

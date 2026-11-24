@@ -27,6 +27,8 @@ class Category {
     required this.name,
     required this.group,
     this.icon,
+    this.custom = false,
+    this.mine = false,
   });
 
   factory Category.fromJson(JsonMap json) => Category(
@@ -34,12 +36,20 @@ class Category {
     name: (json['name'] as String?) ?? json['id'] as String,
     group: (json['group'] as String?) ?? 'Other',
     icon: json['icon'] as String?,
+    custom: (json['custom'] as bool?) ?? false,
+    mine: (json['mine'] as bool?) ?? false,
   );
 
   final String id;
   final String name;
   final String group;
+
+  /// A Material Symbols name such as `restaurant`.
   final String? icon;
+
+  /// User-defined (`custom.<uuid>`); [mine] when the caller owns it.
+  final bool custom;
+  final bool mine;
 }
 
 /// Public server configuration from `GET /config`.
@@ -50,12 +60,16 @@ class AppConfig {
     this.signupMode = 'open',
     this.currencies = const [],
     this.categories = const [],
+    this.pushEnabled = false,
+    this.vapidPublicKey = '',
   });
 
   factory AppConfig.fromJson(JsonMap json) => AppConfig(
     appName: (json['appName'] as String?) ?? 'SplitSpends',
     aiEnabled: (json['aiEnabled'] as bool?) ?? false,
     signupMode: (json['signupMode'] as String?) ?? 'open',
+    pushEnabled: (json['pushEnabled'] as bool?) ?? false,
+    vapidPublicKey: (json['vapidPublicKey'] as String?) ?? '',
     currencies: (json['currencies'] as List? ?? const [])
         .cast<JsonMap>()
         .map(CurrencyInfo.fromJson)
@@ -71,6 +85,12 @@ class AppConfig {
   final String signupMode;
   final List<CurrencyInfo> currencies;
   final List<Category> categories;
+
+  /// True when the server sends Web Push notifications.
+  final bool pushEnabled;
+
+  /// The server's VAPID key (base64url) that devices subscribe with.
+  final String vapidPublicKey;
 
   CurrencyInfo currency(String code) {
     for (final c in currencies) {

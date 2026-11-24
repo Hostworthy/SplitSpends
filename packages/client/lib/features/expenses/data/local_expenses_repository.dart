@@ -125,7 +125,10 @@ class LocalExpensesRepository implements ExpensesRepository {
         ),
         today: _ledger.today(),
         currencies: _ledger.currencies,
-        categories: _ledger.categories,
+        categories: await _ledger.usableCategories(
+          c,
+          kept: existing?['category'] as String?,
+        ),
       );
     } on LedgerError catch (error) {
       throw ApiError.validation(error.field, error.message);

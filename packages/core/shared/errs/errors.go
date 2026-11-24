@@ -19,6 +19,7 @@ const (
 	KindConflict     Kind = "CONFLICT"
 	KindRateLimited  Kind = "RATE_LIMITED"
 	KindUnavailable  Kind = "AI_DISABLED"
+	KindNoRates      Kind = "RATES_UNAVAILABLE"
 )
 
 // Error is a domain error with a human-readable message.
@@ -71,6 +72,12 @@ func RateLimited(message string) *Error {
 // Unavailable reports an optional capability the host did not enable.
 func Unavailable(message string) *Error {
 	return &Error{Kind: KindUnavailable, Message: message}
+}
+
+// NoRates reports that an amount could not be converted because exchange
+// rates are not available.
+func NoRates(message string) *Error {
+	return &Error{Kind: KindNoRates, Message: message}
 }
 
 // As extracts a domain error from err.

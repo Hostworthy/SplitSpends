@@ -105,4 +105,36 @@ void main() {
       () => expect(simplify(nets(entries)), parse('simplified')),
     );
   });
+
+  group('default split vectors', () {
+    final cases = (doc['defaultSplits'] as List).cast<Map<String, dynamic>>();
+    test('exist', () => expect(cases, isNotEmpty));
+    for (final c in cases) {
+      test(c['name'] as String, () {
+        final split = c['split'] as Map<String, dynamic>;
+        final method = split['method'] as String;
+        final values = (split['values'] as Map).cast<String, String>();
+        final members = (c['members'] as List).cast<String>();
+        if (c['error'] != null) {
+          expect(
+            () => validateDefaultSplit(method, values, members),
+            throwsA(
+              isA<LedgerError>().having((e) => e.field, 'field', c['error']),
+            ),
+          );
+          return;
+        }
+        final saved = validateDefaultSplit(method, values, members);
+        if (c['effective'] == null) return;
+        expect(
+          defaultSplitMatches(
+            method,
+            saved,
+            (c['current'] as List).cast<String>(),
+          ),
+          c['effective'],
+        );
+      });
+    }
+  });
 }

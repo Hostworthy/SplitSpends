@@ -10,10 +10,15 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/assist"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/balance"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/category"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/friend"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/invite"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/rates"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/reminder"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/stats"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/transfer"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
@@ -21,23 +26,32 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/clock"
 	"github.com/Hostworthy/SplitSpends/packages/database"
 	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
+	"github.com/Hostworthy/SplitSpends/packages/exchange"
 	"github.com/Hostworthy/SplitSpends/packages/notifications"
 	"github.com/Hostworthy/SplitSpends/packages/storage"
 )
 
 // Services are the core use cases the transports call.
 type Services struct {
-	Auth     *auth.Service
-	Users    *user.Service
-	Friends  *friend.Service
-	Groups   *group.Service
-	Expenses *expense.Service
-	Balances *balance.Service
-	Activity *activity.Service
-	Receipts *receipt.Service
-	Assist   *assist.Service
-	Stats    *stats.Service
-	Transfer *transfer.Service
+	Auth      *auth.Service
+	Users     *user.Service
+	Friends   *friend.Service
+	Groups    *group.Service
+	Expenses  *expense.Service
+	Balances  *balance.Service
+	Activity  *activity.Service
+	Receipts  *receipt.Service
+	Assist    *assist.Service
+	Stats     *stats.Service
+	Transfer  *transfer.Service
+	Reminders *reminder.Service
+	Invites   *invite.Service
+	Rates     *rates.Service
+	Push      *push.Service
+	// Categories are the built-in plus user-defined expense categories.
+	Categories *category.Service
+
+	notifier *fanout
 }
 
 // Runtime is a fully wired application.
@@ -97,12 +111,28 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 		log.Info("bootstrap.ai.enabled", "provider", cfg.AIProvider)
 	}
 
+	sender := pushSender(ctx, db, cfg, log)
 	return &Runtime{Config: cfg, Log: log, db: db, notifier: notifier,
-		Services: Wire(db, notifier, blobs, reader, clock.System{}, cfg)}, nil
+		Services: WireWithPush(db, notifier, blobs, reader, sender, clock.System{}, cfg, log)}, nil
 }
 
-// Wire builds services from adapters. Tests call it with fakes.
+// Wire builds services from adapters, without push. Tests call it with
+// fakes.
 func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reader ports.ReceiptReader, c clock.Clock, cfg *Config) *Services {
+	return WireWithPush(db, notifier, blobs, reader, nil, c, cfg, slog.New(slog.DiscardHandler))
+}
+
+// WireWithPush builds services and sends notifications by email (notifier)
+// and Web Push (sender, nil to disable push).
+func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, reader ports.ReceiptReader, sender push.Sender,
+	c clock.Clock, cfg *Config, log *slog.Logger) *Services {
+	pushes := push.NewService(repositories.NewPushSubscriptions(db), sender, c,
+		push.Settings{PublicKey: cfg.VAPIDPublicKey, AppName: cfg.AppName, Link: cfg.BaseURL})
+	var p pusher
+	if pushes.Enabled() {
+		p = pushes
+	}
+	notifier := newFanout(email, p, log, cfg.Serverless)
 	tx := database.NewTx(db)
 	userRepo := repositories.NewUsers(db)
 	groupRepo := repositories.NewGroups(db)
@@ -122,20 +152,38 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 	groups := group.NewService(groupRepo, users, balances, act, notifier, tx, c, cfg.BaseURL)
 	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
 	receipts := receipt.NewService(receiptRepo, blobs, reader, c)
+	categories := category.NewService(repositories.NewCategories(db), c)
 	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
-		Connections: friends, Receipts: receiptRepo, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+		Connections: friends, Receipts: receiptRepo, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+	// Rates only convert AI drafts read in another currency, so nothing is
+	// fetched unless AI is on.
+	var source rates.Source
+	if cfg.RatesURL != "" && reader != nil {
+		source = exchange.New(cfg.RatesURL)
+	}
+	fx := rates.NewService(repositories.NewRates(db), source, c)
+	invites := invite.NewService(repositories.NewInvites(db), groups, groupRepo, users, c, cfg.BaseURL)
+	reminders := reminder.NewService(reminder.Deps{Repo: repositories.NewReminders(db), Groups: groups, Connections: friends,
+		Users: users, Balances: balances, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	return &Services{
-		Auth:     auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, notifier, tx, c),
+		Rates:    fx,
+		Auth:     auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, invites, notifier, tx, c),
 		Users:    users,
 		Friends:  friends,
 		Groups:   groups,
 		Balances: balances,
 		Activity: act,
 		Expenses: expenses,
-		Transfer: transfer.NewService(users, friendRepo, groups, expenses, tx),
+		Transfer: transfer.NewService(users, friendRepo, groups, expenses, categories, tx),
 		Receipts: receipts,
-		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, c),
-		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users),
+		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, fx, c),
+		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users, categories),
+
+		Reminders:  reminders,
+		Invites:    invites,
+		Push:       pushes,
+		notifier:   notifier,
+		Categories: categories,
 	}
 }
 
@@ -155,8 +203,16 @@ func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 			break
 		}
 	}
+	// Rates are a convenience for AI drafts; an outage never fails the jobs.
+	if err := rt.Services.Rates.Refresh(ctx); err != nil {
+		rt.Log.Warn("jobs.rates.failed", "error", err)
+	}
 	if err := rt.Services.Auth.Cleanup(ctx); err != nil {
 		rt.Log.Error("jobs.cleanup.failed", "error", err)
+		return err
+	}
+	if err := rt.Services.Invites.Cleanup(ctx); err != nil {
+		rt.Log.Error("jobs.cleanup.failed", "area", "invites", "error", err)
 		return err
 	}
 	return nil
@@ -183,6 +239,7 @@ func (rt *Runtime) Ping(ctx context.Context) error { return rt.db.Pool.Ping(ctx)
 
 // Close releases resources.
 func (rt *Runtime) Close() {
+	rt.Services.notifier.Close()
 	rt.notifier.Close()
 	rt.db.Pool.Close()
 }

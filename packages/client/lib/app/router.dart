@@ -7,6 +7,7 @@ import 'package:splitspends/app/shell.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/features/account/presentation/account_screen.dart';
 import 'package:splitspends/features/account/presentation/tokens_screen.dart';
+import 'package:splitspends/features/categories/presentation/manage_categories_screen.dart';
 import 'package:splitspends/features/activity/presentation/activity_screen.dart';
 import 'package:splitspends/features/auth/domain/auth_repository.dart';
 import 'package:splitspends/features/auth/presentation/local_setup_screen.dart';
@@ -23,6 +24,8 @@ import 'package:splitspends/features/friends/presentation/friends_screen.dart';
 import 'package:splitspends/features/groups/presentation/detail/group_detail_screen.dart';
 import 'package:splitspends/features/groups/presentation/group_settings_screen.dart';
 import 'package:splitspends/features/groups/presentation/groups_screen.dart';
+import 'package:splitspends/features/invites/presentation/join_screen.dart';
+import 'package:splitspends/features/invites/presentation/providers.dart';
 import 'package:splitspends/features/receipts/presentation/scan_receipt_screen.dart';
 import 'package:splitspends/features/sync/presentation/import_screen.dart';
 
@@ -53,14 +56,22 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
       final onboarding =
           path.startsWith(Routes.welcome) || path.startsWith(Routes.login);
+      // Invite links open for everyone; the screen explains what to do.
+      final joining = path.startsWith('${Routes.joinPrefix}/');
       if (!session.requireValue.isReady) {
-        return onboarding ? null : Routes.welcome;
+        return onboarding || joining ? null : Routes.welcome;
       }
       // On-device users may sign in to a server to sync (and import).
       if (path.startsWith(Routes.login) && session.requireValue.isLocal) {
         return null;
       }
-      if (onboarding) return Routes.home;
+      if (onboarding) {
+        // Back to the invite that sent the user through sign-in.
+        final pending = ref.read(pendingInviteProvider);
+        return pending == null
+            ? Routes.home
+            : Routes.join(pending.token, server: pending.server);
+      }
       if (path == Routes.splash) {
         final from = state.uri.queryParameters['from'];
         return (from == null || from.startsWith(Routes.splash))
@@ -191,6 +202,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                     path: 'tokens',
                     builder: (context, state) => const TokensScreen(),
                   ),
+                  GoRoute(
+                    path: 'categories',
+                    builder: (context, state) => const ManageCategoriesScreen(),
+                  ),
                 ],
               ),
             ],
@@ -246,6 +261,14 @@ final routerProvider = Provider<GoRouter>((ref) {
                 ? state.extra! as SettleArgs
                 : SettleArgs(groupId: state.uri.queryParameters['groupId']),
           ),
+        ),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootKey,
+        path: '${Routes.joinPrefix}/:token',
+        builder: (context, state) => JoinScreen(
+          token: state.pathParameters['token']!,
+          server: state.uri.queryParameters['server'],
         ),
       ),
       GoRoute(

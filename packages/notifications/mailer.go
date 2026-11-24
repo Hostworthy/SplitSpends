@@ -99,6 +99,9 @@ func (n *Notifier) Invite(ctx context.Context, to, inviter string) error {
 }
 
 func (n *Notifier) Notify(_ context.Context, msg ports.Notification) {
+	if msg.To == "" {
+		return
+	}
 	if n.cfg.Sync {
 		n.deliver(msg)
 		return

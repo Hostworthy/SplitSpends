@@ -1,6 +1,6 @@
 # SplitSpends
 
-Self-hosted Splitwise alternative: Go API and MCP server on PostgreSQL, Flutter client for iOS, Android and web. Clean/DDD layering. `apps/` holds only runnable apps (`api`, `mcp`, `android`, `ios`, `web`); shared code lives in `packages/`.
+Self-hosted Splitwise alternative: Go API and MCP server on PostgreSQL, Flutter client for iOS, Android and web. Clean/DDD layering. `apps/` holds only runnable apps (`api`, `mcp`, `apk` for Android, `ios`, `web`); shared code lives in `packages/`.
 
 ## Commands
 

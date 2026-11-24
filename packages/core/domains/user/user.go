@@ -26,19 +26,6 @@ const (
 	StatusPlaceholder Status = "placeholder"
 )
 
-// Notifications are per-user email preferences.
-type Notifications struct {
-	ExpenseAdded    bool `json:"expenseAdded"`
-	ExpenseUpdated  bool `json:"expenseUpdated"`
-	PaymentReceived bool `json:"paymentReceived"`
-	AddedToGroup    bool `json:"addedToGroup"`
-}
-
-// DefaultNotifications enables every email.
-func DefaultNotifications() Notifications {
-	return Notifications{ExpenseAdded: true, ExpenseUpdated: true, PaymentReceived: true, AddedToGroup: true}
-}
-
 // User is a person who can take part in expenses.
 type User struct {
 	ID              uuid.UUID
@@ -134,7 +121,7 @@ type Patch struct {
 	DefaultCurrency *string
 	Timezone        *string
 	AvatarColor     *string
-	Notifications   *Notifications
+	Notifications   *NotificationsPatch
 }
 
 // Apply validates and applies p.
@@ -166,7 +153,7 @@ func (u *User) Apply(p Patch, now time.Time) error {
 		u.AvatarColor = strings.ToUpper(*p.AvatarColor)
 	}
 	if p.Notifications != nil {
-		u.Notifications = *p.Notifications
+		u.Notifications.Apply(*p.Notifications)
 	}
 	u.UpdatedAt = now
 	return nil

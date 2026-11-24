@@ -55,7 +55,9 @@ dependencies:
   splitspends_ledger:
     path: ../ledger
   file_picker: ^13.4.1
-
+  qr_flutter: ^4.1.0
+  unifiedpush_android: ^3.5.0
+  unifiedpush_platform_interface: ^4.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -13,10 +13,14 @@ class RemoteAuthRepository implements AuthRepository {
       ApiClient(serverUrl: serverUrl, token: token, httpClient: _http);
 
   @override
-  Future<int> requestCode(String serverUrl, String email) => _client(serverUrl)
-      .postData('/auth/otp/request', {
-        'email': email,
-      }, (d) => ((d as JsonMap?)?['expiresInSeconds'] as num?)?.toInt() ?? 600);
+  Future<int> requestCode(
+    String serverUrl,
+    String email, {
+    String? inviteToken,
+  }) => _client(serverUrl).postData('/auth/otp/request', {
+    'email': email,
+    'inviteToken': ?inviteToken,
+  }, (d) => ((d as JsonMap?)?['expiresInSeconds'] as num?)?.toInt() ?? 600);
 
   @override
   Future<LoginResult> verifyCode(String serverUrl, String email, String code) =>

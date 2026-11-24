@@ -17,7 +17,9 @@ import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/domain/groups_repository.dart';
+import 'package:splitspends/features/groups/presentation/default_split_section.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';
+import 'package:splitspends/features/invites/presentation/invite_section.dart';
 
 const _emojis = [
   '🏠',
@@ -165,7 +167,7 @@ class _SettingsState extends ConsumerState<_Settings> {
     final meId = ref.watch(meProvider)?.id;
     final scheme = Theme.of(context).colorScheme;
     return ListView(
-      padding: const EdgeInsets.only(bottom: 48),
+      padding: const EdgeInsets.only(bottom: 96),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -241,7 +243,10 @@ class _SettingsState extends ConsumerState<_Settings> {
         const SectionHeader('Money'),
         ListTile(
           leading: const Icon(Icons.currency_exchange_rounded),
-          title: const Text('Default currency'),
+          title: const Text('Currency'),
+          subtitle: const Text(
+            'New expenses in this group use it. Existing ones keep theirs.',
+          ),
           trailing: Text(group.defaultCurrency),
           onTap: () async {
             final code = await pickCurrency(
@@ -288,6 +293,8 @@ class _SettingsState extends ConsumerState<_Settings> {
                     onPressed: () => _removeMember(m.id, self: false),
                   ),
           ),
+        InviteSection(group: group),
+        DefaultSplitSection(group: group),
         const SectionHeader('Danger zone'),
         ListTile(
           leading: Icon(

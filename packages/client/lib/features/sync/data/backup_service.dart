@@ -31,6 +31,7 @@ class BackupService {
       'groups': await all(Stores.groups),
       'expenses': await all(Stores.expenses),
       'activity': await all(Stores.activity),
+      'categories': await all(Stores.categories),
     };
     return Uint8List.fromList(
       utf8.encode(const JsonEncoder.withIndent('  ').convert(body)),
@@ -79,6 +80,7 @@ class BackupService {
       await put(Stores.groups, 'groups');
       await put(Stores.expenses, 'expenses');
       await put(Stores.activity, 'activity');
+      await put(Stores.categories, 'categories');
       await Stores.meta
           .record('profile')
           .put(txn, (body['profile'] as Map).cast<String, Object?>());

@@ -41,12 +41,12 @@ Every option needs an email account that can send mail over SMTP (for example Gm
 Requires Docker, a domain name pointing at your home IP, and ports 80 and 443 forwarded to the machine.
 
 ```bash
-git clone https://github.com/Hostworthy/SplitSpends && cd SplitSpends/deploy/homelab
+git clone https://github.com/Hostworthy/SplitSpends && cd SplitSpends/deploy/docker
 cp ../.env.example .env          # set DOMAIN, BASE_URL=https://DOMAIN, POSTGRES_PASSWORD, SECRET_KEY, SMTP
 docker compose up -d --build
 ```
 
-This runs PostgreSQL, SplitSpends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly `pg_dump` into `deploy/homelab/backups/`. Copy those backups off the machine now and then, and delete old ones when you no longer need them.
+This runs PostgreSQL, SplitSpends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly `pg_dump` into `deploy/docker/backups/`. Copy those backups off the machine now and then, and delete old ones when you no longer need them.
 
 LAN or VPN only (no public domain): skip Caddy and use `deploy/docker-compose.yml`, then reach the server at `http://<machine-ip>:8080` over your LAN or a VPN such as Tailscale or WireGuard. Browsers and phones treat plain HTTP as insecure, so prefer a VPN with HTTPS (for example Tailscale's built-in certificates) over exposing port 8080.
 
@@ -67,6 +67,16 @@ Terraform in [`deploy/gcp`](../deploy/gcp/README.md). Cloud Run's free tier cove
 ### AWS Lambda
 
 Terraform in [`deploy/aws`](../deploy/aws/README.md): Lambda (arm64) running the same server through the AWS Lambda Web Adapter, API Gateway, CloudFront for HTTPS and the web app, private S3 buckets for the web app and receipts, and EventBridge for scheduled jobs. Use a Neon or Supabase database (Lambda outside a VPC cannot reach a private RDS instance without a NAT gateway, which costs about 32 USD a month).
+
+## Push Notifications
+
+Push works out of the box, with nothing to configure and no Google or Apple account:
+
+- **Web app:** open Account and tap **Enable push notifications**, then allow notifications when the browser asks. The app must be served over HTTPS (or `localhost`). On iPhone and iPad, add the web app to the Home Screen first and enable push from there.
+- **Android app:** install a UnifiedPush distributor, for example [ntfy](https://ntfy.sh) from F-Droid or Google Play, and open it once. Then tap **Enable push notifications** in Account and pick the distributor. [Other distributors](https://unifiedpush.org/users/distributors/) work too, including one that relays through Google's push service if you prefer.
+- **iPhone app:** not available yet.
+
+The server creates its push key on first start and keeps it in the database. If you run your own ntfy server on the local network, set `PUSH_ALLOW_PRIVATE=true`. Details are in [ENVIRONMENT.md](ENVIRONMENT.md#push-notifications).
 
 ## Security Checklist
 

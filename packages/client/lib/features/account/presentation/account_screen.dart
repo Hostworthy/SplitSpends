@@ -13,6 +13,10 @@ import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/account/presentation/local_mode_card.dart';
 import 'package:splitspends/features/account/presentation/providers.dart';
+import 'package:splitspends/core/config/config_provider.dart';
+import 'package:splitspends/features/push/presentation/providers.dart';
+import 'package:splitspends/features/push/presentation/push_section.dart';
+import 'package:splitspends/features/push/presentation/push_view.dart';
 
 class AccountScreen extends ConsumerWidget {
   const AccountScreen({super.key});
@@ -77,6 +81,8 @@ class AccountScreen extends ConsumerWidget {
       );
       if (ok != true) return;
     }
+    // This device should stop getting the account's notifications.
+    await ref.read(pushActionsProvider).forget();
     await ref.read(sessionProvider.notifier).signOut();
   }
 
@@ -186,7 +192,11 @@ class AccountScreen extends ConsumerWidget {
                 const SectionHeader('Preferences'),
                 ListTile(
                   leading: const Icon(Icons.currency_exchange_rounded),
-                  title: const Text('Default currency'),
+                  title: const Text('Currency'),
+                  subtitle: const Text(
+                    'Used for expenses outside groups and for new groups. '
+                    'Each group has its own currency in its settings.',
+                  ),
                   trailing: Text(me.defaultCurrency, style: text.titleMedium),
                   onTap: () async {
                     final code = await pickCurrency(
@@ -197,6 +207,14 @@ class AccountScreen extends ConsumerWidget {
                       await _update(context, ref, defaultCurrency: code);
                     }
                   },
+                ),
+                ListTile(
+                  key: const Key('manage-categories'),
+                  leading: const Icon(Icons.category_outlined),
+                  title: const Text('Categories'),
+                  subtitle: const Text('Add your own expense categories'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => context.push(Routes.categories),
                 ),
                 ListTile(
                   leading: const Icon(Icons.palette_outlined),
@@ -222,46 +240,29 @@ class AccountScreen extends ConsumerWidget {
                         ref.read(themeModeProvider.notifier).set(v.first),
                   ),
                 ),
-                if (local)
-                  const LocalModeCard()
-                else ...[
-                  const SectionHeader('Email notifications'),
-                  SwitchListTile(
-                    title: const Text('Expense added'),
-                    value: prefs.expenseAdded,
-                    onChanged: (v) => _update(
-                      context,
-                      ref,
-                      notifications: prefs.copyWith(expenseAdded: v),
+                if (local) ...[
+                  const LocalModeCard(),
+                  ListTile(
+                    leading: const Icon(Icons.notifications_off_outlined),
+                    title: const Text('Push notifications'),
+                    subtitle: Text(
+                      PushView.resolve(
+                        connected: false,
+                        serverEnabled: false,
+                      ).message,
                     ),
                   ),
-                  SwitchListTile(
-                    title: const Text('Expense edited or deleted'),
-                    value: prefs.expenseUpdated,
-                    onChanged: (v) => _update(
-                      context,
-                      ref,
-                      notifications: prefs.copyWith(expenseUpdated: v),
+                ] else ...[
+                  const SectionHeader('Notifications'),
+                  for (final kind in NotificationKind.values)
+                    _KindTile(
+                      kind: kind,
+                      prefs: prefs,
+                      push: ref.watch(configValueProvider).pushEnabled,
+                      onChanged: (next) =>
+                          _update(context, ref, notifications: next),
                     ),
-                  ),
-                  SwitchListTile(
-                    title: const Text('Payment received'),
-                    value: prefs.paymentReceived,
-                    onChanged: (v) => _update(
-                      context,
-                      ref,
-                      notifications: prefs.copyWith(paymentReceived: v),
-                    ),
-                  ),
-                  SwitchListTile(
-                    title: const Text('Added to a group'),
-                    value: prefs.addedToGroup,
-                    onChanged: (v) => _update(
-                      context,
-                      ref,
-                      notifications: prefs.copyWith(addedToGroup: v),
-                    ),
-                  ),
+                  const PushSection(),
                   const SectionHeader('Developers'),
                   ListTile(
                     leading: const Icon(Icons.key_rounded),
@@ -294,6 +295,48 @@ class AccountScreen extends ConsumerWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One notification kind with its email and push switches.
+class _KindTile extends StatelessWidget {
+  const _KindTile({
+    required this.kind,
+    required this.prefs,
+    required this.push,
+    required this.onChanged,
+  });
+
+  final NotificationKind kind;
+  final NotificationPrefs prefs;
+
+  /// Whether the server sends push, so the push switch means something.
+  final bool push;
+  final ValueChanged<NotificationPrefs> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(kind.label),
+      trailing: Wrap(
+        spacing: 8,
+        children: [
+          FilterChip(
+            label: const Text('Email'),
+            selected: prefs.email.on(kind),
+            onSelected: (v) =>
+                onChanged(prefs.copyWith(email: prefs.email.set(kind, v))),
+          ),
+          if (push)
+            FilterChip(
+              label: const Text('Push'),
+              selected: prefs.push.on(kind),
+              onSelected: (v) =>
+                  onChanged(prefs.copyWith(push: prefs.push.set(kind, v))),
+            ),
         ],
       ),
     );

@@ -14,7 +14,8 @@ import 'package:splitspends/core/storage/local_db.dart';
 ///
 /// * person: `{ id, name, email?, avatarColor?, createdAt }`
 /// * group: `{ id, name, kind, defaultCurrency, simplifyDebts, emoji, color,
-///   archived, memberIds, createdAt, updatedAt }`
+///   archived, memberIds, defaultSplit?, createdAt, updatedAt }` (the
+///   stored default split; views drop it once it no longer matches)
 /// * expense: the API `Expense` minus caller-specific fields, plus `nextDate`
 /// * activity: `{ id, kind, actorId, groupId, expenseId, data, involved,
 ///   createdAt }`
@@ -46,6 +47,24 @@ class LocalLedger {
   };
 
   Set<String> get categories => {for (final c in localConfig.categories) c.id};
+
+  /// Custom category records, deleted ones included.
+  Future<List<JsonMap>> customCategories([DatabaseClient? client]) async => [
+    for (final r in await Stores.categories.find(client ?? await db)) r.value,
+  ];
+
+  /// Categories a new expense may use: the built-ins and your live custom
+  /// ones, plus [kept] (the category an edited expense already has), like
+  /// the server.
+  Future<Set<String>> usableCategories(
+    DatabaseClient client, {
+    String? kept,
+  }) async => {
+    ...categories,
+    for (final c in await customCategories(client))
+      if (c['deleted'] != true) c['id'] as String,
+    ?kept,
+  };
 
   // ------------------------------------------------------------------ people
 

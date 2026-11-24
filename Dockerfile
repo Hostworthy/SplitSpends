@@ -17,7 +17,7 @@ WORKDIR /src
 COPY pubspec.yaml pubspec.lock ./
 COPY packages/ledger/pubspec.yaml packages/ledger/
 COPY packages/client/pubspec.yaml packages/client/
-COPY apps/android/pubspec.yaml apps/android/
+COPY apps/apk/pubspec.yaml apps/apk/
 COPY apps/ios/pubspec.yaml apps/ios/
 COPY apps/web/pubspec.yaml apps/web/
 RUN flutter pub get

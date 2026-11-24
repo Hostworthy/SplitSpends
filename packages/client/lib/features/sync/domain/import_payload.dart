@@ -1,26 +1,41 @@
+import 'package:splitspends_ledger/ledger.dart';
+
 import 'package:splitspends/core/models/json.dart';
 
 /// What will be uploaded, for the confirmation screen.
 class ImportSummary {
-  const ImportSummary({this.groups = 0, this.expenses = 0, this.people = 0});
+  const ImportSummary({
+    this.groups = 0,
+    this.expenses = 0,
+    this.people = 0,
+    this.categories = 0,
+  });
 
   final int groups;
   final int expenses;
   final int people;
 
-  bool get isEmpty => groups == 0 && expenses == 0 && people == 0;
+  /// Custom categories that are not deleted.
+  final int categories;
+
+  bool get isEmpty =>
+      groups == 0 && expenses == 0 && people == 0 && categories == 0;
 }
 
 /// Builds the `ImportRequest` body (docs/API.md, "Offline Clients and
 /// Import") from on-device records. Pure function: easy to test.
 ///
 /// Deleted expenses are left out. Expenses keep their original split input
-/// so the server recomputes exactly the same shares.
+/// so the server recomputes exactly the same shares. Custom categories are
+/// all sent, deleted ones flagged, so expenses keep their category ids. A
+/// group's default split is sent only while it still matches the members
+/// (otherwise it is treated as absent, like on the server).
 JsonMap buildImportRequest({
   required String meId,
   required List<JsonMap> people,
   required List<JsonMap> groups,
   required List<JsonMap> expenses,
+  List<JsonMap> categories = const [],
 }) {
   final live =
       [
@@ -56,10 +71,40 @@ JsonMap buildImportRequest({
           'color': g['color'],
           'archived': g['archived'] ?? false,
           'memberIds': g['memberIds'] ?? const [],
+          'defaultSplit': ?_defaultSplit(g),
         },
     ],
+    if (categories.isNotEmpty)
+      'categories': [
+        for (final c in categories)
+          {
+            'id': c['id'],
+            'name': c['name'],
+            'icon': c['icon'],
+            'group': c['group'],
+            if (c['deleted'] == true) 'deleted': true,
+          },
+      ],
     'expenses': [for (final e in live) _expense(e)],
   };
+}
+
+JsonMap? _defaultSplit(JsonMap group) {
+  final raw = group['defaultSplit'];
+  if (raw is! Map) return null;
+  final method = raw['method'] as String? ?? '';
+  final values = ((raw['values'] as Map?) ?? const {}).map(
+    (k, v) => MapEntry(k as String, '$v'),
+  );
+  final members = ((group['memberIds'] as List?) ?? const []).cast<String>();
+  try {
+    return {
+      'method': method,
+      'values': validateDefaultSplit(method, values, members),
+    };
+  } on LedgerError {
+    return null;
+  }
 }
 
 JsonMap _expense(JsonMap e) {
@@ -134,7 +179,22 @@ applyPeopleMap(
       for (final p in people) {...p, 'id': id(p['id'])},
     ],
     groups: [
-      for (final g in groups) {...g, 'memberIds': ids(g['memberIds'])},
+      for (final g in groups)
+        {
+          ...g,
+          'memberIds': ids(g['memberIds']),
+          if (g['defaultSplit'] is Map)
+            'defaultSplit': {
+              ...(g['defaultSplit'] as Map).cast<String, Object?>(),
+              'values': {
+                for (final e
+                    in (((g['defaultSplit'] as Map)['values'] as Map?) ??
+                            const {})
+                        .entries)
+                  id(e.key): e.value,
+              },
+            },
+        },
     ],
     expenses: [
       for (final e in expenses)

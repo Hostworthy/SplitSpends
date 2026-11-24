@@ -96,7 +96,10 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	if in.ID != nil && *in.ID != uuid.Nil {
 		g.ID = *in.ID
 	}
-	in.Name = nil
+	// The default split is checked against the members, so it is applied
+	// once they are known.
+	split := in.DefaultSplit
+	in.Name, in.DefaultSplit = nil, nil
 	if err := g.Apply(in.Patch, now); err != nil {
 		return nil, err
 	}
@@ -132,6 +135,14 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 			}
 			g.Members = append(g.Members, id)
 		}
+		if split != nil {
+			if err := g.Apply(Patch{DefaultSplit: split}, now); err != nil {
+				return err
+			}
+			if err := s.repo.Update(ctx, g); err != nil {
+				return err
+			}
+		}
 		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: &g.ID, Kind: activity.GroupCreated,
 			Involved: g.Members, Data: map[string]any{"groupName": g.Name}})
 	})
@@ -147,13 +158,11 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 }
 
 func (s *Service) notifyAdded(ctx context.Context, u, by *user.User, g *Group) {
-	if u.Status != user.StatusActive || !u.Notifications.AddedToGroup {
-		return
+	n, ok := u.Notice(user.AddedToGroup, by.Name+" added you to "+g.Name,
+		[]string{by.Name + " added you to the group “" + g.Name + "”."}, s.baseURL)
+	if ok {
+		s.notifier.Notify(ctx, n)
 	}
-	s.notifier.Notify(ctx, ports.Notification{To: u.Email, Name: u.Name,
-		Subject: by.Name + " added you to " + g.Name,
-		Lines:   []string{by.Name + " added you to the group “" + g.Name + "”."},
-		Link:    s.baseURL})
 }
 
 // Mine returns the actor's active groups with their members, without
@@ -290,6 +299,34 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 		return nil, err
 	}
 	s.notifyAdded(ctx, added, me, g)
+	return s.view(ctx, actor, g)
+}
+
+// Join adds the actor to a group, for example through an invite link.
+// Joining a group you already belong to changes nothing.
+func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) {
+	g, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if g.HasMember(actor) {
+		return s.view(ctx, actor, g)
+	}
+	me, err := s.users.Get(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.repo.AddMember(ctx, g.ID, actor, s.clock.Now()); err != nil {
+			return err
+		}
+		g.Members = append(g.Members, actor)
+		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: &g.ID, Kind: activity.GroupMemberJoined,
+			Involved: g.Members, Data: map[string]any{"groupName": g.Name, "targetName": me.Name, "targetId": me.ID.String()}})
+	})
+	if err != nil {
+		return nil, err
+	}
 	return s.view(ctx, actor, g)
 }
 

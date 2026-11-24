@@ -8,7 +8,7 @@ environment:
 workspace:
   - packages/ledger
   - packages/client
-  - apps/android
+  - apps/apk
   - apps/ios
   - apps/web
 

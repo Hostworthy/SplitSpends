@@ -13,7 +13,7 @@ func (a *API) requestCode(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := a.svc.Auth.RequestCode(r.Context(), in.Email); err != nil {
+	if err := a.svc.Auth.RequestCode(r.Context(), in.Email, in.InviteToken); err != nil {
 		return err
 	}
 	return details(w, http.StatusAccepted, platform.OTPSent{Sent: true, ExpiresInSeconds: int(a.svc.Auth.CodeTTL().Seconds())})
@@ -54,7 +54,11 @@ func (a *API) patchMe(w http.ResponseWriter, r *http.Request) error {
 	}
 	p := user.Patch{Name: in.Name, DefaultCurrency: in.DefaultCurrency, Timezone: in.Timezone, AvatarColor: in.AvatarColor}
 	if in.Notifications != nil {
-		n := user.Notifications(*in.Notifications)
+		n := user.NotificationsPatch{SwitchesPatch: user.SwitchesPatch(in.Notifications.NotificationSwitchesPatch)}
+		if in.Notifications.Push != nil {
+			push := user.SwitchesPatch(*in.Notifications.Push)
+			n.Push = &push
+		}
 		p.Notifications = &n
 	}
 	u, err := a.svc.Users.Update(r.Context(), me(r), p)

@@ -20,14 +20,23 @@ import 'package:splitspends/features/activity/data/remote_activity_repository.da
 import 'package:splitspends/features/activity/domain/activity_repository.dart';
 import 'package:splitspends/features/auth/data/remote_auth_repository.dart';
 import 'package:splitspends/features/auth/domain/auth_repository.dart';
+import 'package:splitspends/features/categories/data/local_categories_repository.dart';
+import 'package:splitspends/features/categories/data/remote_categories_repository.dart';
+import 'package:splitspends/features/categories/domain/categories_repository.dart';
 import 'package:splitspends/features/expenses/data/remote_expenses_repository.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
 import 'package:splitspends/features/friends/data/remote_friends_repository.dart';
 import 'package:splitspends/features/friends/domain/friends_repository.dart';
 import 'package:splitspends/features/groups/data/remote_groups_repository.dart';
 import 'package:splitspends/features/groups/domain/groups_repository.dart';
+import 'package:splitspends/features/invites/data/remote_invites_repository.dart';
+import 'package:splitspends/features/invites/domain/invite.dart';
+import 'package:splitspends/features/push/data/remote_push_repository.dart';
+import 'package:splitspends/features/push/domain/push_repository.dart';
 import 'package:splitspends/features/receipts/data/remote_receipts_repository.dart';
 import 'package:splitspends/features/receipts/domain/receipts_repository.dart';
+import 'package:splitspends/features/reminders/data/remote_reminders_repository.dart';
+import 'package:splitspends/features/reminders/domain/reminder.dart';
 import 'package:splitspends/features/sync/data/backup_service.dart';
 import 'package:splitspends/features/sync/data/import_service.dart';
 
@@ -99,6 +108,14 @@ final activityRepositoryProvider = Provider<ActivityRepository>(
   ),
 );
 
+final categoriesRepositoryProvider = Provider<CategoriesRepository>(
+  (ref) => _select(
+    ref,
+    remote: RemoteCategoriesRepository.new,
+    local: () => LocalCategoriesRepository(ref.watch(localLedgerProvider)),
+  ),
+);
+
 final accountRepositoryProvider = Provider<AccountRepository>(
   (ref) => _select(
     ref,
@@ -120,6 +137,11 @@ final tokensRepositoryProvider = Provider<TokensRepository>(
   (ref) => _select(ref, remote: RemoteTokensRepository.new),
 );
 
+/// Push devices exist only on a server.
+final pushRepositoryProvider = Provider<PushRepository>(
+  (ref) => _select(ref, remote: RemotePushRepository.new),
+);
+
 /// Receipts and AI need a server (AI is a server-side feature).
 final receiptsRepositoryProvider = Provider<ReceiptsRepository>(
   (ref) => _select(
@@ -127,6 +149,21 @@ final receiptsRepositoryProvider = Provider<ReceiptsRepository>(
     remote: RemoteReceiptsRepository.new,
     local: () => const LocalReceiptsRepository(),
   ),
+);
+
+/// Emailed reminders need a server; on this device people share a text.
+final remindersRepositoryProvider = Provider<RemindersRepository>(
+  (ref) => _select(ref, remote: RemoteRemindersRepository.new),
+);
+
+/// Invite links exist only on a server.
+final invitesRepositoryProvider = Provider<InvitesRepository>(
+  (ref) => _select(ref, remote: RemoteInvitesRepository.new),
+);
+
+/// Link previews are public, so they work before signing in.
+final invitePreviewsProvider = Provider<InvitePreviews>(
+  (ref) => RemoteInvitePreviews(ref.read(httpClientProvider)),
 );
 
 /// Login always talks to the server being connected to.

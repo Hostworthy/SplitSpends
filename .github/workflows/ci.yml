@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The Android emulator job is slow (about 15 minutes), so it only runs when
+  # started by hand: Actions, CI, Run workflow.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -46,9 +49,9 @@ jobs:
           flutter-version: 3.50.1
           channel: stable
       - run: flutter pub get
-      - run: dart format --output=none --set-exit-if-changed packages/ledger packages/client apps/android apps/ios apps/web
+      - run: dart format --output=none --set-exit-if-changed packages/ledger packages/client apps/apk apps/ios apps/web
       - name: Analyze
-        run: for d in packages/ledger packages/client apps/android apps/ios apps/web; do (cd $d && flutter analyze) || exit 1; done
+        run: for d in packages/ledger packages/client apps/apk apps/ios apps/web; do (cd $d && flutter analyze) || exit 1; done
       - name: Web fallback fonts match the Flutter SDK
         run: scripts/fonts/fallback.sh check
       - run: dart test
@@ -57,3 +60,78 @@ jobs:
         working-directory: packages/client
       - run: flutter build web --release --no-web-resources-cdn
         working-directory: apps/web
+
+  android:
+    name: android emulator
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: splitspends
+          POSTGRES_PASSWORD: splitspends
+          POSTGRES_DB: splitspends
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U splitspends"
+          --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.50.1
+          channel: stable
+      - run: flutter pub get
+      - name: Start a development server for the device test
+        run: |
+          go build -o bin/splitspends ./apps/api
+          DATABASE_URL=postgres://splitspends:splitspends@localhost:5432/splitspends?sslmode=disable \
+          SECRET_KEY=$(openssl rand -hex 32) SIGNUP_MODE=open LOG_FORMAT=text ADDR=:8080 \
+            nohup ./bin/splitspends > server.log 2>&1 &
+          nohup python3 scripts/ci/codes.py server.log 8099 > codes.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8080/health && exit 0; sleep 1; done
+          cat server.log; exit 1
+      - name: Build the release APK
+        working-directory: apps/apk
+        run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: splitspends-apk
+          path: apps/apk/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run the app on an Android emulator
+        timeout-minutes: 30
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          disable-animations: true
+          working-directory: apps/apk
+          script: ../../scripts/ci/device-test.sh --dart-define=SPLITSPENDS_TEST_SERVER=http://10.0.2.2:8080 --dart-define=SPLITSPENDS_TEST_CODES=http://10.0.2.2:8099
+      - name: The upload reached the server
+        run: python3 scripts/ci/codes.py server.log --check device-test@example.com Cabin
+      - name: Server log
+        if: failure() || cancelled()
+        run: cat server.log
+      - uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: device-logcat
+          path: device-logcat.txt
+          if-no-files-found: ignore

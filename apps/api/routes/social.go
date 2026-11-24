@@ -5,7 +5,9 @@ import (
 	"strconv"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
+	"github.com/google/uuid"
 )
 
 func (a *API) listFriends(w http.ResponseWriter, r *http.Request) error {
@@ -78,11 +80,40 @@ func (a *API) removeFriend(w http.ResponseWriter, r *http.Request) error {
 	return noContent(w)
 }
 
-func toPatch(p platform.GroupPatch) group.Patch {
+func toPatch(p platform.GroupPatch) (group.Patch, error) {
 	out := group.Patch{Name: p.Name, DefaultCurrency: p.DefaultCurrency, SimplifyDebts: p.SimplifyDebts, Emoji: p.Emoji, Color: p.Color, Archived: p.Archived}
 	if p.Kind != nil {
 		k := group.Kind(*p.Kind)
 		out.Kind = &k
+	}
+	if p.DefaultSplit.Set {
+		// An empty method clears the default split.
+		out.DefaultSplit = &group.DefaultSplit{}
+		if d := p.DefaultSplit.Value; d != nil {
+			out.DefaultSplit.Method = group.SplitMethod(d.Method)
+			if d.Method == "" {
+				return out, errs.Validation("defaultSplit", "A default split is equal, percent or shares.")
+			}
+			out.DefaultSplit.Values = make(map[uuid.UUID]string, len(d.Values))
+			for raw, v := range d.Values {
+				id, err := uuid.Parse(raw)
+				if err != nil {
+					return out, errs.Validation("defaultSplit", "Invalid user id.")
+				}
+				out.DefaultSplit.Values[id] = v
+			}
+		}
+	}
+	return out, nil
+}
+
+func toDefaultSplit(d *group.DefaultSplit) *platform.DefaultSplit {
+	if d == nil {
+		return nil
+	}
+	out := &platform.DefaultSplit{Method: string(d.Method), Values: make(map[string]string, len(d.Values))}
+	for id, v := range d.Values {
+		out.Values[id.String()] = v
 	}
 	return out
 }
@@ -105,7 +136,10 @@ func (a *API) createGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	create := group.CreateInput{Patch: toPatch(in.GroupPatch)}
+	create := group.CreateInput{}
+	if create.Patch, err = toPatch(in.GroupPatch); err != nil {
+		return err
+	}
 	if create.ID, err = optionalID(in.ID, "id"); err != nil {
 		return err
 	}
@@ -140,7 +174,11 @@ func (a *API) patchGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	v, err := a.svc.Groups.Update(r.Context(), me(r), id, toPatch(in))
+	patch, err := toPatch(in)
+	if err != nil {
+		return err
+	}
+	v, err := a.svc.Groups.Update(r.Context(), me(r), id, patch)
 	if err != nil {
 		return err
 	}

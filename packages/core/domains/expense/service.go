@@ -29,6 +29,7 @@ type Service struct {
 	groups      group.Repository
 	connections Connections
 	receipts    Receipts
+	catalog     Catalog
 	users       *user.Service
 	activity    *activity.Service
 	notifier    ports.Notifier
@@ -44,6 +45,7 @@ type Deps struct {
 	Groups      group.Repository
 	Connections Connections
 	Receipts    Receipts
+	Catalog     Catalog
 	Users       *user.Service
 	Activity    *activity.Service
 	Notifier    ports.Notifier
@@ -55,7 +57,7 @@ type Deps struct {
 // NewService builds a Service.
 func NewService(d Deps) *Service {
 	return &Service{repo: d.Repo, comments: d.Comments, groups: d.Groups, connections: d.Connections, receipts: d.Receipts,
-		users: d.Users, activity: d.Activity, notifier: d.Notifier, tx: d.Tx, clock: d.Clock, baseURL: d.BaseURL}
+		catalog: d.Catalog, users: d.Users, activity: d.Activity, notifier: d.Notifier, tx: d.Tx, clock: d.Clock, baseURL: d.BaseURL}
 }
 
 // load fetches an expense the actor may see, plus its group if any.
@@ -129,6 +131,24 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 	return nil, nil
 }
 
+// category checks that the actor may file an expense under a custom
+// category: their own live one, or the one the expense already has (kept is
+// empty for new expenses), so editing never fails because a category was
+// deleted or belongs to another member.
+func (s *Service) category(ctx context.Context, actor uuid.UUID, id, kept string) error {
+	if !CustomCategory(id) || id == kept {
+		return nil
+	}
+	ok, err := s.catalog.Usable(ctx, actor, id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errs.Validation("category", "Unknown category.")
+	}
+	return nil
+}
+
 func (s *Service) build(e *Expense, n *Normalized, actor uuid.UUID, now time.Time) {
 	e.Description, e.Category, e.Currency, e.Total = n.Description, n.Category, n.Currency, n.Total
 	e.Date, e.Notes, e.Method, e.Shares = n.Date, strings.TrimSpace(n.Notes), n.Method, n.Shares
@@ -183,14 +203,42 @@ func newID(id *uuid.UUID) uuid.UUID {
 	return uuid.New()
 }
 
+// currency is the one a new expense or payment uses when the client leaves
+// it out: the group's, or the actor's own outside groups. People never pick
+// a currency per expense in the app.
+func (s *Service) currency(ctx context.Context, actor uuid.UUID, groupID *uuid.UUID, given string) (string, error) {
+	if given != "" {
+		return given, nil
+	}
+	if groupID != nil {
+		g, err := s.groups.Get(ctx, *groupID)
+		if err != nil {
+			return "", err
+		}
+		return g.DefaultCurrency, nil
+	}
+	u, err := s.users.Get(ctx, actor)
+	if err != nil {
+		return "", err
+	}
+	return u.DefaultCurrency, nil
+}
+
 // Create books a new expense.
 func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expense, error) {
 	if e, err := s.existing(ctx, actor, in.ID); e != nil || err != nil {
 		return e, err
 	}
+	var err error
+	if in.Currency, err = s.currency(ctx, actor, in.GroupID, in.Currency); err != nil {
+		return nil, err
+	}
 	now := s.clock.Now()
 	n, err := Normalize(in, clock.Today(s.clock))
 	if err != nil {
+		return nil, err
+	}
+	if err := s.category(ctx, actor, n.Category, ""); err != nil {
 		return nil, err
 	}
 	g, err := s.authorize(ctx, actor, in.GroupID, n.Shares, in.ReceiptID)
@@ -225,8 +273,14 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		in.Method, in.Category = MethodExact, PaymentCategory
 	}
 	in.GroupID = e.GroupID
+	if in.Currency == "" {
+		in.Currency = e.Currency
+	}
 	n, err := Normalize(in, e.Date)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.category(ctx, actor, n.Category, e.Category); err != nil {
 		return nil, err
 	}
 	g, err := s.authorize(ctx, actor, e.GroupID, n.Shares, in.ReceiptID)
@@ -341,6 +395,9 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	if people[in.From] == nil || people[in.To] == nil {
 		return nil, errs.Validation("toUserId", "Unknown person.")
 	}
+	if in.Currency, err = s.currency(ctx, actor, in.GroupID, in.Currency); err != nil {
+		return nil, err
+	}
 	n, err := Normalize(Input{
 		GroupID: in.GroupID, Description: "Payment", Currency: in.Currency, Total: in.Amount, Date: in.Date,
 		Category: PaymentCategory, Notes: in.Notes, Method: MethodExact,
@@ -370,11 +427,12 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	if err != nil {
 		return nil, err
 	}
-	if to := people[in.To]; !ports.IsQuiet(ctx) && to.ID != actor && to.Status == user.StatusActive && to.Notifications.PaymentReceived {
-		s.notifier.Notify(ctx, ports.Notification{To: to.Email, Name: to.Name,
-			Subject: people[in.From].Name + " paid you " + money.Format(e.Total, e.Currency),
-			Lines:   []string{people[in.From].Name + " recorded a payment of " + money.Format(e.Total, e.Currency) + " to you."},
-			Link:    s.baseURL})
+	if to := people[in.To]; !ports.IsQuiet(ctx) && to.ID != actor {
+		n, ok := to.Notice(user.PaymentReceived, people[in.From].Name+" paid you "+money.Format(e.Total, e.Currency),
+			[]string{people[in.From].Name + " recorded a payment of " + money.Format(e.Total, e.Currency) + " to you."}, s.baseURL)
+		if ok {
+			s.notifier.Notify(ctx, n)
+		}
 	}
 	return e, nil
 }
@@ -398,15 +456,12 @@ func (s *Service) notify(ctx context.Context, actor uuid.UUID, e *Expense, g *gr
 		where = " in " + g.Name
 	}
 	for _, u := range people {
-		if u.ID == actor || u.Status != user.StatusActive {
+		if u.ID == actor {
 			continue
 		}
-		if (updated && !u.Notifications.ExpenseUpdated) || (!updated && !u.Notifications.ExpenseAdded) {
-			continue
-		}
-		verb := "added"
+		verb, kind := "added", user.ExpenseAdded
 		if updated {
-			verb = "updated"
+			verb, kind = "updated", user.ExpenseUpdated
 		}
 		net := e.Net(u.ID)
 		line := "You are settled on this one."
@@ -415,10 +470,12 @@ func (s *Service) notify(ctx context.Context, actor uuid.UUID, e *Expense, g *gr
 		} else if net > 0 {
 			line = "You get back " + money.Format(net, e.Currency) + "."
 		}
-		s.notifier.Notify(ctx, ports.Notification{To: u.Email, Name: u.Name,
-			Subject: actorName + " " + verb + " “" + e.Description + "”" + where,
-			Lines:   []string{actorName + " " + verb + " “" + e.Description + "” (" + money.Format(e.Total, e.Currency) + ")" + where + ".", line},
-			Link:    s.baseURL})
+		n, ok := u.Notice(kind, actorName+" "+verb+" “"+e.Description+"”"+where,
+			[]string{actorName + " " + verb + " “" + e.Description + "” (" + money.Format(e.Total, e.Currency) + ")" + where + ".", line},
+			s.baseURL)
+		if ok {
+			s.notifier.Notify(ctx, n)
+		}
 	}
 }
 

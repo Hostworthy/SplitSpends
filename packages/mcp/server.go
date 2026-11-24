@@ -40,9 +40,10 @@ func NewServer(c *Client, version string) *sdk.Server {
 	sdk.AddTool(s, add("list_expenses", "Search expenses and payments, newest first. Filter by group, friend, text or dates.", readOnly), t.listExpenses)
 	sdk.AddTool(s, add("get_expense", "Full details of one expense, including who paid and who owes what.", readOnly), t.getExpense)
 	sdk.AddTool(s, add("list_activity", "Recent activity feed.", readOnly), t.listActivity)
-	sdk.AddTool(s, add("list_categories", "Expense category ids for add_expense.", readOnly), t.listCategories)
-	sdk.AddTool(s, add("add_expense", "Add a shared expense. Defaults: paid by the user, split equally between the user and the participants given (or every group member when a group is given and no participants are listed).", nil), t.addExpense)
+	sdk.AddTool(s, add("list_categories", "Expense category ids for add_expense: the built-in ones plus the user's own custom categories.", readOnly), t.listCategories)
+	sdk.AddTool(s, add("add_expense", "Add a shared expense. Defaults: paid by the user, split equally between the user and the participants given (or, when a group is given and no participants or split are listed, the group's default split, else every group member equally).", nil), t.addExpense)
 	sdk.AddTool(s, add("record_payment", "Record that one person paid another back (settle up).", nil), t.recordPayment)
+	sdk.AddTool(s, add("remind_to_settle", "Email someone who owes the user money a friendly reminder to settle up, in one group or across everything. At most one reminder per person and group every 24 hours.", nil), t.remind)
 	destructive := true
 	sdk.AddTool(s, add("delete_expense", "Delete an expense or payment. It can be restored from the app.", &sdk.ToolAnnotations{DestructiveHint: &destructive}), t.deleteExpense)
 	return s
@@ -350,15 +351,20 @@ func (t *tools) listActivity(ctx context.Context, _ *sdk.CallToolRequest, in act
 }
 
 func (t *tools) listCategories(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
-	cfg, err := t.c.Config(ctx)
+	res, err := getList[platform.CategoryEntry](ctx, t.c, "/categories", nil)
 	if err != nil {
 		return fail(err)
 	}
 	groups := map[string][]string{}
-	for _, c := range cfg.Categories {
-		if c.ID != "payment" {
-			groups[c.Group] = append(groups[c.Group], c.ID+" ("+c.Name+")")
+	for _, c := range res.Items {
+		if c.ID == "payment" || (c.Custom && !c.Mine) {
+			continue
 		}
+		label := c.ID + " (" + c.Name + ")"
+		if c.Custom {
+			label = c.ID + " (" + c.Name + ", custom)"
+		}
+		groups[c.Group] = append(groups[c.Group], label)
 	}
 	keys := make([]string, 0, len(groups))
 	for k := range groups {
@@ -398,6 +404,7 @@ func (t *tools) addExpense(ctx context.Context, _ *sdk.CallToolRequest, in addAr
 	}
 	currency := strings.ToUpper(in.Currency)
 	var members []string
+	var preset *platform.DefaultSplit
 	if in.GroupID != "" {
 		g, err := get[platform.Group](ctx, t.c, "/groups/"+url.PathEscape(in.GroupID), nil)
 		if err != nil {
@@ -406,6 +413,7 @@ func (t *tools) addExpense(ctx context.Context, _ *sdk.CallToolRequest, in addAr
 		if currency == "" {
 			currency = g.DefaultCurrency
 		}
+		preset = g.DefaultSplit
 		for _, m := range g.Members {
 			members = append(members, m.ID)
 			idx[m.ID] = m.Name
@@ -428,6 +436,16 @@ func (t *tools) addExpense(ctx context.Context, _ *sdk.CallToolRequest, in addAr
 		body.GroupID = &in.GroupID
 	}
 	method := strings.ToLower(in.SplitMethod)
+	if method == "" && len(in.Participants) == 0 && len(in.SplitValues) == 0 && preset != nil && preset.Method != "equal" {
+		// The group's default split (for example rent 60/40) applies when
+		// the assistant gives no split of its own.
+		method = preset.Method
+		for _, id := range sortedKeys(preset.Values) {
+			if v := preset.Values[id]; strings.Trim(v, "0.") != "" {
+				in.SplitValues = append(in.SplitValues, splitValue{UserID: id, Value: v})
+			}
+		}
+	}
 	switch method {
 	case "", "equal":
 		ids := in.Participants
@@ -507,11 +525,45 @@ func (t *tools) recordPayment(ctx context.Context, _ *sdk.CallToolRequest, in pa
 	return text("Recorded.\n" + t.line(ctx, e, idx)), nil, nil
 }
 
+type remindArgs struct {
+	UserID  string `json:"userId" jsonschema:"the person who owes the user money"`
+	GroupID string `json:"groupId,omitempty" jsonschema:"remind about this group only; omit for everything they owe"`
+}
+
+func (t *tools) remind(ctx context.Context, _ *sdk.CallToolRequest, in remindArgs) (*sdk.CallToolResult, any, error) {
+	_, idx, err := t.index(ctx)
+	if err != nil {
+		return fail(err)
+	}
+	body := platform.ReminderInput{UserID: in.UserID}
+	if in.GroupID != "" {
+		body.GroupID = &in.GroupID
+	}
+	r, err := send[platform.Reminder](ctx, t.c, http.MethodPost, "/reminders", body)
+	if err != nil {
+		return fail(err)
+	}
+	out := "Reminded " + idx.name(r.UserID) + " that they owe you " + t.balances(ctx, r.Balances) + "."
+	if !r.Emailed {
+		out += " They turned reminder emails off, so they will only see it in their activity feed."
+	}
+	return text(out), nil, nil
+}
+
 func (t *tools) deleteExpense(ctx context.Context, _ *sdk.CallToolRequest, in expenseArgs) (*sdk.CallToolResult, any, error) {
 	if err := t.c.do(ctx, http.MethodDelete, "/expenses/"+url.PathEscape(in.ExpenseID), nil, nil, nil); err != nil {
 		return fail(err)
 	}
 	return text("Deleted expense " + in.ExpenseID + ". It can be restored from the app."), nil, nil
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func unique(list []string) []string {

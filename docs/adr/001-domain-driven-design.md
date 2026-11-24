@@ -53,13 +53,15 @@ flowchart TB
 | `user` | Identity, profile, notification preferences, invited users |
 | `auth` | Login codes, sessions, API tokens, signup policy |
 | `friend` | Friendships (explicit plus group co-members) |
-| `group` | Groups and membership |
-| `expense` | Expenses, payments, split rules, comments, recurrence, categories |
+| `group` | Groups, membership and default splits |
+| `expense` | Expenses, payments, split rules, comments, recurrence, built-in categories |
+| `category` | User-defined expense categories |
 | `balance` | Pure balance math over ledger entries: nets, pairwise debts, simplification |
 | `activity` | Append-only feed |
 | `receipt` | Receipt images and AI scanning |
 | `assist` | Natural-language expense drafts |
 | `stats` | Spending summaries |
+| `push` | Push subscriptions (devices) and delivery rules |
 
 ### Layout Inside a Context
 
@@ -70,7 +72,7 @@ flowchart TB
 
 ### Repository Layout
 
-`apps/` holds only runnable apps: `api` (Go HTTP server), `mcp` (Go stdio MCP host), and the `android`, `ios` and `web` Flutter shells. Everything they are built from lives in `packages/`: the Go packages above, `packages/ledger` (the Dart twin of `packages/core`) and `packages/client` (the shared Flutter UI). Packages never import apps. The repository root is one Go module and one Dart workspace.
+`apps/` holds only runnable apps: `api` (Go HTTP server), `mcp` (Go stdio MCP host), and the `apk` (Android), `ios` and `web` Flutter shells. Everything they are built from lives in `packages/`: the Go packages above, `packages/ledger` (the Dart twin of `packages/core`) and `packages/client` (the shared Flutter UI). Packages never import apps. The repository root is one Go module and one Dart workspace.
 
 ### Rules
 

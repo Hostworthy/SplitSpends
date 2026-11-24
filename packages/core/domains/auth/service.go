@@ -14,20 +14,26 @@ import (
 	"github.com/google/uuid"
 )
 
+// Invites checks group invite links, which let new people sign up.
+type Invites interface {
+	Valid(ctx context.Context, token string) (bool, error)
+}
+
 // Service implements login and credential management.
 type Service struct {
 	policy     Policy
 	challenges ChallengeRepository
 	sessions   SessionRepository
 	users      user.Repository
+	invites    Invites
 	notifier   ports.Notifier
 	tx         ports.Tx
 	clock      clock.Clock
 }
 
-// NewService builds a Service.
-func NewService(p Policy, challenges ChallengeRepository, sessions SessionRepository, users user.Repository, notifier ports.Notifier, tx ports.Tx, c clock.Clock) *Service {
-	return &Service{policy: p, challenges: challenges, sessions: sessions, users: users, notifier: notifier, tx: tx, clock: c}
+// NewService builds a Service. invites may be nil when links are not used.
+func NewService(p Policy, challenges ChallengeRepository, sessions SessionRepository, users user.Repository, invites Invites, notifier ports.Notifier, tx ports.Tx, c clock.Clock) *Service {
+	return &Service{policy: p, challenges: challenges, sessions: sessions, users: users, invites: invites, notifier: notifier, tx: tx, clock: c}
 }
 
 // Mode returns the configured signup mode.
@@ -36,8 +42,9 @@ func (s *Service) Mode() SignupMode { return s.policy.Mode }
 // CodeTTL returns how long login codes stay valid.
 func (s *Service) CodeTTL() time.Duration { return s.policy.CodeTTL }
 
-// allowed decides whether email may log in. Existing users always may.
-func (s *Service) allowed(ctx context.Context, email string) (bool, error) {
+// allowed decides whether email may log in. Existing users always may, and
+// so may anyone holding a valid group invite link.
+func (s *Service) allowed(ctx context.Context, email, invite string) (bool, error) {
 	existing, err := s.users.FindByEmail(ctx, email)
 	if err != nil {
 		return false, err
@@ -53,6 +60,12 @@ func (s *Service) allowed(ctx context.Context, email string) (bool, error) {
 			return true, nil
 		}
 	}
+	if invite != "" && s.invites != nil {
+		ok, err := s.invites.Valid(ctx, invite)
+		if err != nil || ok {
+			return ok, err
+		}
+	}
 	count, err := s.users.Count(ctx)
 	if err != nil {
 		return false, err
@@ -62,8 +75,9 @@ func (s *Service) allowed(ctx context.Context, email string) (bool, error) {
 }
 
 // RequestCode emails a login code. It returns nil for disallowed emails too,
-// so callers cannot probe which addresses have accounts.
-func (s *Service) RequestCode(ctx context.Context, rawEmail string) error {
+// so callers cannot probe which addresses have accounts. invite is an
+// optional group invite token that lets a new person sign up.
+func (s *Service) RequestCode(ctx context.Context, rawEmail, invite string) error {
 	email, err := user.NormalizeEmail(rawEmail)
 	if err != nil {
 		return err
@@ -76,7 +90,7 @@ func (s *Service) RequestCode(ctx context.Context, rawEmail string) error {
 	if recent >= s.policy.MaxCodesHour {
 		return errs.RateLimited("Too many codes requested. Try again in an hour.")
 	}
-	ok, err := s.allowed(ctx, email)
+	ok, err := s.allowed(ctx, email, invite)
 	if err != nil || !ok {
 		return err
 	}

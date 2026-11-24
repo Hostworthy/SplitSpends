@@ -28,7 +28,7 @@ Migrations are embedded in the binary and applied on start.
 | `make check` | gofmt, go vet, Go tests (including the architecture test), `dart format`, `flutter analyze`, `flutter test` |
 | `make test-integration` | Database-backed tests against `TEST_DATABASE_URL` (the database is wiped) |
 | `make build` | `bin/splitspends` and `bin/splitspends-mcp` |
-| `make web-build` / `make apk` | Web build (`apps/web/build/web`) / Android APK (`apps/android/build`) |
+| `make web-build` / `make apk` | Web build (`apps/web/build/web`) / Android APK (`apps/apk/build`) |
 | `make docker` | Production image |
 
 ## Repository Layout
@@ -38,16 +38,17 @@ apps/                     Runnable apps only
   api/                    Go HTTP server: API, /mcp, web app, background jobs (main.go)
     routes/               HTTP handlers and serializers
   mcp/                    Go stdio MCP server for local assistants (main.go)
-  android/                Flutter shell: android/ runner + lib/main.dart
+  apk/                    Android app (Flutter shell): android/ runner + lib/main.dart
   ios/                    Flutter shell: ios/ runner + lib/main.dart
   web/                    Flutter shell: web/ runner + lib/main.dart
 packages/                 Shared code the apps are built from
   core/                   Go domain centre: entities, services, ports (no infrastructure)
-    domains/<context>     user, auth, friend, group, expense, balance, activity, receipt, assist, stats, transfer
+    domains/<context>     user, auth, friend, group, expense, category, balance, activity, receipt, assist, stats, transfer, push, reminder, invite, rates
     ports                 Interfaces adapters implement (Tx, Notifier, BlobStore, ReceiptReader)
     shared                errs, money, clock
   database/               PostgreSQL adapters (pgx) and embedded migrations
   notifications/          SMTP email adapter
+  webpush/                Web Push adapter (browsers, and Android through UnifiedPush)
   storage/                Local disk and S3-compatible blob stores
   ai/                     Anthropic and OpenAI-compatible AI providers
   platform/               HTTP contract (request and response shapes), standard library only
@@ -60,7 +61,7 @@ packages/                 Shared code the apps are built from
   client/                 Flutter: every screen, the local store, sync, assets and fonts
 spec/vectors.json         Shared test cases run by both the Go and the Dart rules
 scripts/                  README screenshots; fonts/fallback.sh checks the committed web fallback fonts
-deploy/                   Docker Compose (server, homelab), Terraform (AWS, GCP)
+deploy/                   docker/ (Compose with HTTPS and backups, for a homelab or VPS), aws/ and gcp/ (Terraform)
 docs/                     API contract, environment, hosting, MCP, ADRs
 go.mod, pubspec.yaml      One Go module and one Dart workspace at the root
 ```
@@ -87,3 +88,14 @@ Follow [ADR-001](adr/001-domain-driven-design.md):
 - `packages/archtest` fails when a package imports across a forbidden boundary.
 - `packages/bootstrap/integration_test.go` runs services against a real database.
 - `packages/ledger/test` runs `spec/vectors.json` against the Dart rules; `packages/client/test` has unit and widget tests.
+- `apps/apk/integration_test` runs the real app on an Android device or emulator: on-device mode, then signing in to a server and uploading. CI runs it on an Android 13 emulator against a development server when started by hand (Actions, CI, Run workflow), checks the upload through the API, and publishes the release APK as the `splitspends-apk` artifact. To run it yourself, start the API with `SIGNUP_MODE=open` and no SMTP, then:
+
+  ```bash
+  python3 scripts/ci/codes.py server.log 8099 &   # serves the logged sign-in codes
+  cd apps/apk
+  flutter test integration_test \
+    --dart-define=SPLITSPENDS_TEST_SERVER=http://10.0.2.2:8080 \
+    --dart-define=SPLITSPENDS_TEST_CODES=http://10.0.2.2:8099
+  ```
+
+  Without the defines only the on-device part runs.

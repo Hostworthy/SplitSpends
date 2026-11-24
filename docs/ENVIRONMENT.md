@@ -70,6 +70,26 @@ Common providers:
 | Mailgun | `smtp.mailgun.org` | 587 | `starttls` | |
 | SendGrid | `smtp.sendgrid.net` | 587 | `starttls` | Username `apikey` |
 
+## Push Notifications
+
+Push works without any setup: the server speaks standard Web Push, which reaches browsers through their own push service and Android phones through a [UnifiedPush](https://unifiedpush.org) distributor such as ntfy. No Firebase or Google account is needed (see [ADR-009](adr/009-push-notifications.md)).
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | generated | The server's VAPID key pair (RFC 8292), base64url without padding. Set both or neither |
+| `VAPID_SUBJECT` | see below | Contact for push service operators: `mailto:you@example.com` or an `https://` URL |
+| `PUSH_ALLOW_PRIVATE` | `false` | Allow push endpoints on private or loopback addresses, for example a self-hosted ntfy on your LAN |
+
+Keys: when `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` are empty, the first server to start generates a pair and stores it in the database (`vapid_keys` table). Restarts and other instances read the same pair, so nothing needs configuring, and the database backup covers it. Set the variables only to manage the key yourself, for example to keep it across a fresh database. Browsers and distributors bind each subscription to the key, so changing it later silently breaks existing devices: they stop receiving notifications, are removed after repeated failures, and people tap Enable push notifications again. To generate a pair yourself, use any Web Push tool, for example `npx web-push generate-vapid-keys`.
+
+The private key in the database is stored like the rest of your data: it only lets someone send notifications to the devices in the same database, so protect the database as usual.
+
+`VAPID_SUBJECT` defaults to `BASE_URL` when that is `https`, otherwise to `mailto:` plus the `SMTP_FROM` address, otherwise to `mailto:admin@<BASE_URL host>`.
+
+Push is on whenever a key pair is available; `GET /api/v1/config` reports `pushEnabled` and `vapidPublicKey`. With `SERVERLESS=true`, notifications are pushed before the response returns, like emails.
+
+Outgoing requests: push endpoints come from devices, so the server refuses endpoints that resolve to loopback, private, link-local (cloud metadata) or carrier-grade NAT addresses and does not follow redirects. `PUSH_ALLOW_PRIVATE=true` lifts the private and loopback part (link-local stays blocked). When the server reaches the internet through an `HTTPS_PROXY`, the proxy resolves endpoints, so the address check applies only to direct connections.
+
 ## AI (Optional)
 
 SplitSpends does not run a model. When a provider is configured, the server sends the user's instructions (and a receipt photo, when there is one) together with a system prompt describing their groups, people and the rules to that provider, and turns the structured answer into a draft the user reviews. AI is off unless a provider is configured, and the app hides AI buttons when it is off.
@@ -92,5 +112,11 @@ Examples:
 | OpenRouter | `openai` | `https://openrouter.ai/api/v1` | any listed vision model |
 | Ollama (local) | `openai` | `http://localhost:11434/v1` | a local vision model |
 | Your own server | `openai` | its OpenAI-compatible root | its model id |
+
+### Exchange Rates for Receipts
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `RATES_URL` | `https://open.er-api.com/v6/latest/USD` | Exchange rates for converting a receipt in another currency into the group's currency. Fetched only when AI is on, at most about twice a day, and cached in the database. Any URL returning the [open ExchangeRate-API](https://www.exchangerate-api.com/docs/free) or [Frankfurter](https://frankfurter.dev) format works, including a self-hosted Frankfurter (`https://<host>/v1/latest?base=USD`). `none` turns conversion off. Only the rate list is downloaded; no user data is sent |
 
 The OpenAI-compatible provider must support JSON-schema response formats and, for receipts, image input. Receipt photos and instructions are sent to the configured provider, so pick one whose data handling you are comfortable with, or run a local model.

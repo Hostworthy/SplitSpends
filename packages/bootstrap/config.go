@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
+	"github.com/Hostworthy/SplitSpends/packages/exchange"
 )
 
 // Config is the full runtime configuration, read from the environment.
@@ -45,6 +46,18 @@ type Config struct {
 	AIEffort   string
 
 	MCPEnabled bool
+
+	// RatesURL is where exchange rates come from; empty turns them off.
+	RatesURL string
+
+	// VAPID identity for Web Push. When both keys are empty the server
+	// generates a pair on first start and keeps it in the database.
+	VAPIDPublicKey  string
+	VAPIDPrivateKey string
+	VAPIDSubject    string
+	// PushAllowPrivate lets push endpoints resolve to private addresses
+	// (a UnifiedPush server on the local network).
+	PushAllowPrivate bool
 
 	// Serverless disables in-process background jobs and queued emails.
 	Serverless bool
@@ -144,9 +157,18 @@ func LoadConfig() (*Config, error) {
 	c.TrustProxy, _ = strconv.ParseBool(env("TRUST_PROXY", "false"))
 	c.MCPEnabled, _ = strconv.ParseBool(env("MCP_ENABLED", "true"))
 	c.Serverless, _ = strconv.ParseBool(env("SERVERLESS", "false"))
+	if err := c.loadPush(); err != nil {
+		return nil, err
+	}
 	c.JobsSecret = env("JOBS_SECRET", "")
 	if c.JobsSecret != "" && len(c.JobsSecret) < 32 {
 		return nil, fmt.Errorf("bootstrap.config.env.invalid.JOBS_SECRET: use at least 32 random characters")
+	}
+	c.RatesURL = env("RATES_URL", exchange.DefaultURL)
+	if strings.EqualFold(c.RatesURL, "none") {
+		c.RatesURL = ""
+	} else if !strings.HasPrefix(c.RatesURL, "https://") && !strings.HasPrefix(c.RatesURL, "http://") {
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.RATES_URL: use an http(s) URL or none")
 	}
 	c.BlobStore = strings.ToLower(env("BLOB_STORE", "local"))
 	c.S3Bucket, c.S3Region, c.S3Endpoint = env("S3_BUCKET", ""), env("S3_REGION", env("AWS_REGION", "")), env("S3_ENDPOINT", "")

@@ -13,7 +13,6 @@ import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/amount_field.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
-import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/friends/presentation/people.dart';
@@ -47,7 +46,15 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
     _from = widget.args.fromUserId ?? me?.id;
     _to = widget.args.toUserId;
     _amount = widget.args.amount;
-    _currency = widget.args.currency ?? me?.defaultCurrency ?? 'USD';
+    final groupId = widget.args.groupId;
+    final group = groupId == null
+        ? null
+        : ref.read(groupProvider(groupId)).value;
+    _currency =
+        widget.args.currency ??
+        group?.defaultCurrency ??
+        me?.defaultCurrency ??
+        'USD';
   }
 
   @override
@@ -255,38 +262,16 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 84,
-                      height: 64,
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                        ),
-                        onPressed: () async {
-                          final code = await pickCurrency(
-                            context,
-                            selected: _currency,
-                          );
-                          if (code != null) setState(() => _currency = code);
-                        },
-                        child: Text(_currency),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: AmountField(
-                        key: ValueKey('settle-$_currency-$_amountVersion'),
-                        currency: _currency,
-                        initial: _amount,
-                        large: true,
-                        autofocus: _amount == null,
-                        onSubmitted: _save,
-                        onChanged: (v) => _amount = v,
-                      ),
-                    ),
-                  ],
+                // Payments use the debt's currency: the group's, or yours
+                // outside groups. There is no per-payment currency choice.
+                AmountField(
+                  key: ValueKey('settle-$_currency-$_amountVersion'),
+                  currency: _currency,
+                  initial: _amount,
+                  large: true,
+                  autofocus: _amount == null,
+                  onSubmitted: _save,
+                  onChanged: (v) => _amount = v,
                 ),
                 const SizedBox(height: 12),
                 Align(

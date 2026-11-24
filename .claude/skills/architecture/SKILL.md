@@ -20,7 +20,7 @@ Dependencies point inward to `packages/core`. See [ADR-001](../../../docs/adr/00
 | `apps/api`, `apps/mcp` | Process entry points (`main.go`) | anything in `packages/` |
 | `packages/ledger` (Dart) | Split and balance rules, mirrors `packages/core` | Dart SDK only |
 | `packages/client` (Flutter) | Screens, local store, sync, assets | `packages/ledger`, Flutter plugins |
-| `apps/android`, `apps/ios`, `apps/web` | Platform runners calling `packages/client` | `packages/client` only |
+| `apps/apk`, `apps/ios`, `apps/web` | Platform runners calling `packages/client` | `packages/client` only |
 
 Questions to ask:
 

@@ -52,12 +52,37 @@ type User struct {
 	Status          string  `json:"status"`
 }
 
-// Notifications are email preferences.
-type Notifications struct {
+// NotificationSwitches turn one channel on or off per notification kind.
+type NotificationSwitches struct {
 	ExpenseAdded    bool `json:"expenseAdded"`
 	ExpenseUpdated  bool `json:"expenseUpdated"`
 	PaymentReceived bool `json:"paymentReceived"`
 	AddedToGroup    bool `json:"addedToGroup"`
+	Reminders       bool `json:"reminders"`
+}
+
+// Notifications are the caller's preferences. The top-level switches are
+// email (unchanged from before push existed); push has the same keys.
+type Notifications struct {
+	NotificationSwitches
+	Push NotificationSwitches `json:"push"`
+}
+
+// NotificationSwitchesPatch changes some switches; omitted keys keep their
+// value.
+type NotificationSwitchesPatch struct {
+	ExpenseAdded    *bool `json:"expenseAdded,omitempty"`
+	ExpenseUpdated  *bool `json:"expenseUpdated,omitempty"`
+	PaymentReceived *bool `json:"paymentReceived,omitempty"`
+	AddedToGroup    *bool `json:"addedToGroup,omitempty"`
+	Reminders       *bool `json:"reminders,omitempty"`
+}
+
+// NotificationsPatch changes some preferences: top-level keys are email,
+// push the push channel.
+type NotificationsPatch struct {
+	NotificationSwitchesPatch
+	Push *NotificationSwitchesPatch `json:"push,omitempty"`
 }
 
 // Me is the caller's own profile.
@@ -69,11 +94,46 @@ type Me struct {
 
 // MePatch updates the caller's profile.
 type MePatch struct {
-	Name            *string        `json:"name,omitempty"`
-	DefaultCurrency *string        `json:"defaultCurrency,omitempty"`
-	Timezone        *string        `json:"timezone,omitempty"`
-	AvatarColor     *string        `json:"avatarColor,omitempty"`
-	Notifications   *Notifications `json:"notifications,omitempty"`
+	Name            *string             `json:"name,omitempty"`
+	DefaultCurrency *string             `json:"defaultCurrency,omitempty"`
+	Timezone        *string             `json:"timezone,omitempty"`
+	AvatarColor     *string             `json:"avatarColor,omitempty"`
+	Notifications   *NotificationsPatch `json:"notifications,omitempty"`
+}
+
+// PushKeys are a device's message encryption keys, base64url encoded, as
+// PushSubscription.toJSON() returns them in browsers.
+type PushKeys struct {
+	P256dh string `json:"p256dh"`
+	Auth   string `json:"auth"`
+}
+
+// PushSubscriptionCreate registers (or refreshes) a device for push.
+type PushSubscriptionCreate struct {
+	Endpoint string   `json:"endpoint"`
+	Keys     PushKeys `json:"keys"`
+	// Platform is "web" (default) or "unifiedpush".
+	Platform string `json:"platform"`
+	// Label names the device for the caller, for example "Firefox on Linux".
+	Label string `json:"label"`
+}
+
+// PushSubscription is one of the caller's devices.
+type PushSubscription struct {
+	ID            string  `json:"id"`
+	Platform      string  `json:"platform"`
+	Label         string  `json:"label"`
+	Endpoint      string  `json:"endpoint"`
+	CreatedAt     string  `json:"createdAt"`
+	LastSuccessAt *string `json:"lastSuccessAt"`
+	Failures      int     `json:"failures"`
+}
+
+// PushTest reports a test notification.
+type PushTest struct {
+	Sent    int `json:"sent"`
+	Failed  int `json:"failed"`
+	Removed int `json:"removed"`
 }
 
 // MyBalances are totals across everything.
@@ -99,6 +159,23 @@ type Category struct {
 	Icon  string `json:"icon"`
 }
 
+// CategoryEntry is a category as GET /categories lists it. Custom ones have
+// ids of the form custom.<uuid>; Mine marks the caller's own.
+type CategoryEntry struct {
+	Category
+	Custom bool `json:"custom"`
+	Mine   bool `json:"mine"`
+}
+
+// CategoryInput creates or changes a custom category. Group is the display
+// group (one of the built-in category groups, "Other" when empty).
+type CategoryInput struct {
+	ID    *string `json:"id,omitempty"`
+	Name  *string `json:"name,omitempty"`
+	Icon  *string `json:"icon,omitempty"`
+	Group *string `json:"group,omitempty"`
+}
+
 // Config is public instance configuration.
 type Config struct {
 	AppName    string     `json:"appName"`
@@ -106,11 +183,18 @@ type Config struct {
 	SignupMode string     `json:"signupMode"`
 	Currencies []Currency `json:"currencies"`
 	Categories []Category `json:"categories"`
+	// PushEnabled is true when the server sends Web Push notifications.
+	PushEnabled bool `json:"pushEnabled"`
+	// VAPIDPublicKey is the application server key (base64url) devices
+	// subscribe with; empty when push is off.
+	VAPIDPublicKey string `json:"vapidPublicKey"`
 }
 
-// OTPRequest asks for a login code.
+// OTPRequest asks for a login code. InviteToken, from a group invite link,
+// lets a new person sign up on servers that only admit invited people.
 type OTPRequest struct {
-	Email string `json:"email"`
+	Email       string `json:"email"`
+	InviteToken string `json:"inviteToken,omitempty"`
 }
 
 // OTPSent confirms a code request.
@@ -193,7 +277,52 @@ type Group struct {
 	UpdatedAt       string    `json:"updatedAt"`
 	Members         []User    `json:"members"`
 	Balances        []Balance `json:"balances"`
+	// DefaultSplit is null when the group has none, or when a percent or
+	// shares default no longer matches the members.
+	DefaultSplit *DefaultSplit `json:"defaultSplit"`
 }
+
+// DefaultSplit is what new expenses in a group start with. Method is
+// "equal", "percent" or "shares"; Values maps user ids to decimal strings
+// (empty for equal; every member for percent and shares, "0" leaves someone
+// out).
+type DefaultSplit struct {
+	Method string            `json:"method"`
+	Values map[string]string `json:"values"`
+}
+
+// Nullable is a patch field that tells "absent" (leave unchanged) apart from
+// null (clear). Use it with the omitzero tag option.
+type Nullable[T any] struct {
+	Set   bool
+	Value *T
+}
+
+// UnmarshalJSON records that the field was present; null leaves Value nil.
+func (n *Nullable[T]) UnmarshalJSON(b []byte) error {
+	n.Set = true
+	if string(b) == "null" {
+		n.Value = nil
+		return nil
+	}
+	var v T
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	n.Value = &v
+	return nil
+}
+
+// MarshalJSON writes the value or null.
+func (n Nullable[T]) MarshalJSON() ([]byte, error) {
+	if n.Value == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(*n.Value)
+}
+
+// IsZero lets omitzero drop an unset field.
+func (n Nullable[T]) IsZero() bool { return !n.Set }
 
 // GroupCreate creates a group.
 type GroupCreate struct {
@@ -211,6 +340,8 @@ type GroupPatch struct {
 	Emoji           *string `json:"emoji,omitempty"`
 	Color           *string `json:"color,omitempty"`
 	Archived        *bool   `json:"archived,omitempty"`
+	// DefaultSplit sets the default split; null clears it.
+	DefaultSplit Nullable[DefaultSplit] `json:"defaultSplit,omitzero"`
 }
 
 // MemberBalance is one member's balance in a group.
@@ -338,9 +469,11 @@ type Activity struct {
 	CreatedAt string         `json:"createdAt"`
 }
 
-// Amount is a labelled total.
+// CategoryAmount is the total of one category. Name is its display name;
+// spending under deleted custom categories counts as "general".
 type CategoryAmount struct {
 	Category string `json:"category"`
+	Name     string `json:"name"`
 	Amount   int64  `json:"amount"`
 }
 
@@ -426,6 +559,44 @@ type ExpenseDraft struct {
 	Warnings    []string `json:"warnings"`
 }
 
+// ReminderInput asks someone who owes the caller to settle up, in one group
+// or across everything.
+type ReminderInput struct {
+	UserID  string  `json:"userId"`
+	GroupID *string `json:"groupId,omitempty"`
+}
+
+// Reminder is a sent reminder. Balances are what the person owes the caller
+// (positive). Emailed is false when they turned reminder emails off.
+type Reminder struct {
+	ID       string    `json:"id"`
+	UserID   string    `json:"userId"`
+	GroupID  *string   `json:"groupId"`
+	Balances []Balance `json:"balances"`
+	Emailed  bool      `json:"emailed"`
+	SentAt   string    `json:"sentAt"`
+}
+
+// Invite is a group invite link. Token and URL are only returned when the
+// link is created.
+type Invite struct {
+	ID        string `json:"id"`
+	Token     string `json:"token,omitempty"`
+	URL       string `json:"url,omitempty"`
+	CreatedBy string `json:"createdBy"`
+	ExpiresAt string `json:"expiresAt"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// InvitePreview is what anyone holding an invite link may see.
+type InvitePreview struct {
+	GroupName   string `json:"groupName"`
+	Emoji       string `json:"emoji"`
+	Color       string `json:"color"`
+	MemberCount int    `json:"memberCount"`
+	InvitedBy   string `json:"invitedBy"`
+}
+
 // Health is the liveness response.
 type Health struct {
 	OK bool `json:"ok"`
@@ -438,7 +609,18 @@ type ImportPerson struct {
 	Email string `json:"email,omitempty"`
 }
 
-// ImportGroup is a local group; memberIds are local person ids.
+// ImportCategory is a custom category from the device. Deleted ones are
+// sent too so expenses that still use them keep their id.
+type ImportCategory struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Icon    string `json:"icon,omitempty"`
+	Group   string `json:"group,omitempty"`
+	Deleted bool   `json:"deleted,omitempty"`
+}
+
+// ImportGroup is a local group; memberIds and the keys of
+// defaultSplit.values are local person ids.
 type ImportGroup struct {
 	ID string `json:"id"`
 	GroupPatch
@@ -454,15 +636,17 @@ type ImportExpense struct {
 // ImportRequest uploads local-only data to an account. meId is the local
 // person id that stands for the device owner.
 type ImportRequest struct {
-	MeID     string          `json:"meId"`
-	People   []ImportPerson  `json:"people"`
-	Groups   []ImportGroup   `json:"groups"`
-	Expenses []ImportExpense `json:"expenses"`
+	MeID       string           `json:"meId"`
+	People     []ImportPerson   `json:"people"`
+	Categories []ImportCategory `json:"categories,omitempty"`
+	Groups     []ImportGroup    `json:"groups"`
+	Expenses   []ImportExpense  `json:"expenses"`
 }
 
 // ImportResult maps local person ids to server user ids.
 type ImportResult struct {
-	People   map[string]string `json:"people"`
-	Groups   int               `json:"groups"`
-	Expenses int               `json:"expenses"`
+	People     map[string]string `json:"people"`
+	Categories int               `json:"categories"`
+	Groups     int               `json:"groups"`
+	Expenses   int               `json:"expenses"`
 }
