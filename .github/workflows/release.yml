@@ -215,6 +215,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Signing and storing the provenance attestation.
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -227,7 +232,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         env:
           # No build record artifact; the release only needs the image.
           DOCKER_BUILD_RECORD_UPLOAD: "false"
@@ -235,6 +241,10 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
+          # Full build provenance and a software bill of materials, stored
+          # with the image in the registry.
+          provenance: mode=max
+          sbom: true
           build-args: VERSION=${{ needs.version.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -244,6 +254,14 @@ jobs:
           tags: |
             ${{ steps.image.outputs.name }}:${{ needs.version.outputs.tag }}
             ${{ needs.version.outputs.prerelease == 'false' && format('{0}:latest', steps.image.outputs.name) || '' }}
+      # A signed attestation that this workflow built the pushed digest, which
+      # `gh attestation verify oci://<image>` checks.
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
 
   release:
     name: publish
@@ -251,6 +269,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -265,10 +285,19 @@ jobs:
       - name: Checksums and notes
         env:
           TAG: ${{ needs.version.outputs.tag }}
+          DIGEST: ${{ needs.docker.outputs.digest }}
         run: |
+          [ -n "$DIGEST" ] || { echo "::error::The docker job reported no image digest."; exit 1; }
           cd dist && sha256sum * > SHA256SUMS && cd ..
-          image="ghcr.io/${GITHUB_REPOSITORY,,}:${TAG}"
-          sed -e "s|{{TAG}}|${TAG}|g" -e "s|{{IMAGE}}|${image}|g" .github/release-notes.md > notes.md
+          name="ghcr.io/${GITHUB_REPOSITORY,,}"
+          sed -e "s|{{TAG}}|${TAG}|g" -e "s|{{REPO}}|${GITHUB_REPOSITORY}|g" \
+            -e "s|{{IMAGE}}|${name}:${TAG}|g" -e "s|{{IMAGE_DIGEST}}|${name}@${DIGEST}|g" \
+            .github/release-notes.md > notes.md
+      # A signed attestation that this workflow built every file; checksums
+      # alone cannot show that, since they are published next to the files.
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           name: Split Spends ${{ needs.version.outputs.tag }}

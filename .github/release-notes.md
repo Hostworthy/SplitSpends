@@ -8,13 +8,13 @@
 | `splitspends-ios-{{TAG}}-unsigned.ipa` | iPhone app, **unsigned**: install it with your own Apple ID through Xcode, AltStore or Sideloadly |
 | `SHA256SUMS` | Checksums for every file above |
 
-Container image with the server and the web app included: `{{IMAGE}}`
+Container image with the server and the web app included: `{{IMAGE}}`. The command below pulls this release's exact build by its digest:
 
 ```bash
 docker run -p 8080:8080 \
   -e DATABASE_URL=postgres://user:pass@db:5432/splitspends \
   -e SECRET_KEY="$(openssl rand -hex 32)" \
-  {{IMAGE}}
+  {{IMAGE_DIGEST}}
 ```
 
 Run the server from a download:
@@ -25,6 +25,13 @@ tar -xzf splitspends-web-{{TAG}}.tar.gz
 DATABASE_URL=postgres://user:pass@localhost:5432/splitspends \
 SECRET_KEY="$(openssl rand -hex 32)" WEB_DIR=./web \
   ./splitspends-server-{{TAG}}-linux-amd64/splitspends
+```
+
+Check that a file or the image was built by this repository's release workflow, with the [GitHub CLI](https://cli.github.com/):
+
+```bash
+gh attestation verify splitspends-server-{{TAG}}-linux-amd64.tar.gz -R {{REPO}}
+gh attestation verify oci://{{IMAGE_DIGEST}} -R {{REPO}}
 ```
 
 Hosting options, HTTPS and every setting: [docs/HOSTING.md](https://github.com/Hostworthy/SplitSpends/blob/{{TAG}}/docs/HOSTING.md) and [docs/ENVIRONMENT.md](https://github.com/Hostworthy/SplitSpends/blob/{{TAG}}/docs/ENVIRONMENT.md).
