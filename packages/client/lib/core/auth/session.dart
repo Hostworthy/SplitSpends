@@ -10,6 +10,7 @@ import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/core/storage/response_cache.dart';
+import 'package:splitspends/core/sync/outbox.dart';
 import 'package:splitspends/core/sync/reachability.dart';
 
 /// How the app stores data.
@@ -34,12 +35,22 @@ class Session {
     this.serverUrl = '',
     this.token,
     this.me,
+    this.userId,
   });
 
   final AppMode mode;
   final String serverUrl;
   final String? token;
   final Me? me;
+
+  /// The signed-in account's id, known before [me] loads on an offline
+  /// start.
+  final String? userId;
+
+  /// Who writes queued now belong to; null when not signed in.
+  Owner? get owner => token == null
+      ? null
+      : (server: normalizeServerUrl(serverUrl), user: me?.id ?? userId);
 
   /// True when the main app can be shown.
   bool get isReady =>
@@ -53,6 +64,7 @@ class Session {
     serverUrl: serverUrl ?? this.serverUrl,
     token: token,
     me: me ?? this.me,
+    userId: userId,
   );
 }
 
@@ -100,18 +112,45 @@ class SessionController extends AsyncNotifier<Session> {
       token: token,
       httpClient: ref.read(httpClientProvider),
     );
+    final db = await ref.read(databaseProvider.future);
+    final account = await Stores.meta.record(_accountKey).get(db) as String?;
     try {
       final me = await client.getData('/me', (d) => Me.fromJson(d as JsonMap));
-      return Session(mode: mode, serverUrl: serverUrl, token: token, me: me);
+      final session = Session(
+        mode: mode,
+        serverUrl: serverUrl,
+        token: token,
+        me: me,
+        userId: me.id,
+      );
+      if (account == null) {
+        // The first start that knows the account: writes queued before it
+        // was recorded were made with this same token.
+        await _outbox(session).claim();
+      }
+      await Stores.meta.record(_accountKey).put(db, me.id);
+      return session;
     } on ApiError catch (error) {
       if (error.isUnauthorized) {
+        // Queued writes stay with their account until it signs in again.
         await _store.writeToken(null);
         return Session(mode: mode, serverUrl: serverUrl);
       }
       // Offline: keep the session, the profile loads later.
-      return Session(mode: mode, serverUrl: serverUrl, token: token);
+      return Session(
+        mode: mode,
+        serverUrl: serverUrl,
+        token: token,
+        userId: account,
+      );
     }
   }
+
+  /// The signed-in account's id (see [Session.userId]).
+  static const _accountKey = 'account';
+
+  Outbox _outbox(Session session) =>
+      Outbox(() => ref.read(databaseProvider.future), owner: session.owner);
 
   Session get _current => state.value ?? Session(serverUrl: defaultServerUrl());
 
@@ -139,8 +178,12 @@ class SessionController extends AsyncNotifier<Session> {
   }
 
   /// Completes "Connect to a server" after the emailed code is verified.
+  /// Writes this account queued before its session ended are replayed;
+  /// those of other accounts stay untouched (see [Outbox]).
   Future<void> signIn({required String token, required Me me}) async {
     await ref.read(responseCacheProvider).clear();
+    final db = await ref.read(databaseProvider.future);
+    await Stores.meta.record(_accountKey).put(db, me.id);
     await _store.writeToken(token);
     await _store.writeAppMode(AppMode.connected.name);
     state = AsyncData(
@@ -149,6 +192,7 @@ class SessionController extends AsyncNotifier<Session> {
         serverUrl: _current.serverUrl,
         token: token,
         me: me,
+        userId: me.id,
       ),
     );
   }
@@ -159,11 +203,12 @@ class SessionController extends AsyncNotifier<Session> {
     state = AsyncData(_current.copyWith(me: me));
   }
 
-  /// Signs out of the server and returns to the welcome screen. On-device
-  /// data is kept.
-  Future<void> signOut({bool revoke = true}) async {
+  /// Signs out of the server at the user's request and returns to the
+  /// welcome screen, discarding the account's unsynced writes (the account
+  /// screen warns about them first). On-device data is kept.
+  Future<void> signOut() async {
     final session = _current;
-    if (revoke && session.token != null) {
+    if (session.token != null) {
       final client = ApiClient(
         serverUrl: session.serverUrl,
         token: session.token,
@@ -179,12 +224,28 @@ class SessionController extends AsyncNotifier<Session> {
     await _store.writeAppMode(null);
     try {
       await ref.read(responseCacheProvider).clear();
-      final db = await ref.read(databaseProvider.future);
-      await Stores.outbox.delete(db);
+      await _outbox(session).clear();
     } catch (_) {
-      // Leftovers are harmless; they are cleared on the next sign-in.
+      // Leftover writes stay bound to this account and are never sent for
+      // anyone else; the cache is cleared again on the next sign-in.
     }
     state = AsyncData(Session(serverUrl: session.serverUrl));
+  }
+
+  /// The server no longer accepts [token] (it expired or was revoked):
+  /// back to the welcome screen. Unlike [signOut], the account's unsynced
+  /// writes are kept, so signing in to it again sends them.
+  Future<void> expire(String token) async {
+    final session = _current;
+    if (session.token != token) return;
+    state = AsyncData(Session(serverUrl: session.serverUrl));
+    await _store.writeToken(null);
+    await _store.writeAppMode(null);
+    try {
+      await ref.read(responseCacheProvider).clear();
+    } catch (_) {
+      // Cleared again on the next sign-in.
+    }
   }
 
   /// Back to the welcome screen without touching stored data.
@@ -222,9 +283,8 @@ final apiClientProvider = Provider<ApiClient>((ref) {
     cache: key.$2 == null ? null : ref.read(responseCacheProvider),
     onReachability: (ok) => ref.read(reachabilityProvider.notifier).report(ok),
     onUnauthorized: () {
-      if (key.$2 != null) {
-        ref.read(sessionProvider.notifier).signOut(revoke: false);
-      }
+      final token = key.$2;
+      if (token != null) ref.read(sessionProvider.notifier).expire(token);
     },
   );
 });

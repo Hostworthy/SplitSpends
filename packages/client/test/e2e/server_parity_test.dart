@@ -260,7 +260,10 @@ void main() {
     expect({for (final e in kayaks.items) e.category}, {boats.id, old.id});
 
     // 4. Offline outbox replays with client ids exactly once.
-    final outbox = Outbox(() async => db);
+    final outbox = Outbox(
+      () async => db,
+      owner: (server: 'http://127.0.0.1:9', user: serverMe.id),
+    );
     final offline = OfflineExpensesRepository(
       RemoteExpensesRepository(
         ApiClient(

@@ -26,3 +26,4 @@ Many people want to split costs without creating an account or running a server.
 
 - Split and balance rules exist in Go and Dart; shared test vectors keep them aligned.
 - Conflict handling is simple: the server wins, and offline edits are replayed in order.
+- The outbox belongs to one account on one server. Writes of another account stay on the device, unsent, until that account signs in again. A sign-out the user asks for discards the account's writes after a warning; a session the server ends (401) keeps them. Only the API's own verdicts (validation, conflict, not found, forbidden) drop a write; proxy answers, 408, 429 and outages keep it, and a write the server keeps failing on is set aside for Retry or Discard so later writes still sync.
