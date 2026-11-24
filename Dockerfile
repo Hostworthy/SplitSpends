@@ -6,7 +6,7 @@ WORKDIR /src/app
 COPY app/pubspec.yaml app/pubspec.lock* ./
 RUN flutter pub get
 COPY app/ ./
-RUN flutter build web --release
+RUN flutter build web --release --no-web-resources-cdn
 
 FROM golang:1.26-alpine AS api
 WORKDIR /src/backend
