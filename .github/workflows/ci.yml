@@ -49,6 +49,8 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed packages/ledger packages/client apps/android apps/ios apps/web
       - name: Analyze
         run: for d in packages/ledger packages/client apps/android apps/ios apps/web; do (cd $d && flutter analyze) || exit 1; done
+      - name: Web fallback fonts match the Flutter SDK
+        run: scripts/fonts/fallback.sh check
       - run: dart test
         working-directory: packages/ledger
       - run: flutter test
