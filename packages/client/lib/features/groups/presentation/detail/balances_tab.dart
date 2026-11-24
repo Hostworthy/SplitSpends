@@ -5,9 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/app/theme.dart';
 import 'package:splitspends/core/auth/session.dart';
-import 'package:splitspends/core/config/config_provider.dart';
+import 'package:splitspends/core/rates/rates.dart';
 import 'package:splitspends/core/models/user.dart';
-import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/balance_text.dart';
 import 'package:splitspends/core/widgets/states.dart';
@@ -23,7 +22,7 @@ class GroupBalancesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final balances = ref.watch(groupBalancesProvider(group.id));
     final meId = ref.watch(meProvider)?.id;
-    final config = ref.watch(configValueProvider);
+    final view = ref.watch(moneyViewProvider);
     final text = Theme.of(context).textTheme;
     final colors = BalanceColors.of(context);
     String name(String id) =>
@@ -71,7 +70,10 @@ class GroupBalancesTab extends ConsumerWidget {
                   ),
                 ),
                 subtitle: Text(
-                  Money.format(debt.amount, config.currency(debt.currency)),
+                  [
+                    view.format(debt.amount, debt.currency),
+                    ?view.original(debt.amount, debt.currency),
+                  ].join(' · '),
                   style: text.titleSmall?.copyWith(
                     color: debt.from == meId
                         ? colors.owe

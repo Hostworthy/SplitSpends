@@ -19,6 +19,7 @@ The server reads everything from the environment. Invalid or missing required va
 | `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API from elsewhere, or `*` |
 | `TRUST_PROXY` | `false` | Use `X-Forwarded-For` for client IPs (rate limits) behind a reverse proxy |
 | `MCP_ENABLED` | `true` | Serve the MCP endpoint at `/mcp` |
+| `RATES_URL` | `https://open.er-api.com/v6/latest/USD` | Exchange rates for showing totals in each person's currency. Any URL returning the [open ExchangeRate-API](https://www.exchangerate-api.com/docs/free) or [Frankfurter](https://frankfurter.dev) format works, including a self-hosted Frankfurter (`https://<host>/v1/latest?base=USD`). `none` turns conversion off. Only the rate list is downloaded; no user data is sent |
 
 ## Serverless and Storage
 

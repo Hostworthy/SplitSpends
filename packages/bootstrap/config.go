@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
+	"github.com/Hostworthy/SplitSpends/packages/exchange"
 )
 
 // Config is the full runtime configuration, read from the environment.
@@ -45,6 +46,9 @@ type Config struct {
 	AIEffort   string
 
 	MCPEnabled bool
+
+	// RatesURL is where exchange rates come from; empty turns them off.
+	RatesURL string
 
 	// Serverless disables in-process background jobs and queued emails.
 	Serverless bool
@@ -147,6 +151,12 @@ func LoadConfig() (*Config, error) {
 	c.JobsSecret = env("JOBS_SECRET", "")
 	if c.JobsSecret != "" && len(c.JobsSecret) < 32 {
 		return nil, fmt.Errorf("bootstrap.config.env.invalid.JOBS_SECRET: use at least 32 random characters")
+	}
+	c.RatesURL = env("RATES_URL", exchange.DefaultURL)
+	if strings.EqualFold(c.RatesURL, "none") {
+		c.RatesURL = ""
+	} else if !strings.HasPrefix(c.RatesURL, "https://") && !strings.HasPrefix(c.RatesURL, "http://") {
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.RATES_URL: use an http(s) URL or none")
 	}
 	c.BlobStore = strings.ToLower(env("BLOB_STORE", "local"))
 	c.S3Bucket, c.S3Region, c.S3Endpoint = env("S3_BUCKET", ""), env("S3_REGION", env("AWS_REGION", "")), env("S3_ENDPOINT", "")

@@ -4,6 +4,7 @@ library;
 
 export 'allocate.dart';
 export 'balance.dart';
+export 'conversion.dart';
 export 'rational.dart';
 export 'recurrence.dart';
 export 'split.dart';

@@ -61,7 +61,10 @@ class _LocalSetupScreenState extends ConsumerState<LocalSetupScreen> {
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.currency_exchange_rounded),
-          title: const Text('Default currency'),
+          title: const Text('Your currency'),
+          subtitle: const Text(
+            'Totals are shown in it. You can change it later.',
+          ),
           trailing: Text(
             _currency,
             style: Theme.of(context).textTheme.titleMedium,

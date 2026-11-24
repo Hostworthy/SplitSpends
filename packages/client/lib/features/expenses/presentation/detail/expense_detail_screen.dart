@@ -9,6 +9,7 @@ import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/core/widgets/back_home_button.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
+import 'package:splitspends/core/rates/rates.dart';
 import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/category_icon.dart';
@@ -155,6 +156,7 @@ class _Header extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final info = ref.watch(configValueProvider).currency(expense.currency);
     final config = ref.watch(configValueProvider);
+    final view = ref.watch(moneyViewProvider);
     final people = ref.watch(peopleProvider);
     final meId = ref.watch(meProvider)?.id;
     final text = Theme.of(context).textTheme;
@@ -191,6 +193,12 @@ class _Header extends ConsumerWidget {
                   Money.format(expense.total, info),
                   style: text.headlineMedium,
                 ),
+                if (view.original(expense.total, expense.currency) != null)
+                  Text(
+                    'About ${view.format(expense.total, expense.currency)} '
+                    'at today\'s rate',
+                    style: text.bodyMedium?.copyWith(color: muted),
+                  ),
                 const SizedBox(height: 4),
                 Text(
                   [

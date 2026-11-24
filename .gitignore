@@ -24,3 +24,4 @@ coverage/
 **/android/app/release
 .widget_preview/
 **/android/.kotlin/
+.claude/worktrees/

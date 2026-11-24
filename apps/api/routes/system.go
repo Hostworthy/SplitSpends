@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/rates"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/money"
 	"github.com/Hostworthy/SplitSpends/packages/middleware"
@@ -55,4 +56,23 @@ func (a *API) runJobs(w http.ResponseWriter, r *http.Request) error {
 
 func (a *API) notFound(http.ResponseWriter, *http.Request) error {
 	return errs.NotFound("Endpoint")
+}
+
+// rates serves the cached exchange rates. Amounts never change with them;
+// the app only uses them to show totals in the viewer's currency.
+func (a *API) rates(w http.ResponseWriter, r *http.Request) error {
+	out := platform.Rates{Enabled: a.svc.Rates.Enabled(), Rates: map[string]string{}}
+	t, err := a.svc.Rates.Latest(r.Context())
+	if err != nil {
+		return err
+	}
+	if t != nil {
+		out.Base, out.Source = t.Base, t.Source
+		out.Published, out.Fetched = t.Published.UTC().Format(time.RFC3339), t.Fetched.UTC().Format(time.RFC3339)
+		for code, v := range t.Rates {
+			out.Rates[code] = rates.Decimal(v)
+		}
+	}
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	return details(w, http.StatusOK, out)
 }

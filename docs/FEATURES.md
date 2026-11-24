@@ -30,7 +30,7 @@ Several of these sit behind Splitwise Pro today (receipt scanning, itemization, 
 | Receipt photo attachment | Yes | Yes |
 | AI receipt scanning | Pro | Yes, when the host configures an AI provider |
 | Natural-language "add expense" | No | Yes, when AI is configured |
-| Multiple currencies | Yes, conversion is Pro | Yes, balances tracked per currency (no conversion yet) |
+| Multiple currencies | Yes, conversion is Pro | Yes. Each expense keeps its currency; balances and totals are shown in your chosen currency at daily exchange rates |
 | Settle up and record payments | Yes | Yes |
 | Comments on expenses | Yes | Yes |
 | Activity feed | Yes | Yes |
@@ -47,7 +47,6 @@ Several of these sit behind Splitwise Pro today (receipt scanning, itemization, 
 
 ## Roadmap Ideas
 
-- Currency conversion with stored exchange rates at expense time.
 - Push notifications for the mobile app.
 - Payment links (UPI, PayPal, Venmo) on settle-up.
 - Offline queue for adding expenses without connectivity.

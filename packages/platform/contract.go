@@ -108,6 +108,18 @@ type Config struct {
 	Categories []Category `json:"categories"`
 }
 
+// Rates are exchange rates for showing totals in one currency. Rates[code]
+// is a decimal string: units of code per one Base. Enabled is false when the
+// host turned rates off; Rates is empty when none could be fetched yet.
+type Rates struct {
+	Enabled   bool              `json:"enabled"`
+	Base      string            `json:"base,omitempty"`
+	Published string            `json:"publishedAt,omitempty"`
+	Fetched   string            `json:"fetchedAt,omitempty"`
+	Source    string            `json:"source,omitempty"`
+	Rates     map[string]string `json:"rates"`
+}
+
 // OTPRequest asks for a login code.
 type OTPRequest struct {
 	Email string `json:"email"`

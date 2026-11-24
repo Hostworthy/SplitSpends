@@ -14,6 +14,10 @@ Amounts are **integers in minor units** of their currency (`1250` in `USD` is `$
 
 Balance sign convention, always from the point of view of the caller unless noted: **positive means you are owed**, negative means you owe.
 
+### Display Currency
+
+Balances are always per currency and never change with exchange rates. Clients show totals in the user's `defaultCurrency` by converting with `GET /rates`: `minor × 10^(exp(to) − exp(from)) × rate(to) / rate(from)`, computed with exact fractions and rounded half away from zero. A sum of several currencies adds exact values and rounds once. Amounts without a rate are shown in their own currency. `spec/vectors.json` (`conversions`) pins these rules for Go and Dart.
+
 ### Envelopes
 
 | Kind | Status | Body |
@@ -160,6 +164,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/activity` | `?groupId=&expenseId=` | List of `Activity`, newest first |
+| GET | `/rates` | | `{ data: { enabled, base, publishedAt, fetchedAt, source, rates: { "EUR": "0.912", ... } } }`. Rates are decimal strings: units of each currency per one `base`. `enabled` is false when the host set `RATES_URL=none`; `rates` is empty when none could be fetched yet. The server refreshes them about twice a day and serves the last good table when the provider is down |
 | GET | `/stats` | `?groupId=&from=&to=&currency=` | `{ data: { currency, totalSpent, byCategory: [{ category, amount }], byMonth: [{ month: "2026-11", amount }], byMember: [{ userId, paid, owed }] } }`. `totalSpent` is your share (or the group total when `groupId` is set) |
 
 ### Receipts and AI

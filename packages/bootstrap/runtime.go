@@ -13,6 +13,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/friend"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/rates"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/stats"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/transfer"
@@ -21,6 +22,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/clock"
 	"github.com/Hostworthy/SplitSpends/packages/database"
 	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
+	"github.com/Hostworthy/SplitSpends/packages/exchange"
 	"github.com/Hostworthy/SplitSpends/packages/notifications"
 	"github.com/Hostworthy/SplitSpends/packages/storage"
 )
@@ -38,6 +40,7 @@ type Services struct {
 	Assist   *assist.Service
 	Stats    *stats.Service
 	Transfer *transfer.Service
+	Rates    *rates.Service
 }
 
 // Runtime is a fully wired application.
@@ -124,7 +127,12 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 	receipts := receipt.NewService(receiptRepo, blobs, reader, c)
 	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
 		Connections: friends, Receipts: receiptRepo, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+	var source rates.Source
+	if cfg.RatesURL != "" {
+		source = exchange.New(cfg.RatesURL)
+	}
 	return &Services{
+		Rates:    rates.NewService(repositories.NewRates(db), source, c),
 		Auth:     auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, notifier, tx, c),
 		Users:    users,
 		Friends:  friends,
@@ -154,6 +162,10 @@ func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 		if n == 0 {
 			break
 		}
+	}
+	// Rates only affect display, so a provider outage never fails the jobs.
+	if err := rt.Services.Rates.Refresh(ctx); err != nil {
+		rt.Log.Warn("jobs.rates.failed", "error", err)
 	}
 	if err := rt.Services.Auth.Cleanup(ctx); err != nil {
 		rt.Log.Error("jobs.cleanup.failed", "error", err)

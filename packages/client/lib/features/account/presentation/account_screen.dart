@@ -8,9 +8,9 @@ import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/sync/outbox_sync.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
-import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/account/presentation/currency_settings.dart';
 import 'package:splitspends/features/account/presentation/local_mode_card.dart';
 import 'package:splitspends/features/account/presentation/providers.dart';
 
@@ -184,19 +184,9 @@ class AccountScreen extends ConsumerWidget {
                   ),
                 ),
                 const SectionHeader('Preferences'),
-                ListTile(
-                  leading: const Icon(Icons.currency_exchange_rounded),
-                  title: const Text('Default currency'),
-                  trailing: Text(me.defaultCurrency, style: text.titleMedium),
-                  onTap: () async {
-                    final code = await pickCurrency(
-                      context,
-                      selected: me.defaultCurrency,
-                    );
-                    if (code != null && context.mounted) {
-                      await _update(context, ref, defaultCurrency: code);
-                    }
-                  },
+                CurrencySettings(
+                  onChanged: (code) =>
+                      _update(context, ref, defaultCurrency: code),
                 ),
                 ListTile(
                   leading: const Icon(Icons.palette_outlined),

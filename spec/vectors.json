@@ -1,5 +1,5 @@
 {
- "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. Debts are sorted by currency, then amount descending, then from, then to.",
+ "description": "Shared test vectors for split, balance and conversion rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. Debts are sorted by currency, then amount descending, then from, then to. Conversions round half away from zero; totals add exact values and round once.",
  "splits": [
   {
    "name": "equal three ways",
@@ -606,6 +606,198 @@
     "to": "00000000-0000-0000-0000-00000000000b",
     "currency": "USD",
     "amount": 1000
+   }
+  ]
+ },
+ "conversions": {
+  "table": {
+   "base": "USD",
+   "rates": {
+    "USD": "1",
+    "EUR": "0.912",
+    "JPY": "159.07",
+    "BHD": "0.376",
+    "GBP": "0.75",
+    "INR": "92.92"
+   },
+   "exponents": {
+    "USD": 2,
+    "EUR": 2,
+    "JPY": 0,
+    "BHD": 3,
+    "GBP": 2,
+    "INR": 2,
+    "SEK": 2
+   }
+  },
+  "convert": [
+   {
+    "name": "5000 EUR to USD",
+    "amount": {
+     "currency": "EUR",
+     "minor": 5000
+    },
+    "to": "USD",
+    "expect": 5482
+   },
+   {
+    "name": "1000 USD to JPY",
+    "amount": {
+     "currency": "USD",
+     "minor": 1000
+    },
+    "to": "JPY",
+    "expect": 1591
+   },
+   {
+    "name": "1000 JPY to USD",
+    "amount": {
+     "currency": "JPY",
+     "minor": 1000
+    },
+    "to": "USD",
+    "expect": 629
+   },
+   {
+    "name": "1 USD to BHD",
+    "amount": {
+     "currency": "USD",
+     "minor": 1
+    },
+    "to": "BHD",
+    "expect": 4
+   },
+   {
+    "name": "6 USD to GBP",
+    "amount": {
+     "currency": "USD",
+     "minor": 6
+    },
+    "to": "GBP",
+    "expect": 5
+   },
+   {
+    "name": "-6 USD to GBP",
+    "amount": {
+     "currency": "USD",
+     "minor": -6
+    },
+    "to": "GBP",
+    "expect": -5
+   },
+   {
+    "name": "2 USD to GBP",
+    "amount": {
+     "currency": "USD",
+     "minor": 2
+    },
+    "to": "GBP",
+    "expect": 2
+   },
+   {
+    "name": "123 EUR to EUR",
+    "amount": {
+     "currency": "EUR",
+     "minor": 123
+    },
+    "to": "EUR",
+    "expect": 123
+   },
+   {
+    "name": "100000 INR to EUR",
+    "amount": {
+     "currency": "INR",
+     "minor": 100000
+    },
+    "to": "EUR",
+    "expect": 981
+   },
+   {
+    "name": "100 SEK to USD",
+    "amount": {
+     "currency": "SEK",
+     "minor": 100
+    },
+    "to": "USD",
+    "expect": null
+   },
+   {
+    "name": "100 USD to SEK",
+    "amount": {
+     "currency": "USD",
+     "minor": 100
+    },
+    "to": "SEK",
+    "expect": null
+   },
+   {
+    "name": "1234 BHD to JPY",
+    "amount": {
+     "currency": "BHD",
+     "minor": 1234
+    },
+    "to": "JPY",
+    "expect": 522
+   }
+  ],
+  "totals": [
+   {
+    "name": "rounds once at the end",
+    "amounts": [
+     {
+      "currency": "USD",
+      "minor": 2
+     },
+     {
+      "currency": "USD",
+      "minor": 2
+     }
+    ],
+    "to": "GBP",
+    "expect": 3,
+    "missing": []
+   },
+   {
+    "name": "mixed currencies",
+    "amounts": [
+     {
+      "currency": "EUR",
+      "minor": 5000
+     },
+     {
+      "currency": "JPY",
+      "minor": 1000
+     },
+     {
+      "currency": "USD",
+      "minor": -2000
+     }
+    ],
+    "to": "USD",
+    "expect": 4111,
+    "missing": []
+   },
+   {
+    "name": "skips currencies without a rate",
+    "amounts": [
+     {
+      "currency": "EUR",
+      "minor": 5000
+     },
+     {
+      "currency": "SEK",
+      "minor": 100
+     },
+     {
+      "currency": "SEK",
+      "minor": 5
+     }
+    ],
+    "to": "USD",
+    "expect": 5482,
+    "missing": [
+     "SEK"
+    ]
    }
   ]
  }
