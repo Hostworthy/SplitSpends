@@ -2,12 +2,12 @@
 # One image serves the API, the MCP endpoint and the Flutter web app.
 
 FROM debian:bookworm-slim AS web
-# The official Flutter release, pinned to the version CI and local builds use.
-ARG FLUTTER_VERSION=3.50.1
+# The official Flutter release named in .flutter-version, which CI also uses.
+COPY .flutter-version /tmp/flutter-version
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git unzip xz-utils \
  && rm -rf /var/lib/apt/lists/* \
- && curl -fsSL "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" \
+ && curl -fsSL "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_$(cat /tmp/flutter-version)-stable.tar.xz" \
     | tar -xJ -C /opt \
  && git config --global --add safe.directory /opt/flutter
 ENV PATH="/opt/flutter/bin:${PATH}"
@@ -36,6 +36,7 @@ COPY packages packages
 COPY apps/api apps/api
 COPY apps/mcp apps/mcp
 ARG VERSION=dev
+# The same flags as LDFLAGS in the Makefile.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/splitspends ./apps/api \
  && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/splitspends-mcp ./apps/mcp \
  && mkdir -p /data

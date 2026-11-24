@@ -74,9 +74,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - id: flutter
+        run: echo "version=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: 3.50.1
+          flutter-version: ${{ steps.flutter.outputs.version }}
           channel: stable
       - run: flutter pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed packages/ledger packages/client apps/apk apps/ios apps/web
@@ -118,9 +120,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - id: flutter
+        run: echo "version=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: 3.50.1
+          flutter-version: ${{ steps.flutter.outputs.version }}
           channel: stable
       - run: flutter pub get --enforce-lockfile
       - name: Start a development server for the device test
