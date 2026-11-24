@@ -87,7 +87,7 @@ Follow [ADR-001](adr/001-domain-driven-design.md):
 - `packages/archtest` fails when a package imports across a forbidden boundary.
 - `packages/bootstrap/integration_test.go` runs services against a real database.
 - `packages/ledger/test` runs `spec/vectors.json` against the Dart rules; `packages/client/test` has unit and widget tests.
-- `apps/android/integration_test` runs the real app on an Android device or emulator: on-device mode, then signing in to a server and uploading. CI runs it on an Android 13 emulator against a development server, checks the upload through the API, and publishes the release APK as the `splitspends-apk` artifact. To run it yourself, start the API with `SIGNUP_MODE=open` and no SMTP, then:
+- `apps/android/integration_test` runs the real app on an Android device or emulator: on-device mode, then signing in to a server and uploading. CI runs it on an Android 13 emulator against a development server when started by hand (Actions, CI, Run workflow), checks the upload through the API, and publishes the release APK as the `splitspends-apk` artifact. To run it yourself, start the API with `SIGNUP_MODE=open` and no SMTP, then:
 
   ```bash
   python3 scripts/ci/codes.py server.log 8099 &   # serves the logged sign-in codes
