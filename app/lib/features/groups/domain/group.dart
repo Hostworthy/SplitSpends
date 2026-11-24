@@ -77,9 +77,27 @@ class Group {
   }
 }
 
+/// Someone to add to a group: an email (invites them when connected), a
+/// name (a placeholder you can invite later), or both.
+class MemberInput {
+  const MemberInput({this.email, this.name});
+
+  final String? email;
+  final String? name;
+
+  /// Short label for chips.
+  String get label => (name?.isNotEmpty ?? false) ? name! : (email ?? '');
+
+  JsonMap toJson() => {
+    if (email != null && email!.isNotEmpty) 'email': email,
+    if (name != null && name!.isNotEmpty) 'name': name,
+  };
+}
+
 /// Request body for creating or patching a group.
 class GroupInput {
   const GroupInput({
+    this.id,
     this.name,
     this.kind,
     this.defaultCurrency,
@@ -87,9 +105,11 @@ class GroupInput {
     this.emoji,
     this.color,
     this.archived,
-    this.memberEmails,
+    this.members,
   });
 
+  /// Client-chosen id for creates (idempotent retries).
+  final String? id;
   final String? name;
   final GroupKind? kind;
   final String? defaultCurrency;
@@ -97,9 +117,10 @@ class GroupInput {
   final String? emoji;
   final String? color;
   final bool? archived;
-  final List<String>? memberEmails;
+  final List<MemberInput>? members;
 
   JsonMap toJson() => {
+    'id': ?id,
     'name': ?name,
     'kind': ?kind?.name,
     'defaultCurrency': ?defaultCurrency,
@@ -107,10 +128,7 @@ class GroupInput {
     'emoji': ?emoji,
     'color': ?color,
     'archived': ?archived,
-    if (memberEmails != null)
-      'members': [
-        for (final email in memberEmails!) {'email': email},
-      ],
+    if (members != null) 'members': [for (final m in members!) m.toJson()],
   };
 }
 

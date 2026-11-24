@@ -11,11 +11,17 @@ class RemoteActivityRepository implements ActivityRepository {
   @override
   Future<PageResult<Activity>> list({
     String? groupId,
+    String? expenseId,
     int limit = 30,
     int offset = 0,
   }) => _api.getList(
     '/activity',
     Activity.fromJson,
-    query: {'groupId': groupId, 'limit': limit, 'offset': offset},
+    query: {
+      'groupId': groupId,
+      'expenseId': expenseId,
+      'limit': limit,
+      'offset': offset,
+    },
   );
 }

@@ -6,10 +6,12 @@ import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/app/theme.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/user.dart';
+import 'package:splitspends/core/sync/outbox_sync.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/account/presentation/local_mode_card.dart';
 import 'package:splitspends/features/account/presentation/providers.dart';
 
 class AccountScreen extends ConsumerWidget {
@@ -47,6 +49,35 @@ class AccountScreen extends ConsumerWidget {
     } catch (error) {
       if (context.mounted) showError(context, error);
     }
+  }
+
+  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+    final waiting = ref.read(outboxCountProvider).value ?? 0;
+    if (waiting > 0) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Sign out anyway?'),
+          content: Text(
+            '$waiting change${waiting == 1 ? ' has' : 's have'} not reached '
+            'the server yet. Signing out discards '
+            '${waiting == 1 ? 'it' : 'them'}.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Stay signed in'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Sign out'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    await ref.read(sessionProvider.notifier).signOut();
   }
 
   Future<void> _editName(BuildContext context, WidgetRef ref, Me me) async {
@@ -111,7 +142,7 @@ class AccountScreen extends ConsumerWidget {
                           children: [
                             Text(me.displayName, style: text.titleLarge),
                             Text(
-                              local ? 'On this device' : me.email,
+                              local ? 'On this device' : (me.email ?? ''),
                               style: text.bodyMedium,
                             ),
                           ],
@@ -192,7 +223,7 @@ class AccountScreen extends ConsumerWidget {
                   ),
                 ),
                 if (local)
-                  const _LocalModeCard()
+                  const LocalModeCard()
                 else ...[
                   const SectionHeader('Email notifications'),
                   SwitchListTile(
@@ -239,6 +270,7 @@ class AccountScreen extends ConsumerWidget {
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => context.push(Routes.tokens),
                   ),
+                  const LocalCopyCard(),
                   const SectionHeader('Session'),
                   ListTile(
                     leading: const Icon(Icons.dns_outlined),
@@ -256,62 +288,13 @@ class AccountScreen extends ConsumerWidget {
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),
-                    onTap: () => ref.read(sessionProvider.notifier).signOut(),
+                    onTap: () => _signOut(context, ref),
                   ),
                 ],
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Shown in on-device mode instead of server-only settings.
-class _LocalModeCard extends ConsumerWidget {
-  const _LocalModeCard();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-      color: scheme.secondaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.smartphone_rounded,
-                  color: scheme.onSecondaryContainer,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Using SplitSpends on this device',
-                  style: text.titleMedium,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Your data is stored only here. Connect to a server to sync '
-              'between devices, share groups with friends and get email '
-              'updates. Your on-device data stays on this device.',
-              style: text.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-            FilledButton.tonalIcon(
-              onPressed: () => ref.read(sessionProvider.notifier).chooseAgain(),
-              icon: const Icon(Icons.cloud_sync_rounded),
-              label: const Text('Connect to a server'),
-            ),
-          ],
-        ),
       ),
     );
   }

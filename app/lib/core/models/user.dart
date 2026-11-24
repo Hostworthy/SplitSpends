@@ -4,7 +4,7 @@ import 'package:splitspends/core/models/json.dart';
 class User {
   const User({
     required this.id,
-    required this.email,
+    this.email,
     required this.name,
     this.defaultCurrency = 'USD',
     this.avatarColor,
@@ -13,7 +13,7 @@ class User {
 
   factory User.fromJson(JsonMap json) => User(
     id: json['id'] as String,
-    email: (json['email'] as String?) ?? '',
+    email: _nonEmpty(json['email'] as String?),
     name: (json['name'] as String?) ?? '',
     defaultCurrency: (json['defaultCurrency'] as String?) ?? 'USD',
     avatarColor: json['avatarColor'] as String?,
@@ -21,19 +21,34 @@ class User {
   );
 
   final String id;
-  final String email;
+
+  /// Null for people added by name only (placeholders).
+  final String? email;
   final String name;
   final String defaultCurrency;
   final String? avatarColor;
   final String status;
 
   bool get isInvited => status == 'invited';
+  bool get isPlaceholder => status == 'placeholder';
+
+  /// Email, or a short note for people without one.
+  String get contact => email ?? (isPlaceholder ? 'No email yet' : '');
+
+  /// One line about the person's account state.
+  String get statusLine => switch (status) {
+    'invited' => '${email ?? ''} · invited',
+    'placeholder' => email == null ? 'Added by name' : '$email · not joined',
+    _ => email ?? '',
+  };
 
   /// Name to show; falls back to the email's local part.
   String get displayName {
     if (name.trim().isNotEmpty) return name.trim();
-    final at = email.indexOf('@');
-    return at > 0 ? email.substring(0, at) : email;
+    final mail = email ?? '';
+    final at = mail.indexOf('@');
+    if (at > 0) return mail.substring(0, at);
+    return mail.isEmpty ? 'Someone' : mail;
   }
 
   String get firstName => displayName.split(' ').first;
@@ -48,6 +63,15 @@ class User {
     return (parts.first.substring(0, 1) + parts.last.substring(0, 1))
         .toUpperCase();
   }
+
+  User copyWith({String? name, String? email, String? status}) => User(
+    id: id,
+    email: email ?? this.email,
+    name: name ?? this.name,
+    defaultCurrency: defaultCurrency,
+    avatarColor: avatarColor,
+    status: status ?? this.status,
+  );
 
   JsonMap toJson() => {
     'id': id,
@@ -104,7 +128,7 @@ class NotificationPrefs {
 class Me extends User {
   const Me({
     required super.id,
-    required super.email,
+    super.email,
     required super.name,
     super.defaultCurrency,
     super.avatarColor,
@@ -132,20 +156,26 @@ class Me extends User {
   final String? timezone;
   final NotificationPrefs notifications;
 
+  @override
   Me copyWith({
     String? name,
+    String? email,
+    String? status,
     String? defaultCurrency,
     String? avatarColor,
     String? timezone,
     NotificationPrefs? notifications,
   }) => Me(
     id: id,
-    email: email,
+    email: email ?? this.email,
     name: name ?? this.name,
     defaultCurrency: defaultCurrency ?? this.defaultCurrency,
     avatarColor: avatarColor ?? this.avatarColor,
-    status: status,
+    status: status ?? this.status,
     timezone: timezone ?? this.timezone,
     notifications: notifications ?? this.notifications,
   );
 }
+
+String? _nonEmpty(String? value) =>
+    value == null || value.trim().isEmpty ? null : value;

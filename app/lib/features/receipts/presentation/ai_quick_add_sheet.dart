@@ -11,6 +11,7 @@ import 'package:splitspends/app/repositories.dart';
 /// "Dinner 60 paid by me split with Sam" → draft → editor.
 Future<void> showAiQuickAddSheet(BuildContext context, {String? groupId}) =>
     showModalBottomSheet<void>(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       builder: (_) => _AiQuickAddSheet(groupId: groupId),

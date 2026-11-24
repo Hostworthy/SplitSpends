@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/core/config/app_config.dart';
+import 'package:splitspends/core/ledger/rational.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/money/money.dart';
@@ -158,13 +159,13 @@ class _PersonRow extends StatelessWidget {
             child: AmountField(
               currency: form.currency,
               allowNegative: form.method == SplitMethod.adjustment,
-              initial: form.values[userId]?.round(),
+              initial: int.tryParse(form.values[userId] ?? ''),
               label: form.method == SplitMethod.adjustment ? '±' : null,
               onChanged: (v) => form.update(() {
                 if (v == null) {
                   form.values.remove(userId);
                 } else {
-                  form.values[userId] = v;
+                  form.values[userId] = '$v';
                 }
               }),
             ),
@@ -204,22 +205,18 @@ class _NumberField extends StatefulWidget {
     required this.onChanged,
   });
 
-  final num? initial;
+  final String? initial;
   final String suffix;
-  final ValueChanged<num?> onChanged;
+
+  /// Decimal text (dot separator), or null when empty or invalid.
+  final ValueChanged<String?> onChanged;
 
   @override
   State<_NumberField> createState() => _NumberFieldState();
 }
 
 class _NumberFieldState extends State<_NumberField> {
-  late final _controller = TextEditingController(
-    text: widget.initial == null
-        ? ''
-        : (widget.initial! % 1 == 0
-              ? widget.initial!.toInt().toString()
-              : widget.initial!.toString()),
-  );
+  late final _controller = TextEditingController(text: widget.initial ?? '');
 
   @override
   void dispose() {
@@ -233,8 +230,13 @@ class _NumberFieldState extends State<_NumberField> {
     keyboardType: const TextInputType.numberWithOptions(decimal: true),
     inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
     textAlign: TextAlign.end,
-    onChanged: (v) =>
-        widget.onChanged(num.tryParse(v.trim().replaceAll(',', '.'))),
+    onChanged: (v) => widget.onChanged(_decimal(v)),
     decoration: InputDecoration(isDense: true, suffixText: widget.suffix),
   );
+}
+
+/// Normalizes user text to dot-decimal; null when it is not a number.
+String? _decimal(String input) {
+  final text = input.trim().replaceAll(',', '.');
+  return Rational.tryParseDecimal(text) == null ? null : text;
 }

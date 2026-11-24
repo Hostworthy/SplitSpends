@@ -7,7 +7,7 @@ import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/app/shell.dart';
 
 final _hostingGuide = Uri.parse(
-  'https://github.com/atb00ker/SplitSpends/blob/main/docs/HOSTING.md',
+  'https://github.com/Hostworthy/SplitSpends/blob/main/docs/HOSTING.md',
 );
 
 /// First screen: use the app on this device, or connect to a server.
@@ -73,7 +73,7 @@ class WelcomeScreen extends ConsumerWidget {
                   const SizedBox(height: 8),
                   Text(
                     'Track shared costs with friends, housemates and trips. '
-                    'Free and open source, with every feature included.',
+                    'Free for personal use, with every feature included.',
                     style: text.bodyLarge?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),

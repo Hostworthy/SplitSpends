@@ -15,6 +15,7 @@ final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
 /// Opens the "new group" sheet; navigates to the group when created.
 Future<void> showNewGroupSheet(BuildContext context) =>
     showModalBottomSheet<void>(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       builder: (_) => const _NewGroupSheet(),
@@ -29,8 +30,9 @@ class _NewGroupSheet extends ConsumerStatefulWidget {
 
 class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
   final _name = TextEditingController();
-  final _email = TextEditingController();
-  final _emails = <String>[];
+  final _person = TextEditingController();
+  final _personFocus = FocusNode();
+  final _members = <MemberInput>[];
   GroupKind _kind = GroupKind.trip;
   late String _currency = ref.read(meProvider)?.defaultCurrency ?? 'USD';
   bool _busy = false;
@@ -38,21 +40,33 @@ class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
   @override
   void dispose() {
     _name.dispose();
-    _email.dispose();
+    _person.dispose();
+    _personFocus.dispose();
     super.dispose();
   }
 
-  void _addEmail() {
-    final email = _email.text.trim().toLowerCase();
-    if (!_emailPattern.hasMatch(email) || _emails.contains(email)) return;
+  /// Text with an `@` is an email; anything else is a name.
+  void _addPerson() {
+    final text = _person.text.trim();
+    if (text.isEmpty) return;
+    final isEmail = _emailPattern.hasMatch(text);
+    final member = isEmail
+        ? MemberInput(email: text.toLowerCase())
+        : MemberInput(name: text);
+    if (_members.any(
+      (m) => m.label.toLowerCase() == member.label.toLowerCase(),
+    )) {
+      _person.clear();
+      return;
+    }
     setState(() {
-      _emails.add(email);
-      _email.clear();
+      _members.add(member);
+      _person.clear();
     });
   }
 
   Future<void> _create() async {
-    _addEmail();
+    _addPerson();
     final name = _name.text.trim();
     if (name.isEmpty) return;
     setState(() => _busy = true);
@@ -63,9 +77,10 @@ class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
             GroupInput(
               name: name,
               kind: _kind,
+              emoji: _kind.emoji,
               defaultCurrency: _currency,
               simplifyDebts: true,
-              memberEmails: _emails,
+              members: _members,
             ),
           );
       ref.refreshLedger();
@@ -130,28 +145,39 @@ class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
             },
           ),
           TextField(
-            controller: _email,
-            keyboardType: TextInputType.emailAddress,
-            onSubmitted: (_) => _addEmail(),
+            controller: _person,
+            focusNode: _personFocus,
+            textInputAction: TextInputAction.done,
+            // Handling onEditingComplete keeps focus in the field, so
+            // several people can be added in a row.
+            onEditingComplete: _addPerson,
             decoration: InputDecoration(
-              labelText: 'Invite by email',
-              helperText: 'People get an email invite. You can add more later.',
+              labelText: 'Add people by name or email',
+              helperText: ref.watch(appModeProvider) == AppMode.local
+                  ? 'Names are enough. You can add more later.'
+                  : 'People with an email get an invite. Add others by name.',
               suffixIcon: IconButton(
                 icon: const Icon(Icons.add_rounded),
-                onPressed: _addEmail,
+                onPressed: _addPerson,
               ),
             ),
           ),
-          if (_emails.isNotEmpty) ...[
+          if (_members.isNotEmpty) ...[
             const SizedBox(height: 8),
             Wrap(
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final e in _emails)
+                for (final m in _members)
                   InputChip(
-                    label: Text(e),
-                    onDeleted: () => setState(() => _emails.remove(e)),
+                    avatar: Icon(
+                      m.email == null
+                          ? Icons.person_outline_rounded
+                          : Icons.alternate_email_rounded,
+                      size: 18,
+                    ),
+                    label: Text(m.label),
+                    onDeleted: () => setState(() => _members.remove(m)),
                   ),
               ],
             ),

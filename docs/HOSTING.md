@@ -77,6 +77,7 @@ Terraform in [`deploy/aws`](../deploy/aws/README.md): Lambda (arm64) running the
 - Back up the database. Receipts live in `DATA_DIR`, S3 or the database, depending on `BLOB_STORE`.
 - Update regularly: pull the latest code and rebuild. Migrations run automatically on start.
 - If you enable AI, receipt images and expense text are sent to that provider. Choose one you trust, or run a local model through an OpenAI-compatible server.
+- The web app bundles its engine and Latin font, so it makes no third-party requests, with one exception: the first time emoji are shown (group icons), the browser downloads the Noto Color Emoji font from Google Fonts. Only the font file is fetched; no app data is sent.
 - Terraform state contains your secrets. Keep it in an encrypted, private backend.
 
 ## Why Not Firebase or Firestore?

@@ -53,8 +53,8 @@ void main() {
             date: '2026-11-01',
             splitMethod: SplitMethod.shares,
             shares: [
-              Share(userId: 'me', paid: 900, owed: 600, value: 2),
-              Share(userId: 'a', paid: 0, owed: 300, value: 1),
+              Share(userId: 'me', paid: 900, owed: 600, value: '2'),
+              Share(userId: 'a', paid: 0, owed: 300, value: '1'),
             ],
           ),
         ),

@@ -1,14 +1,16 @@
-import 'dart:convert';
-import 'dart:math';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:sembast/sembast.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/models/user.dart';
+import 'package:splitspends/core/storage/local_db.dart';
+import 'package:splitspends/core/storage/response_cache.dart';
+import 'package:splitspends/core/sync/reachability.dart';
 
 /// How the app stores data.
 enum AppMode {
@@ -107,18 +109,17 @@ class SessionController extends AsyncNotifier<Session> {
 
   Session get _current => state.value ?? Session(serverUrl: defaultServerUrl());
 
-  /// "Use on this device": no account, data stays local.
+  /// "Use on this device": no account, data stays local. Reuses an existing
+  /// on-device profile so its data stays attached.
   Future<void> useLocally({
     required String name,
     String currency = 'USD',
   }) async {
-    final me = Me(
-      id: 'local-${_randomId()}',
-      email: '',
-      name: name,
-      defaultCurrency: currency,
-    );
-    await _store.writeLocalProfile(jsonEncode(_profileJson(me)));
+    final existing = await _localProfile();
+    final me =
+        existing?.copyWith(name: name, defaultCurrency: currency) ??
+        Me(id: const Uuid().v4(), name: name, defaultCurrency: currency);
+    await _saveLocalProfile(me);
     await _store.writeAppMode(AppMode.local.name);
     state = AsyncData(
       Session(mode: AppMode.local, serverUrl: _current.serverUrl, me: me),
@@ -133,6 +134,7 @@ class SessionController extends AsyncNotifier<Session> {
 
   /// Completes "Connect to a server" after the emailed code is verified.
   Future<void> signIn({required String token, required Me me}) async {
+    await ref.read(responseCacheProvider).clear();
     await _store.writeToken(token);
     await _store.writeAppMode(AppMode.connected.name);
     state = AsyncData(
@@ -147,9 +149,7 @@ class SessionController extends AsyncNotifier<Session> {
 
   /// Saves profile changes (locally, or after the server accepted them).
   Future<void> updateMe(Me me) async {
-    if (_current.isLocal) {
-      await _store.writeLocalProfile(jsonEncode(_profileJson(me)));
-    }
+    if (_current.isLocal) await _saveLocalProfile(me);
     state = AsyncData(_current.copyWith(me: me));
   }
 
@@ -171,6 +171,13 @@ class SessionController extends AsyncNotifier<Session> {
     }
     await _store.writeToken(null);
     await _store.writeAppMode(null);
+    try {
+      await ref.read(responseCacheProvider).clear();
+      final db = await ref.read(databaseProvider.future);
+      await Stores.outbox.delete(db);
+    } catch (_) {
+      // Leftovers are harmless; they are cleared on the next sign-in.
+    }
     state = AsyncData(Session(serverUrl: session.serverUrl));
   }
 
@@ -181,23 +188,18 @@ class SessionController extends AsyncNotifier<Session> {
   }
 
   Future<Me?> _localProfile() async {
-    final raw = await _store.readLocalProfile();
-    if (raw == null) return null;
-    return Me.fromJson(jsonDecode(raw) as JsonMap);
+    final db = await ref.read(databaseProvider.future);
+    final raw = await Stores.meta.record('profile').get(db);
+    return raw == null ? null : Me.fromJson(raw as JsonMap);
   }
 
-  static JsonMap _profileJson(Me me) => {
-    ...me.toJson(),
-    'timezone': me.timezone,
-    'notifications': me.notifications.toJson(),
-  };
-
-  static String _randomId() {
-    final random = Random.secure();
-    return List.generate(
-      16,
-      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
-    ).join();
+  Future<void> _saveLocalProfile(Me me) async {
+    final db = await ref.read(databaseProvider.future);
+    await Stores.meta.record('profile').put(db, {
+      ...me.toJson(),
+      'timezone': me.timezone,
+      'notifications': me.notifications.toJson(),
+    });
   }
 }
 
@@ -211,6 +213,8 @@ final apiClientProvider = Provider<ApiClient>((ref) {
     serverUrl: key.$1 ?? defaultServerUrl(),
     token: key.$2,
     httpClient: ref.read(httpClientProvider),
+    cache: key.$2 == null ? null : ref.read(responseCacheProvider),
+    onReachability: (ok) => ref.read(reachabilityProvider.notifier).report(ok),
     onUnauthorized: () {
       if (key.$2 != null) {
         ref.read(sessionProvider.notifier).signOut(revoke: false);
@@ -218,6 +222,11 @@ final apiClientProvider = Provider<ApiClient>((ref) {
     },
   );
 });
+
+/// Offline copies of server responses (connected mode).
+final responseCacheProvider = Provider<ResponseCache>(
+  (ref) => SembastResponseCache(() => ref.read(databaseProvider.future)),
+);
 
 /// The current mode (local, connected, or not chosen yet).
 final appModeProvider = Provider<AppMode>(

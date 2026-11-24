@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/paging/paged.dart';
+import 'package:splitspends/features/activity/domain/activity.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
@@ -34,4 +35,10 @@ final expenseProvider = FutureProvider.family<Expense, String>(
 
 final commentsProvider = FutureProvider.family<List<Comment>, String>(
   (ref, id) => ref.watch(expensesRepositoryProvider).comments(id),
+);
+
+/// Changes to one expense, newest first.
+final expenseHistoryProvider = FutureProvider.family<List<Activity>, String>(
+  (ref, id) async =>
+      (await ref.watch(activityRepositoryProvider).list(expenseId: id)).items,
 );

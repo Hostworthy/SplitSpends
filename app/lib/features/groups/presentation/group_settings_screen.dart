@@ -11,6 +11,7 @@ import 'package:splitspends/app/theme.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/utils/download.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
+import 'package:splitspends/core/widgets/person_dialog.dart';
 import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
@@ -84,34 +85,10 @@ class _SettingsState extends ConsumerState<_Settings> {
   }
 
   Future<void> _addMember() async {
-    final controller = TextEditingController();
-    final email = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add member'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(labelText: 'Email'),
-          onSubmitted: (v) => Navigator.pop(context, v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (email == null || email.trim().isEmpty) return;
+    final entry = await showPersonDialog(context, title: 'Add member');
+    if (entry == null) return;
     try {
-      await _repo.addMember(group.id, email.trim().toLowerCase());
+      await _repo.addMember(group.id, email: entry.email, name: entry.name);
       ref.refreshLedger();
     } catch (error) {
       if (mounted) showError(context, error);
@@ -302,7 +279,7 @@ class _SettingsState extends ConsumerState<_Settings> {
             title: Text(
               m.id == meId ? '${m.displayName} (you)' : m.displayName,
             ),
-            subtitle: Text(m.isInvited ? '${m.email} · invited' : m.email),
+            subtitle: Text(m.statusLine),
             trailing: m.id == meId
                 ? null
                 : IconButton(

@@ -49,13 +49,16 @@ class Share {
     userId: json['userId'] as String,
     paid: (json['paid'] as num?)?.toInt() ?? 0,
     owed: (json['owed'] as num?)?.toInt() ?? 0,
-    value: json['value'] as num?,
+    value: decimalText(json['value']),
   );
 
   final String userId;
   final int paid;
   final int owed;
-  final num? value;
+
+  /// The split input for exact / percent / shares / adjustment, as decimal
+  /// text (never a float).
+  final String? value;
 
   int get net => paid - owed;
 }
@@ -201,14 +204,25 @@ class SplitEntry {
   const SplitEntry({required this.userId, this.value});
 
   final String userId;
-  final num? value;
+
+  /// Decimal text; the API accepts it as a JSON string or number.
+  final String? value;
 
   JsonMap toJson() => {'userId': userId, 'value': ?value};
+}
+
+/// Decimal text for a JSON number or string (ints stay exact).
+String? decimalText(Object? value) {
+  if (value == null) return null;
+  if (value is int) return '$value';
+  final text = value.toString().trim();
+  return text.isEmpty ? null : text;
 }
 
 /// Body of `POST /expenses` and `PUT /expenses/{id}`.
 class ExpenseInput {
   const ExpenseInput({
+    this.id,
     this.groupId,
     required this.description,
     required this.currency,
@@ -229,6 +243,7 @@ class ExpenseInput {
 
   /// Parses an `ExpenseDraft` from the AI endpoint.
   factory ExpenseInput.fromJson(JsonMap json) => ExpenseInput(
+    id: json['id'] as String?,
     groupId: json['groupId'] as String?,
     description: (json['description'] as String?) ?? '',
     currency: (json['currency'] as String?) ?? 'USD',
@@ -251,7 +266,7 @@ class ExpenseInput {
         .map(
           (s) => SplitEntry(
             userId: s['userId'] as String,
-            value: s['value'] as num?,
+            value: decimalText(s['value']),
           ),
         )
         .toList(),
@@ -287,7 +302,9 @@ class ExpenseInput {
             e.splitMethod == SplitMethod.itemized)
           SplitEntry(
             userId: s.userId,
-            value: e.splitMethod == SplitMethod.exact ? s.owed : s.value,
+            value: e.splitMethod == SplitMethod.exact
+                ? (s.value ?? '${s.owed}')
+                : s.value,
           ),
     ],
     items: e.items,
@@ -297,6 +314,8 @@ class ExpenseInput {
     recurrence: e.recurrence,
   );
 
+  /// Client-chosen id: makes creates idempotent for the offline outbox.
+  final String? id;
   final String? groupId;
   final String description;
   final String currency;
@@ -314,7 +333,27 @@ class ExpenseInput {
   final Recurrence recurrence;
   final List<String> warnings;
 
+  ExpenseInput withId(String value) => ExpenseInput(
+    id: value,
+    groupId: groupId,
+    description: description,
+    currency: currency,
+    total: total,
+    date: date,
+    category: category,
+    notes: notes,
+    splitMethod: splitMethod,
+    payers: payers,
+    splits: splits,
+    items: items,
+    tax: tax,
+    tip: tip,
+    receiptId: receiptId,
+    recurrence: recurrence,
+  );
+
   JsonMap toJson() => {
+    'id': ?id,
     'groupId': groupId,
     'description': description,
     'currency': currency,

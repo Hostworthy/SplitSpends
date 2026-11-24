@@ -1,7 +1,9 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/features/activity/domain/activity.dart';
@@ -18,10 +20,26 @@ IconData _kindIcon(String kind) {
   return Icons.receipt_long_rounded;
 }
 
-class ActivityTile extends StatelessWidget {
-  const ActivityTile({super.key, required this.activity});
+/// Server summaries name the actor ("Ada added ..."); show "You" for your
+/// own actions so the feed reads the same on the device and on a server.
+String personalSummary(Activity activity, String? meId) {
+  final name = activity.actor.name;
+  if (meId == null || activity.actor.id != meId || name.isEmpty) {
+    return activity.summary;
+  }
+  if (activity.summary.startsWith('$name ')) {
+    return 'You${activity.summary.substring(name.length)}';
+  }
+  return activity.summary;
+}
+
+class ActivityTile extends ConsumerWidget {
+  const ActivityTile({super.key, required this.activity, this.linkable = true});
 
   final Activity activity;
+
+  /// False inside the expense's own page.
+  final bool linkable;
 
   void _open(BuildContext context) {
     if (activity.expenseId != null && !activity.kind.endsWith('deleted')) {
@@ -32,10 +50,11 @@ class ActivityTile extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final summary = personalSummary(activity, ref.watch(meProvider)?.id);
     return ListTile(
-      onTap: () => _open(context),
+      onTap: linkable ? () => _open(context) : null,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: Stack(
         clipBehavior: Clip.none,
@@ -60,7 +79,7 @@ class ActivityTile extends StatelessWidget {
           ),
         ],
       ),
-      title: Text(activity.summary, maxLines: 3),
+      title: Text(summary, maxLines: 3),
       subtitle: Text(
         Dates.relative(activity.time),
         style: TextStyle(color: scheme.onSurfaceVariant),

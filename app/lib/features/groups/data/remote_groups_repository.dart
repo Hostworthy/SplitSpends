@@ -41,11 +41,12 @@ class RemoteGroupsRepository implements GroupsRepository {
   Future<void> delete(String id) => _api.delete('/groups/$id');
 
   @override
-  Future<Group> addMember(String id, String email, {String? name}) =>
-      _api.postData('/groups/$id/members', {
-        'email': email,
-        'name': ?name,
-      }, (d) => Group.fromJson(d as JsonMap));
+  Future<Group> addMember(String id, {String? email, String? name}) =>
+      _api.postData(
+        '/groups/$id/members',
+        MemberInput(email: email, name: name).toJson(),
+        (d) => Group.fromJson(d as JsonMap),
+      );
 
   @override
   Future<void> removeMember(String id, String userId) =>

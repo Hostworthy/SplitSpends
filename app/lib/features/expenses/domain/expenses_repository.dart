@@ -51,6 +51,7 @@ abstract interface class ExpensesRepository {
 
   /// Records a payment (an expense with kind `payment`).
   Future<Expense> recordPayment({
+    String? id,
     String? groupId,
     required String fromUserId,
     required String toUserId,

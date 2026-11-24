@@ -8,6 +8,7 @@ import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/features/account/presentation/account_screen.dart';
 import 'package:splitspends/features/account/presentation/tokens_screen.dart';
 import 'package:splitspends/features/activity/presentation/activity_screen.dart';
+import 'package:splitspends/features/auth/domain/auth_repository.dart';
 import 'package:splitspends/features/auth/presentation/local_setup_screen.dart';
 import 'package:splitspends/features/auth/presentation/login_screen.dart';
 import 'package:splitspends/features/auth/presentation/otp_screen.dart';
@@ -23,6 +24,7 @@ import 'package:splitspends/features/groups/presentation/detail/group_detail_scr
 import 'package:splitspends/features/groups/presentation/group_settings_screen.dart';
 import 'package:splitspends/features/groups/presentation/groups_screen.dart';
 import 'package:splitspends/features/receipts/presentation/scan_receipt_screen.dart';
+import 'package:splitspends/features/sync/presentation/import_screen.dart';
 
 final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
@@ -54,6 +56,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!session.requireValue.isReady) {
         return onboarding ? null : Routes.welcome;
       }
+      // On-device users may sign in to a server to sync (and import).
+      if (path.startsWith(Routes.login) && session.requireValue.isLocal) {
+        return null;
+      }
       if (onboarding) return Routes.home;
       if (path == Routes.splash) {
         final from = state.uri.queryParameters['from'];
@@ -82,6 +88,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.login,
         pageBuilder: (context, state) => _fade(state, const LoginScreen()),
         routes: [
+          GoRoute(
+            path: 'import',
+            builder: (context, state) => state.extra is LoginResult
+                ? ImportScreen(login: state.extra! as LoginResult)
+                : const LoginScreen(),
+          ),
           GoRoute(
             path: 'verify',
             pageBuilder: (context, state) => _fade(

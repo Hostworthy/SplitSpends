@@ -17,6 +17,32 @@ class ApiError implements Exception {
       field = null,
       requestId = null;
 
+  /// Errors raised by on-device code, shaped like the server's.
+  const ApiError.validation(String this.field, this.message)
+    : status = 422,
+      code = 'VALIDATION_ERROR',
+      requestId = null;
+
+  const ApiError.conflict(this.message)
+    : status = 409,
+      code = 'CONFLICT',
+      field = null,
+      requestId = null;
+
+  ApiError.notFound(String what)
+    : status = 404,
+      code = 'NOT_FOUND',
+      message = '$what not found.',
+      field = null,
+      requestId = null;
+
+  /// A feature that needs a server connection.
+  const ApiError.needsServer(this.message)
+    : status = 501,
+      code = 'NEEDS_SERVER',
+      field = null,
+      requestId = null;
+
   factory ApiError.fromJson(int status, Map<String, dynamic> json) {
     return ApiError(
       status: status,
@@ -36,6 +62,7 @@ class ApiError implements Exception {
   bool get isUnauthorized => status == 401;
   bool get isNetwork => status == 0;
   bool get isAiDisabled => code == 'AI_DISABLED';
+  bool get needsServer => code == 'NEEDS_SERVER';
 
   static String _codeFor(int status) => switch (status) {
     401 => 'UNAUTHORIZED',

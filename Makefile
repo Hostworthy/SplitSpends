@@ -59,7 +59,7 @@ docker:
 	docker build -t splitspends:latest .
 
 web-build:
-	cd app && flutter build web --release
+	cd app && flutter build web --release --no-web-resources-cdn
 
 lambda:
 	mkdir -p deploy/aws/build/lambda

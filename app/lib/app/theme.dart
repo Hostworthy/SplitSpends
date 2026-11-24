@@ -95,6 +95,7 @@ abstract final class AppTheme {
     final base = ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
+      fontFamily: 'Inter',
       visualDensity: VisualDensity.standard,
     );
     final text = base.textTheme.copyWith(

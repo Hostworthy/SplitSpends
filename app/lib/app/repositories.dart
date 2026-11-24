@@ -3,6 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
+import 'package:splitspends/core/storage/local_db.dart';
+import 'package:splitspends/core/storage/local_ledger.dart';
+import 'package:splitspends/core/sync/outbox_sync.dart';
+import 'package:splitspends/features/expenses/data/offline_expenses_repository.dart';
+import 'package:splitspends/features/groups/data/offline_groups_repository.dart';
+import 'package:splitspends/features/account/data/local_account_repository.dart';
+import 'package:splitspends/features/activity/data/local_activity_repository.dart';
+import 'package:splitspends/features/expenses/data/local_expenses_repository.dart';
+import 'package:splitspends/features/friends/data/local_friends_repository.dart';
+import 'package:splitspends/features/groups/data/local_groups_repository.dart';
+import 'package:splitspends/features/receipts/data/local_receipts_repository.dart';
 import 'package:splitspends/features/account/data/remote_account_repository.dart';
 import 'package:splitspends/features/account/domain/account_repository.dart';
 import 'package:splitspends/features/activity/data/remote_activity_repository.dart';
@@ -17,6 +28,8 @@ import 'package:splitspends/features/groups/data/remote_groups_repository.dart';
 import 'package:splitspends/features/groups/domain/groups_repository.dart';
 import 'package:splitspends/features/receipts/data/remote_receipts_repository.dart';
 import 'package:splitspends/features/receipts/domain/receipts_repository.dart';
+import 'package:splitspends/features/sync/data/backup_service.dart';
+import 'package:splitspends/features/sync/data/import_service.dart';
 
 // Composition root: the only place that chooses an implementation per mode.
 // Screens and providers depend on the domain interfaces only.
@@ -33,38 +46,73 @@ T _select<T>(
     case AppMode.local:
     case AppMode.unset:
       if (local != null) return local();
-      throw const ApiError(
-        status: 501,
-        code: 'LOCAL_UNAVAILABLE',
-        message: 'This works only when connected to a server.',
+      throw const ApiError.needsServer(
+        'This works only when connected to a server.',
       );
   }
 }
 
-// TODO(phase 2): pass `local:` factories backed by the on-device store.
+/// The on-device ledger used by every local implementation.
+final localLedgerProvider = Provider<LocalLedger>(
+  (ref) => LocalLedger(() => ref.read(databaseProvider.future)),
+);
 
 final groupsRepositoryProvider = Provider<GroupsRepository>(
-  (ref) => _select(ref, remote: RemoteGroupsRepository.new),
+  (ref) => _select(
+    ref,
+    remote: (api) => OfflineGroupsRepository(
+      RemoteGroupsRepository(api),
+      ref.watch(outboxProvider),
+      me: () => ref.read(meProvider),
+      onQueued: () {},
+    ),
+    local: () => LocalGroupsRepository(ref.watch(localLedgerProvider)),
+  ),
 );
 
 final expensesRepositoryProvider = Provider<ExpensesRepository>(
-  (ref) => _select(ref, remote: RemoteExpensesRepository.new),
+  (ref) => _select(
+    ref,
+    remote: (api) => OfflineExpensesRepository(
+      RemoteExpensesRepository(api),
+      ref.watch(outboxProvider),
+      meId: () => ref.read(meProvider)?.id ?? '',
+      onQueued: () {},
+    ),
+    local: () => LocalExpensesRepository(ref.watch(localLedgerProvider)),
+  ),
 );
 
 final friendsRepositoryProvider = Provider<FriendsRepository>(
-  (ref) => _select(ref, remote: RemoteFriendsRepository.new),
+  (ref) => _select(
+    ref,
+    remote: RemoteFriendsRepository.new,
+    local: () => LocalFriendsRepository(ref.watch(localLedgerProvider)),
+  ),
 );
 
 final activityRepositoryProvider = Provider<ActivityRepository>(
-  (ref) => _select(ref, remote: RemoteActivityRepository.new),
+  (ref) => _select(
+    ref,
+    remote: RemoteActivityRepository.new,
+    local: () => LocalActivityRepository(ref.watch(localLedgerProvider)),
+  ),
 );
 
 final accountRepositoryProvider = Provider<AccountRepository>(
-  (ref) => _select(ref, remote: RemoteAccountRepository.new),
+  (ref) => _select(
+    ref,
+    remote: RemoteAccountRepository.new,
+    local: () => LocalAccountRepository(ref.watch(localLedgerProvider)),
+  ),
 );
 
 final balancesRepositoryProvider = Provider<BalancesRepository>(
-  (ref) => _select(ref, remote: RemoteBalancesRepository.new),
+  (ref) => _select(
+    ref,
+    remote: RemoteBalancesRepository.new,
+    local: () => LocalBalancesRepository(ref.watch(localLedgerProvider)),
+  ),
 );
 
 /// API tokens exist only on a server.
@@ -74,10 +122,33 @@ final tokensRepositoryProvider = Provider<TokensRepository>(
 
 /// Receipts and AI need a server (AI is a server-side feature).
 final receiptsRepositoryProvider = Provider<ReceiptsRepository>(
-  (ref) => _select(ref, remote: RemoteReceiptsRepository.new),
+  (ref) => _select(
+    ref,
+    remote: RemoteReceiptsRepository.new,
+    local: () => const LocalReceiptsRepository(),
+  ),
 );
 
 /// Login always talks to the server being connected to.
 final authRepositoryProvider = Provider<AuthRepository>(
   (ref) => RemoteAuthRepository(ref.read(httpClientProvider)),
 );
+
+/// Uploads on-device data to an account.
+final importServiceProvider = Provider<ImportService>(
+  (ref) => ImportService(
+    ref.watch(localLedgerProvider),
+    ref.read(httpClientProvider),
+  ),
+);
+
+final backupServiceProvider = Provider<BackupService>(
+  (ref) => BackupService(ref.watch(localLedgerProvider)),
+);
+
+/// Creates due recurring expenses on start in on-device mode (the server
+/// does this itself in connected mode). Yields how many were created.
+final localMaintenanceProvider = FutureProvider<int>((ref) async {
+  if (ref.watch(appModeProvider) != AppMode.local) return 0;
+  return ref.watch(localLedgerProvider).runRecurring();
+});

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/amount_field.dart';
@@ -53,6 +54,7 @@ class _DetailsSectionState extends ConsumerState<DetailsSection> {
 
   Future<void> _attachReceipt() async {
     final source = await showModalBottomSheet<ImageSource>(
+      useRootNavigator: true,
       context: context,
       builder: (context) => SafeArea(
         child: Column(
@@ -193,25 +195,26 @@ class _DetailsSectionState extends ConsumerState<DetailsSection> {
                   ),
                 ),
               ),
-              ActionChip(
-                avatar: _uploading
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        form.receiptId == null
-                            ? Icons.attach_file_rounded
-                            : Icons.check_circle_rounded,
-                        size: 18,
-                      ),
-                label: Text(
-                  form.receiptId == null
-                      ? 'Attach receipt'
-                      : 'Receipt attached',
+              if (ref.watch(appModeProvider) == AppMode.connected)
+                ActionChip(
+                  avatar: _uploading
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          form.receiptId == null
+                              ? Icons.attach_file_rounded
+                              : Icons.check_circle_rounded,
+                          size: 18,
+                        ),
+                  label: Text(
+                    form.receiptId == null
+                        ? 'Attach receipt'
+                        : 'Receipt attached',
+                  ),
+                  onPressed: _uploading ? null : _attachReceipt,
                 ),
-                onPressed: _uploading ? null : _attachReceipt,
-              ),
             ],
           ),
           const SizedBox(height: 12),

@@ -74,6 +74,7 @@ class RemoteExpensesRepository implements ExpensesRepository {
 
   @override
   Future<Expense> recordPayment({
+    String? id,
     String? groupId,
     required String fromUserId,
     required String toUserId,
@@ -82,6 +83,7 @@ class RemoteExpensesRepository implements ExpensesRepository {
     String? date,
     String? notes,
   }) => _api.postData('/payments', {
+    'id': ?id,
     'groupId': groupId,
     'fromUserId': fromUserId,
     'toUserId': toUserId,
