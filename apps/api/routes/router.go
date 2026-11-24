@@ -43,6 +43,9 @@ func (a *API) Routes() *http.ServeMux {
 	public := func(h handler) http.Handler { return a.wrap(h) }
 	otpLimit := middleware.NewLimiter(20, time.Minute)
 	limited := func(h handler) http.Handler { return middleware.Limit(otpLimit, a.log, a.cfg.TrustProxy, a.wrap(h)) }
+	// Invite previews are public; limit them per IP so tokens cannot be guessed.
+	inviteLimit := middleware.NewLimiter(30, time.Minute)
+	previews := func(h handler) http.Handler { return middleware.Limit(inviteLimit, a.log, a.cfg.TrustProxy, a.wrap(h)) }
 	p := platform.Prefix
 
 	mux.Handle("GET /health", public(a.health))
@@ -78,6 +81,11 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("DELETE "+p+"/groups/{groupId}/members/{userId}", authed(a.removeMember))
 	mux.Handle("GET "+p+"/groups/{groupId}/balances", authed(a.groupBalances))
 	mux.Handle("GET "+p+"/groups/{groupId}/export", authed(a.exportGroup))
+	mux.Handle("GET "+p+"/groups/{groupId}/invites", authed(a.listInvites))
+	mux.Handle("POST "+p+"/groups/{groupId}/invites", authed(a.createInvite))
+	mux.Handle("DELETE "+p+"/groups/{groupId}/invites/{inviteId}", authed(a.deleteInvite))
+	mux.Handle("GET "+p+"/invites/{token}", previews(a.previewInvite))
+	mux.Handle("POST "+p+"/invites/{token}/accept", authed(a.acceptInvite))
 
 	mux.Handle("GET "+p+"/expenses", authed(a.listExpenses))
 	mux.Handle("POST "+p+"/expenses", authed(a.createExpense))
@@ -89,6 +97,7 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("POST "+p+"/expenses/{expenseId}/comments", authed(a.addComment))
 	mux.Handle("DELETE "+p+"/comments/{commentId}", authed(a.deleteComment))
 	mux.Handle("POST "+p+"/payments", authed(a.createPayment))
+	mux.Handle("POST "+p+"/reminders", authed(a.sendReminder))
 
 	mux.Handle("GET "+p+"/activity", authed(a.listActivity))
 	mux.Handle("GET "+p+"/stats", authed(a.stats))

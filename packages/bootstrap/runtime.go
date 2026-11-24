@@ -13,7 +13,9 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/friend"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/invite"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/reminder"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/stats"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/transfer"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
@@ -27,17 +29,19 @@ import (
 
 // Services are the core use cases the transports call.
 type Services struct {
-	Auth     *auth.Service
-	Users    *user.Service
-	Friends  *friend.Service
-	Groups   *group.Service
-	Expenses *expense.Service
-	Balances *balance.Service
-	Activity *activity.Service
-	Receipts *receipt.Service
-	Assist   *assist.Service
-	Stats    *stats.Service
-	Transfer *transfer.Service
+	Auth      *auth.Service
+	Users     *user.Service
+	Friends   *friend.Service
+	Groups    *group.Service
+	Expenses  *expense.Service
+	Balances  *balance.Service
+	Activity  *activity.Service
+	Receipts  *receipt.Service
+	Assist    *assist.Service
+	Stats     *stats.Service
+	Transfer  *transfer.Service
+	Reminders *reminder.Service
+	Invites   *invite.Service
 }
 
 // Runtime is a fully wired application.
@@ -124,8 +128,11 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 	receipts := receipt.NewService(receiptRepo, blobs, reader, c)
 	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
 		Connections: friends, Receipts: receiptRepo, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+	invites := invite.NewService(repositories.NewInvites(db), groups, groupRepo, users, c, cfg.BaseURL)
+	reminders := reminder.NewService(reminder.Deps{Repo: repositories.NewReminders(db), Groups: groups, Connections: friends,
+		Users: users, Balances: balances, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	return &Services{
-		Auth:     auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, notifier, tx, c),
+		Auth:     auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, invites, notifier, tx, c),
 		Users:    users,
 		Friends:  friends,
 		Groups:   groups,
@@ -136,6 +143,9 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 		Receipts: receipts,
 		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, c),
 		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users),
+
+		Reminders: reminders,
+		Invites:   invites,
 	}
 }
 
@@ -157,6 +167,10 @@ func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 	}
 	if err := rt.Services.Auth.Cleanup(ctx); err != nil {
 		rt.Log.Error("jobs.cleanup.failed", "error", err)
+		return err
+	}
+	if err := rt.Services.Invites.Cleanup(ctx); err != nil {
+		rt.Log.Error("jobs.cleanup.failed", "area", "invites", "error", err)
 		return err
 	}
 	return nil

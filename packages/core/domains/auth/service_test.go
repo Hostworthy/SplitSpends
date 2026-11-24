@@ -107,6 +107,11 @@ func (c codes) LoginCode(_ context.Context, to, code string, _ time.Duration) er
 func (codes) Invite(context.Context, string, string) error { return nil }
 func (codes) Notify(context.Context, ports.Notification)   {}
 
+// links are the invite tokens that are currently valid.
+type links map[string]bool
+
+func (l links) Valid(_ context.Context, token string) (bool, error) { return l[token], nil }
+
 type noTx struct{}
 
 func (noTx) Do(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
@@ -117,13 +122,14 @@ func service(mode SignupMode) (*Service, *memUsers, codes) {
 	users := &memUsers{byEmail: map[string]*user.User{}}
 	sent := codes{}
 	now := clock.Fixed{At: time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)}
-	return NewService(p, &memChallenges{}, &memSessions{byHash: map[string]*Session{}}, users, sent, noTx{}, now), users, sent
+	invites := links{"valid-link": true}
+	return NewService(p, &memChallenges{}, &memSessions{byHash: map[string]*Session{}}, users, invites, sent, noTx{}, now), users, sent
 }
 
 func TestLoginFlow(t *testing.T) {
 	ctx := context.Background()
 	s, _, sent := service(SignupInvite)
-	if err := s.RequestCode(ctx, " Ada@Example.com "); err != nil {
+	if err := s.RequestCode(ctx, " Ada@Example.com ", ""); err != nil {
 		t.Fatal(err)
 	}
 	code := sent["ada@example.com"]
@@ -154,7 +160,7 @@ func TestInviteModeIgnoresStrangers(t *testing.T) {
 	s, users, sent := service(SignupInvite)
 	first, _ := user.New("first@example.com", "First", user.StatusActive, time.Now())
 	_ = users.Create(ctx, first)
-	if err := s.RequestCode(ctx, "stranger@example.com"); err != nil {
+	if err := s.RequestCode(ctx, "stranger@example.com", ""); err != nil {
 		t.Fatalf("strangers get the same response, got %v", err)
 	}
 	if _, ok := sent["stranger@example.com"]; ok {
@@ -162,7 +168,7 @@ func TestInviteModeIgnoresStrangers(t *testing.T) {
 	}
 	invited, _ := user.New("friend@example.com", "Friend", user.StatusInvited, time.Now())
 	_ = users.Create(ctx, invited)
-	if err := s.RequestCode(ctx, "friend@example.com"); err != nil || sent["friend@example.com"] == "" {
+	if err := s.RequestCode(ctx, "friend@example.com", ""); err != nil || sent["friend@example.com"] == "" {
 		t.Fatal("invited users must receive a code")
 	}
 }
@@ -170,7 +176,7 @@ func TestInviteModeIgnoresStrangers(t *testing.T) {
 func TestAttemptsAreLimited(t *testing.T) {
 	ctx := context.Background()
 	s, _, sent := service(SignupOpen)
-	_ = s.RequestCode(ctx, "ada@example.com")
+	_ = s.RequestCode(ctx, "ada@example.com", "")
 	for i := 0; i < 5; i++ {
 		if _, err := s.Verify(ctx, "ada@example.com", "999999x", "", ""); err == nil {
 			t.Fatal("wrong code accepted")
@@ -185,11 +191,11 @@ func TestCodeRequestsAreRateLimited(t *testing.T) {
 	ctx := context.Background()
 	s, _, _ := service(SignupOpen)
 	for i := 0; i < 5; i++ {
-		if err := s.RequestCode(ctx, "ada@example.com"); err != nil {
+		if err := s.RequestCode(ctx, "ada@example.com", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := s.RequestCode(ctx, "ada@example.com"); !errs.Is(err, errs.KindRateLimited) {
+	if err := s.RequestCode(ctx, "ada@example.com", ""); !errs.Is(err, errs.KindRateLimited) {
 		t.Fatalf("sixth request in an hour must be limited, got %v", err)
 	}
 }
@@ -200,9 +206,48 @@ func TestDomainMode(t *testing.T) {
 	s.policy.AllowedDomains = []string{"example.org"}
 	first, _ := user.New("first@example.com", "First", user.StatusActive, time.Now())
 	_ = users.Create(ctx, first)
-	_ = s.RequestCode(ctx, "x@example.org")
-	_ = s.RequestCode(ctx, "x@evil.org")
+	_ = s.RequestCode(ctx, "x@example.org", "")
+	_ = s.RequestCode(ctx, "x@evil.org", "")
 	if sent["x@example.org"] == "" || sent["x@evil.org"] != "" {
 		t.Fatalf("domain policy not applied: %v", sent)
+	}
+}
+
+func TestInviteLinkLetsStrangersSignUp(t *testing.T) {
+	ctx := context.Background()
+	s, users, sent := service(SignupInvite)
+	first, _ := user.New("first@example.com", "First", user.StatusActive, time.Now())
+	_ = users.Create(ctx, first)
+
+	// Same response with a wrong token, and nothing is sent.
+	if err := s.RequestCode(ctx, "stranger@example.com", "expired-or-unknown"); err != nil {
+		t.Fatalf("an invalid link must look like any other request, got %v", err)
+	}
+	if _, ok := sent["stranger@example.com"]; ok {
+		t.Fatal("an invalid link must not let a stranger in")
+	}
+	if err := s.RequestCode(ctx, "stranger@example.com", "valid-link"); err != nil {
+		t.Fatal(err)
+	}
+	code := sent["stranger@example.com"]
+	if code == "" {
+		t.Fatal("a valid invite link must let a stranger request a code")
+	}
+	login, err := s.Verify(ctx, "stranger@example.com", code, "Stranger", "test")
+	if err != nil || !login.IsNew {
+		t.Fatalf("verify: %+v %v", login, err)
+	}
+}
+
+func TestInviteLinkWorksInDomainMode(t *testing.T) {
+	ctx := context.Background()
+	s, users, sent := service(SignupDomain)
+	s.policy.AllowedDomains = []string{"example.org"}
+	first, _ := user.New("first@example.com", "First", user.StatusActive, time.Now())
+	_ = users.Create(ctx, first)
+	_ = s.RequestCode(ctx, "x@evil.org", "")
+	_ = s.RequestCode(ctx, "y@evil.org", "valid-link")
+	if sent["x@evil.org"] != "" || sent["y@evil.org"] == "" {
+		t.Fatalf("only the invited address may sign up: %v", sent)
 	}
 }

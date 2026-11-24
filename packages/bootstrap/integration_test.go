@@ -68,7 +68,7 @@ func TestRecurringAndNotifications(t *testing.T) {
 	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
 	svc, notes := setup(t, now)
 
-	if err := svc.Auth.RequestCode(ctx, "ada@example.com"); err != nil {
+	if err := svc.Auth.RequestCode(ctx, "ada@example.com", ""); err != nil {
 		t.Fatal(err)
 	}
 	login, err := svc.Auth.Verify(ctx, "ada@example.com", notes.codes["ada@example.com"], "Ada", "test")

@@ -43,6 +43,7 @@ func NewServer(c *Client, version string) *sdk.Server {
 	sdk.AddTool(s, add("list_categories", "Expense category ids for add_expense.", readOnly), t.listCategories)
 	sdk.AddTool(s, add("add_expense", "Add a shared expense. Defaults: paid by the user, split equally between the user and the participants given (or every group member when a group is given and no participants are listed).", nil), t.addExpense)
 	sdk.AddTool(s, add("record_payment", "Record that one person paid another back (settle up).", nil), t.recordPayment)
+	sdk.AddTool(s, add("remind_to_settle", "Email someone who owes the user money a friendly reminder to settle up, in one group or across everything. At most one reminder per person and group every 24 hours.", nil), t.remind)
 	destructive := true
 	sdk.AddTool(s, add("delete_expense", "Delete an expense or payment. It can be restored from the app.", &sdk.ToolAnnotations{DestructiveHint: &destructive}), t.deleteExpense)
 	return s
@@ -505,6 +506,31 @@ func (t *tools) recordPayment(ctx context.Context, _ *sdk.CallToolRequest, in pa
 		return fail(err)
 	}
 	return text("Recorded.\n" + t.line(ctx, e, idx)), nil, nil
+}
+
+type remindArgs struct {
+	UserID  string `json:"userId" jsonschema:"the person who owes the user money"`
+	GroupID string `json:"groupId,omitempty" jsonschema:"remind about this group only; omit for everything they owe"`
+}
+
+func (t *tools) remind(ctx context.Context, _ *sdk.CallToolRequest, in remindArgs) (*sdk.CallToolResult, any, error) {
+	_, idx, err := t.index(ctx)
+	if err != nil {
+		return fail(err)
+	}
+	body := platform.ReminderInput{UserID: in.UserID}
+	if in.GroupID != "" {
+		body.GroupID = &in.GroupID
+	}
+	r, err := send[platform.Reminder](ctx, t.c, http.MethodPost, "/reminders", body)
+	if err != nil {
+		return fail(err)
+	}
+	out := "Reminded " + idx.name(r.UserID) + " that they owe you " + t.balances(ctx, r.Balances) + "."
+	if !r.Emailed {
+		out += " They turned reminder emails off, so they will only see it in their activity feed."
+	}
+	return text(out), nil, nil
 }
 
 func (t *tools) deleteExpense(ctx context.Context, _ *sdk.CallToolRequest, in expenseArgs) (*sdk.CallToolResult, any, error) {

@@ -32,11 +32,13 @@ type Notifications struct {
 	ExpenseUpdated  bool `json:"expenseUpdated"`
 	PaymentReceived bool `json:"paymentReceived"`
 	AddedToGroup    bool `json:"addedToGroup"`
+	// Reminders are settle-up nudges from people you owe.
+	Reminders bool `json:"reminders"`
 }
 
 // DefaultNotifications enables every email.
 func DefaultNotifications() Notifications {
-	return Notifications{ExpenseAdded: true, ExpenseUpdated: true, PaymentReceived: true, AddedToGroup: true}
+	return Notifications{ExpenseAdded: true, ExpenseUpdated: true, PaymentReceived: true, AddedToGroup: true, Reminders: true}
 }
 
 // User is a person who can take part in expenses.

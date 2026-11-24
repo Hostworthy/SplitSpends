@@ -38,7 +38,8 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
 // Me (User plus private settings)
 { ...User, "timezone": "Europe/Berlin",
-  "notifications": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true } }
+  "notifications": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true,
+                     "reminders": true } }
 
 // Balance (one per currency, only non-zero entries are returned)
 { "currency": "EUR", "amount": 1250 }
@@ -68,7 +69,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 // Activity
 { "id": "uuid", "kind": "expense.created" | "expense.updated" | "expense.deleted" | "expense.restored"
   | "payment.created" | "comment.created" | "group.created" | "group.updated" | "group.member-added"
-  | "group.member-removed" | "friend.added",
+  | "group.member-removed" | "group.member-joined" | "friend.added" | "reminder.sent",
   "actor": User, "groupId": "uuid" | null, "expenseId": "uuid" | null,
   "summary": "Ada added “Dinner” in Lisbon trip", "data": { ... }, "createdAt": "..." }
 ```
@@ -101,7 +102,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| POST | `/auth/otp/request` | `{ email }` | **public**, 202 `{ data: { sent: true, expiresInSeconds: 600 } }` (identical whether or not the email exists) |
+| POST | `/auth/otp/request` | `{ email, inviteToken? }` | **public**, 202 `{ data: { sent: true, expiresInSeconds: 600 } }` (identical whether or not the email exists). `inviteToken` is the token of a valid group invite link; it lets a new email sign up when `signupMode` would otherwise refuse it. An invalid token gets the same response and sends nothing |
 | POST | `/auth/otp/verify` | `{ email, code, name? }` | **public**, 200 `{ data: { token, expiresAt, user: Me, isNew } }` |
 | POST | `/auth/logout` | | 204, revokes the current session |
 
@@ -110,7 +111,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/me` | | `{ data: Me }` |
-| PATCH | `/me` | `{ name?, defaultCurrency?, timezone?, avatarColor?, notifications? }` | `{ data: Me }` |
+| PATCH | `/me` | `{ name?, defaultCurrency?, timezone?, avatarColor?, notifications? }` | `{ data: Me }`. In `notifications`, an omitted `reminders` keeps its current value |
 | GET | `/me/balances` | | `{ data: { balances: [Balance], owed: [Balance], owing: [Balance] } }` totals across everything |
 | GET | `/me/tokens` | | List of `{ id, name, createdAt, lastUsedAt }` |
 | POST | `/me/tokens` | `{ name }` | 201 `{ data: { id, name, token, createdAt } }` (token shown once) |
@@ -139,6 +140,29 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | DELETE | `/groups/{groupId}/members/{userId}` | | 204; 409 when that member is not settled. A member may remove themselves (leave) |
 | GET | `/groups/{groupId}/balances` | | `{ data: { members: [{ userId, balances: [Balance] }], debts: [Debt] } }` (debts are simplified when `simplifyDebts` is on) |
 | GET | `/groups/{groupId}/export` | | `text/csv` of all expenses and payments |
+| POST | `/groups/{groupId}/invites` | | 201 `{ data: Invite }` with `token` and `url` (shown once). 409 for archived groups |
+| GET | `/groups/{groupId}/invites` | | List of active (unexpired) `Invite`, without `token` and `url` |
+| DELETE | `/groups/{groupId}/invites/{inviteId}` | | 204; the link stops working |
+
+### Invite Links
+
+Any group member can create a link that lets anyone who has it join the group. Links last 14 days and can be used many times until they expire or are revoked. The token is 32 random bytes in base64url; the server stores only its SHA-256 hash. `url` is `BASE_URL/join/<token>`, which opens the web app (QR codes encode it).
+
+```jsonc
+// Invite
+{ "id": "uuid", "token": "base64url" /* create only */, "url": "https://split.example.com/join/<token>" /* create only */,
+  "createdBy": "uuid", "expiresAt": "...", "createdAt": "..." }
+
+// InvitePreview
+{ "groupName": "Flat", "emoji": "🏠", "color": "#00897B", "memberCount": 3, "invitedBy": "Ada" }
+```
+
+| Method | Path | Body | Response |
+| ------ | ---- | ---- | -------- |
+| GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens alike |
+| POST | `/invites/{token}/accept` | | `{ data: Group }`; adds the caller to the group and records `group.member-joined`. Accepting again, or as a member, returns the group unchanged |
+
+People without an account follow the link, request a login code with `inviteToken`, sign in, then accept.
 
 ### Expenses and Payments
 
@@ -154,6 +178,14 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | POST | `/expenses/{expenseId}/comments` | `{ body }` | 201 `{ data: Comment }` |
 | DELETE | `/comments/{commentId}` | | 204 (author only) |
 | POST | `/payments` | `{ id?, groupId?, fromUserId, toUserId, amount, currency, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
+
+### Reminders
+
+| Method | Path | Body | Response |
+| ------ | ---- | ---- | -------- |
+| POST | `/reminders` | `{ userId, groupId? }` | 201 `{ data: { id, userId, groupId, balances: [Balance], emailed, sentAt } }` |
+
+Asks someone who owes you money to settle up: in one group when `groupId` is set, otherwise across everything you share. `balances` is what they owe you (positive amounts only, per currency). The reminder is emailed unless they turned the `reminders` notification off (`emailed: false`), and recorded as `reminder.sent` in both people's activity. Errors: 409 `CONFLICT` when they owe you nothing in that scope, or have no email address (people added by name only); 429 `RATE_LIMITED` when you already reminded them in the same scope in the last 24 hours (enforced in the database); 422 when `groupId` is not one of your groups.
 
 ### Activity and Stats
 

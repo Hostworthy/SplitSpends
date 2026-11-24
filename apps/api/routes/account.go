@@ -13,7 +13,7 @@ func (a *API) requestCode(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := a.svc.Auth.RequestCode(r.Context(), in.Email); err != nil {
+	if err := a.svc.Auth.RequestCode(r.Context(), in.Email, in.InviteToken); err != nil {
 		return err
 	}
 	return details(w, http.StatusAccepted, platform.OTPSent{Sent: true, ExpiresInSeconds: int(a.svc.Auth.CodeTTL().Seconds())})
@@ -54,8 +54,20 @@ func (a *API) patchMe(w http.ResponseWriter, r *http.Request) error {
 	}
 	p := user.Patch{Name: in.Name, DefaultCurrency: in.DefaultCurrency, Timezone: in.Timezone, AvatarColor: in.AvatarColor}
 	if in.Notifications != nil {
-		n := user.Notifications(*in.Notifications)
-		p.Notifications = &n
+		n := in.Notifications
+		prefs := user.Notifications{ExpenseAdded: n.ExpenseAdded, ExpenseUpdated: n.ExpenseUpdated,
+			PaymentReceived: n.PaymentReceived, AddedToGroup: n.AddedToGroup}
+		if n.Reminders != nil {
+			prefs.Reminders = *n.Reminders
+		} else {
+			// Older clients do not know this preference: keep what is stored.
+			current, err := a.svc.Users.Get(r.Context(), me(r))
+			if err != nil {
+				return err
+			}
+			prefs.Reminders = current.Notifications.Reminders
+		}
+		p.Notifications = &prefs
 	}
 	u, err := a.svc.Users.Update(r.Context(), me(r), p)
 	if err != nil {

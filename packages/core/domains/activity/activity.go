@@ -24,7 +24,9 @@ const (
 	GroupUpdated       Kind = "group.updated"
 	GroupMemberAdded   Kind = "group.member-added"
 	GroupMemberRemoved Kind = "group.member-removed"
+	GroupMemberJoined  Kind = "group.member-joined"
 	FriendAdded        Kind = "friend.added"
+	ReminderSent       Kind = "reminder.sent"
 )
 
 // Activity is one feed event. Data holds a snapshot of display fields such as
@@ -122,8 +124,12 @@ func Describe(a *Activity, actor string) string {
 			return actor + " left " + str("groupName")
 		}
 		return actor + " removed " + str("targetName") + " from " + str("groupName")
+	case GroupMemberJoined:
+		return actor + " joined " + str("groupName") + " with an invite link"
 	case FriendAdded:
 		return actor + " added " + str("targetName") + " as a friend"
+	case ReminderSent:
+		return actor + " reminded " + str("targetName") + " to settle up" + in
 	}
 	return actor + " did something"
 }
