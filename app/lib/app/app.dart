@@ -12,6 +12,8 @@ class SplitSpendsApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
       title: 'SplitSpends',
+      locale: const Locale('en', 'US'),
+      supportedLocales: const [Locale('en', 'US')],
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),

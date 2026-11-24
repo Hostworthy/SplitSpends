@@ -5,24 +5,31 @@ import 'package:splitspends/core/config/app_config.dart';
 /// Money helpers. Amounts are always integers in minor units; floats are
 /// never used for arithmetic.
 abstract final class Money {
+  static final _grouping = NumberFormat('#,##0', 'en_US');
+
   /// Formats [minor] units of [currency], e.g. `1250, USD` → `$12.50`.
+  /// Integer arithmetic only, always English digit grouping; [compact] drops
+  /// a zero fraction (`$12` instead of `$12.00`).
   static String format(
     int minor,
     CurrencyInfo currency, {
     bool absolute = false,
     bool compact = false,
-    String? locale,
   }) {
     final value = absolute ? minor.abs() : minor;
-    final digits = compact && value % pow10(currency.exponent) == 0
-        ? 0
-        : currency.exponent;
-    final formatter = NumberFormat.currency(
-      locale: locale,
-      symbol: currency.symbol,
-      decimalDigits: digits,
-    );
-    return formatter.format(value / pow10(currency.exponent));
+    final unit = pow10(currency.exponent);
+    final abs = value.abs();
+    final whole = _grouping.format(abs ~/ unit);
+    final frac = abs % unit;
+    final showFrac = currency.exponent > 0 && !(compact && frac == 0);
+    final number = showFrac
+        ? '$whole.${frac.toString().padLeft(currency.exponent, '0')}'
+        : whole;
+    // Letter symbols such as "AED" or "CHF" read better with a space.
+    final symbol = RegExp(r'^[A-Za-z]{2,}$').hasMatch(currency.symbol)
+        ? '${currency.symbol} '
+        : currency.symbol;
+    return '${value < 0 ? '-' : ''}$symbol$number';
   }
 
   /// Plain decimal text for editing: `1250, exponent 2` → `12.50`.

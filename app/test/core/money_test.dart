@@ -20,21 +20,33 @@ void main() {
 
   group('Money.format', () {
     test('formats minor units with the currency exponent', () {
-      expect(Money.format(1250, usd, locale: 'en_US'), r'$12.50');
-      expect(Money.format(1250, jpy, locale: 'en_US'), '¥1,250');
-      expect(Money.format(1250, kwd, locale: 'en_US'), 'KD1.250');
+      expect(Money.format(1250, usd), r'$12.50');
+      expect(Money.format(1250, jpy), '¥1,250');
+      expect(Money.format(1250, kwd), 'KD 1.250');
     });
 
     test('absolute drops the sign, compact drops zero decimals', () {
-      expect(
-        Money.format(-999, usd, absolute: true, locale: 'en_US'),
-        r'$9.99',
+      expect(Money.format(-999, usd, absolute: true), r'$9.99');
+      expect(Money.format(5000, usd, compact: true), r'$50');
+      expect(Money.format(5050, usd, compact: true), r'$50.50');
+    });
+  });
+
+  group('Money.format exactness', () {
+    test('keeps every digit of very large amounts', () {
+      // 9,007,199,254,740,993 minor units cannot be represented as a double.
+      expect(Money.format(9007199254740993, usd), r'$90,071,992,547,409.93');
+    });
+
+    test('negative amounts and letter symbols', () {
+      expect(Money.format(-1205, usd), r'-$12.05');
+      const aed = CurrencyInfo(
+        code: 'AED',
+        name: 'UAE Dirham',
+        symbol: 'AED',
+        exponent: 2,
       );
-      expect(Money.format(5000, usd, compact: true, locale: 'en_US'), r'$50');
-      expect(
-        Money.format(5050, usd, compact: true, locale: 'en_US'),
-        r'$50.50',
-      );
+      expect(Money.format(150000, aed), 'AED 1,500.00');
     });
   });
 
