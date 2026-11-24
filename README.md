@@ -46,9 +46,9 @@ cp deploy/.env.example deploy/.env    # set SECRET_KEY, BASE_URL, POSTGRES_PASSW
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-Open `http://localhost:8080` and sign in with your email: the first account belongs to you, and others join when you add them. For HTTPS, a home lab setup with automatic certificates, free cloud options and a security checklist, see the [hosting guide](docs/HOSTING.md). Every setting is in [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
+Open `http://localhost:8080` and sign in with your email: the first account belongs to you, and others join when you add them. For HTTPS, a homelab setup with automatic certificates, free cloud options and a security checklist, see the [hosting guide](docs/HOSTING.md). Every setting is in [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
 
-**Mobile apps:** the Flutter app in [`app/`](app/README.md) builds for Android and iOS from the same code as the web app.
+**Mobile apps:** [`apps/android`](apps/android) and [`apps/ios`](apps/ios) build the phone apps from the same code as the web app ([`packages/client`](packages/client/README.md)); `make apk` builds the Android app.
 
 ## Documentation
 
@@ -69,4 +69,4 @@ SplitSpends is source-available under the [PolyForm Noncommercial License 1.0.0]
 - **Free for noncommercial use.** Use it, self-host it, change it and share it for personal, family, hobby, study and research use. Charities, schools, public research bodies and government institutions may use it too.
 - **Commercial use needs permission.** Examples: running it as a paid or ad-supported service, bundling it into a commercial product, or using it inside a business. Ask for a commercial license by opening an issue at <https://github.com/Hostworthy/SplitSpends/issues>.
 
-When you share copies or changed versions, include the license and the `Required Notice` line at the top of [LICENSE](LICENSE). Third-party components keep their own licenses (for example the bundled Inter font, under the SIL Open Font License in `app/assets/fonts/`). Contributions are accepted under the same license.
+When you share copies or changed versions, include the license and the `Required Notice` line at the top of [LICENSE](LICENSE). Third-party components keep their own licenses (for example the bundled Inter font, under the SIL Open Font License in `packages/client/assets/fonts/`). Contributions are accepted under the same license.

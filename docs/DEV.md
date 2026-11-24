@@ -10,7 +10,7 @@
 ## First Run
 
 ```bash
-make setup   # backend/.env, Postgres in Docker, Go and Flutter dependencies
+make setup   # apps/api/.env, Postgres in Docker, Go and Dart dependencies
 make dev     # API on :8080 and the web app on :5173
 ```
 
@@ -28,50 +28,61 @@ Migrations are embedded in the binary and applied on start.
 | `make check` | gofmt, go vet, Go tests (including the architecture test), `dart format`, `flutter analyze`, `flutter test` |
 | `make test-integration` | Database-backed tests against `TEST_DATABASE_URL` (the database is wiped) |
 | `make build` | `bin/splitspends` and `bin/splitspends-mcp` |
+| `make web-build` / `make apk` | Web build (`apps/web/build/web`) / Android APK (`apps/android/build`) |
 | `make docker` | Production image |
 
 ## Repository Layout
 
 ```text
-backend/                 Go module (API, MCP, jobs)
-  cmd/server             HTTP server: API, /mcp, web app, background jobs
-  cmd/mcp                stdio MCP server
-  internal/core          Domain center: entities, services, ports (no infrastructure)
-    domains/<context>    user, auth, friend, group, expense, balance, activity, receipt, assist, stats
-    ports                Interfaces adapters implement (Tx, Notifier, BlobStore, ReceiptReader)
-    shared               errs, money, clock
-  internal/database      PostgreSQL adapters (pgx) and embedded migrations
-  internal/notifications SMTP email adapter
-  internal/storage       Local filesystem blob store
-  internal/ai            Claude and OpenAI-compatible receipt readers
-  internal/platform      HTTP contract (request and response shapes), standard library only
-  internal/middleware    Request ids, logging, CORS, auth, rate limits, error mapping
-  internal/api           HTTP handlers and serializers
-  internal/mcp           MCP tools, implemented as a client of the HTTP API
-  internal/bootstrap     Configuration and wiring (composition root)
-  internal/archtest      Dependency rules
-app/                     Flutter client for iOS, Android and web
-deploy/                  Production docker compose and env template
-docs/                    API contract, environment, MCP, ADRs
+apps/                     Runnable apps only
+  api/                    Go HTTP server: API, /mcp, web app, background jobs (main.go)
+    routes/               HTTP handlers and serializers
+  mcp/                    Go stdio MCP server for local assistants (main.go)
+  android/                Flutter shell: android/ runner + lib/main.dart
+  ios/                    Flutter shell: ios/ runner + lib/main.dart
+  web/                    Flutter shell: web/ runner + lib/main.dart
+packages/                 Shared code the apps are built from
+  core/                   Go domain centre: entities, services, ports (no infrastructure)
+    domains/<context>     user, auth, friend, group, expense, balance, activity, receipt, assist, stats, transfer
+    ports                 Interfaces adapters implement (Tx, Notifier, BlobStore, ReceiptReader)
+    shared                errs, money, clock
+  database/               PostgreSQL adapters (pgx) and embedded migrations
+  notifications/          SMTP email adapter
+  storage/                Local disk and S3-compatible blob stores
+  ai/                     Anthropic and OpenAI-compatible AI providers
+  platform/               HTTP contract (request and response shapes), standard library only
+  middleware/             Request ids, logging, CORS, auth, rate limits, error mapping
+  mcp/                    MCP tools, implemented as a client of the HTTP API
+  bootstrap/              Configuration and wiring (composition root)
+  logger/, spa/           Structured logging; serving the web build
+  archtest/               Dependency rules between apps and packages
+  ledger/                 Dart: split, balance and recurrence rules (mirrors core)
+  client/                 Flutter: every screen, the local store, sync, assets and fonts
+spec/vectors.json         Shared test cases run by both the Go and the Dart rules
+deploy/                   Docker Compose (server, homelab), Terraform (AWS, GCP)
+docs/                     API contract, environment, hosting, MCP, ADRs
+go.mod, pubspec.yaml      One Go module and one Dart workspace at the root
 ```
+
+`apps/` holds only things you run; everything they share lives in `packages/`. The three Flutter apps are thin shells: the UI is one package (`packages/client`) so Android, iOS and the web stay identical.
 
 ## Adding a Feature
 
 Follow [ADR-001](adr/001-domain-driven-design.md):
 
-1. Entity and rules in `internal/core/domains/<context>/`, with colocated tests.
+1. Entity and rules in `packages/core/domains/<context>/`, with colocated tests.
 2. Repository interface (port) next to the entity; services depend on the interface.
-3. PostgreSQL implementation in `internal/database/repositories/`. New tables get a new numbered migration in `internal/database/migrations/` (never edit an applied one).
-4. Wire it in `internal/bootstrap/runtime.go`.
-5. Request and response shapes in `internal/platform/contract.go`; document them in [API.md](API.md).
-6. Handler and serializer in `internal/api/`, route in `router.go`.
-7. Client models and screens in `app/lib/features/<feature>/`.
-8. MCP tool in `internal/mcp/server.go` if assistants should use it.
+3. PostgreSQL implementation in `packages/database/repositories/`. New tables get a new numbered migration in `packages/database/migrations/` (never edit an applied one).
+4. Wire it in `packages/bootstrap/runtime.go`.
+5. Request and response shapes in `packages/platform/contract.go`; document them in [API.md](API.md).
+6. Handler and serializer in `apps/api/routes/`, route in `router.go`.
+7. Client models and screens in `packages/client/lib/features/<feature>/`.
+8. MCP tool in `packages/mcp/server.go` if assistants should use it.
 9. `make check`.
 
 ## Testing
 
-- Pure domain logic (splits, balances, receipt reconciliation) has table-style unit tests in `internal/core`.
-- `internal/archtest` fails when a package imports across a forbidden boundary.
-- `internal/bootstrap/integration_test.go` runs services against a real database.
-- The Flutter app has unit and widget tests under `app/test`.
+- Pure domain logic (splits, balances, receipt reconciliation) has table-style unit tests in `packages/core`.
+- `packages/archtest` fails when a package imports across a forbidden boundary.
+- `packages/bootstrap/integration_test.go` runs services against a real database.
+- `packages/ledger/test` runs `spec/vectors.json` against the Dart rules; `packages/client/test` has unit and widget tests.

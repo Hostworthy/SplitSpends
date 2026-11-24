@@ -1,16 +1,17 @@
 # SplitSpends
 
-Self-hosted Splitwise alternative: Go API and MCP server on PostgreSQL, Flutter client for iOS, Android and web. Clean/DDD layering.
+Self-hosted Splitwise alternative: Go API and MCP server on PostgreSQL, Flutter client for iOS, Android and web. Clean/DDD layering. `apps/` holds only runnable apps (`api`, `mcp`, `android`, `ios`, `web`); shared code lives in `packages/`.
 
 ## Commands
 
 | Command | Checks |
 | ------- | ------ |
-| `cd backend && go build ./... && go vet ./...` | Compile and vet |
-| `cd backend && go test -count=1 ./...` | Unit tests plus `internal/archtest` layer boundaries |
+| `go build ./... && go vet ./...` | Compile and vet (repository root is the Go module) |
+| `go test -count=1 ./...` | Unit tests plus `packages/archtest` layer boundaries |
 | `make test-integration` | Database tests (wipes `TEST_DATABASE_URL`) |
-| `cd app && flutter analyze && flutter test` | Client lint and tests |
-| `make check` | Everything above except integration |
+| `make lint` | gofmt, go vet, dart format, flutter analyze on every Dart member |
+| `make test` | Go tests, `packages/ledger` (dart test), `packages/client` (flutter test) |
+| `make check` | `lint` and `test` |
 
 Run the relevant checks before considering work done. If a check needs infrastructure that is not running, say so instead of skipping it silently.
 
@@ -26,14 +27,16 @@ Run the relevant checks before considering work done. If a check needs infrastru
 
 ## Non-Negotiables
 
-- Domain rules live in `backend/internal/core`; it imports no infrastructure. Repositories in `internal/database` hold no business rules.
+- Domain rules live in `packages/core`; it imports no infrastructure. Repositories in `packages/database` hold no business rules.
+- `apps/` contains only runnable apps; never put shared code there. Packages never import apps (`packages/archtest` enforces it).
+- Split and balance rules exist twice, in `packages/core` (Go) and `packages/ledger` (Dart); change both and extend `spec/vectors.json`.
 - Money is `int64` minor units. Never use floats for amounts, in Go or Dart. Split inputs are decimal strings parsed exactly.
-- Services return `errs.Error` with human-readable messages; `internal/middleware` maps kinds to HTTP status.
-- Wire services only in `internal/bootstrap`. Handlers call services; they never touch repositories.
-- `internal/mcp` calls the HTTP API, never core or the database.
-- `internal/platform` is the wire contract, standard library only. Change it together with `docs/API.md` and the Flutter models.
+- Services return `errs.Error` with human-readable messages; `packages/middleware` maps kinds to HTTP status.
+- Wire services only in `packages/bootstrap`. Handlers call services; they never touch repositories.
+- `packages/mcp` calls the HTTP API, never core or the database.
+- `packages/platform` is the wire contract, standard library only. Change it together with `docs/API.md` and the Flutter models.
 - Success envelopes are `{data}` or `{items,total}`; errors are `{error,code,field?,requestId?}`; JSON is camelCase.
-- Never edit an applied migration; add a new numbered file in `internal/database/migrations/`.
+- Never edit an applied migration; add a new numbered file in `packages/database/migrations/`.
 - Log messages are dotted keys (`area.thing.outcome`) with details as attributes.
 - Short names; the package carries context (`group.Service.Create`). No `From`/`Of` in function names.
 

@@ -1,68 +1,75 @@
-.PHONY: help setup dev api web check test test-integration lint fmt build docker web-build lambda
+.PHONY: help setup dev api web check test test-integration lint fmt build docker web-build apk lambda
 
 .DEFAULT_GOAL := help
 TEST_DATABASE_URL ?= postgres://splitspends:splitspends@localhost:5432/splitspends_test?sslmode=disable
+DART_MEMBERS := packages/ledger packages/client apps/android apps/ios apps/web
 
 help:
 	@echo "Targets:"
-	@echo "  setup             Copy env files, start Postgres, fetch Go and Flutter deps"
-	@echo "  dev               Run the API (:8080) and the Flutter web app (:5173)"
-	@echo "  api               Run only the API"
-	@echo "  web               Run only the Flutter web app against the local API"
-	@echo "  check             Format check, vet, unit tests, boundaries, flutter analyze and test"
+	@echo "  setup             Copy env files, start Postgres, fetch Go and Dart dependencies"
+	@echo "  dev               Run the API (:8080) and the web app (:5173)"
+	@echo "  api               Run only the API (apps/api)"
+	@echo "  web               Run only the web app (apps/web) against the local API"
+	@echo "  check             Format check, vet, unit tests, boundaries, analyze, Dart tests"
 	@echo "  test-integration  Database tests (needs TEST_DATABASE_URL)"
-	@echo "  build             Build server and MCP binaries into bin/"
+	@echo "  build             Build the API and MCP binaries into bin/"
+	@echo "  web-build         Build the web app into apps/web/build/web"
+	@echo "  apk               Build the Android app into apps/android/build"
 	@echo "  docker            Build the production image"
-	@echo "  web-build         Build the Flutter web app into app/build/web"
 	@echo "  lambda            Build the arm64 Lambda bundle for deploy/aws"
 
 setup:
-	cp -n backend/.env.example backend/.env 2>/dev/null || true
+	cp -n apps/api/.env.example apps/api/.env 2>/dev/null || true
 	docker compose up -d --wait
 	docker compose exec -T postgres psql -U splitspends -tc "SELECT 1 FROM pg_database WHERE datname='splitspends_test'" | grep -q 1 \
 		|| docker compose exec -T postgres createdb -U splitspends splitspends_test
-	cd backend && go mod download
-	cd app && flutter pub get
+	go mod download
+	flutter pub get
 
 api:
-	cd backend && set -a && . ./.env && set +a && go run ./cmd/server
+	set -a && . apps/api/.env && set +a && go run ./apps/api
 
 web:
-	cd app && flutter run -d web-server --web-port 5173 --dart-define=SPLITSPENDS_URL=http://localhost:8080
+	cd apps/web && flutter run -d web-server --web-port 5173 --dart-define=SPLITSPENDS_URL=http://localhost:8080
 
 dev:
 	$(MAKE) -j2 api web
 
 fmt:
-	cd backend && gofmt -w .
-	cd app && dart format .
+	gofmt -w apps packages
+	dart format $(DART_MEMBERS)
 
 lint:
-	@test -z "$$(cd backend && gofmt -l .)" || (echo "gofmt needed:"; cd backend && gofmt -l .; exit 1)
-	cd backend && go vet ./...
-	cd app && dart format --output=none --set-exit-if-changed . && flutter analyze
+	@test -z "$$(gofmt -l apps packages)" || (echo "gofmt needed:"; gofmt -l apps packages; exit 1)
+	go vet ./...
+	dart format --output=none --set-exit-if-changed $(DART_MEMBERS)
+	for d in $(DART_MEMBERS); do (cd $$d && flutter analyze) || exit 1; done
 
 test:
-	cd backend && go test -count=1 ./...
-	cd app && flutter test
+	go test -count=1 ./...
+	cd packages/ledger && dart test
+	cd packages/client && flutter test
 
 test-integration:
-	cd backend && TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -count=1 ./internal/bootstrap/...
+	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -count=1 ./packages/bootstrap/...
 
 check: lint test
 
 build:
-	cd backend && CGO_ENABLED=0 go build -trimpath -o ../bin/splitspends ./cmd/server
-	cd backend && CGO_ENABLED=0 go build -trimpath -o ../bin/splitspends-mcp ./cmd/mcp
+	CGO_ENABLED=0 go build -trimpath -o bin/splitspends ./apps/api
+	CGO_ENABLED=0 go build -trimpath -o bin/splitspends-mcp ./apps/mcp
+
+web-build:
+	cd apps/web && flutter build web --release --no-web-resources-cdn
+
+apk:
+	cd apps/android && flutter build apk --release
 
 docker:
 	docker build -t splitspends:latest .
 
-web-build:
-	cd app && flutter build web --release --no-web-resources-cdn
-
 lambda:
 	mkdir -p deploy/aws/build/lambda
-	cd backend && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ../deploy/aws/build/lambda/splitspends ./cmd/server
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o deploy/aws/build/lambda/splitspends ./apps/api
 	printf '#!/bin/sh\nexec ./splitspends\n' > deploy/aws/build/lambda/run.sh
 	chmod +x deploy/aws/build/lambda/run.sh

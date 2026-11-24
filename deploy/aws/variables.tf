@@ -67,7 +67,7 @@ variable "lambda_dir" {
 variable "web_dir" {
   description = "Directory with the Flutter web build (make web-build)."
   type        = string
-  default     = "../../app/build/web"
+  default     = "../../apps/web/build/web"
 }
 
 variable "lambda_web_adapter_layer" {

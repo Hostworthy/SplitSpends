@@ -1,8 +1,10 @@
 .git
 **/.dart_tool
 **/build
-app/ios/Pods
-app/android/.gradle
-backend/data
+apps/ios/ios/Pods
+apps/android/android/.gradle
+apps/api/data
 deploy/.env
+deploy/aws/.terraform
+deploy/gcp/.terraform
 *.log

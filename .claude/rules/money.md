@@ -1,7 +1,8 @@
 ---
 paths:
-  - "backend/**/*.go"
-  - "app/lib/**/*.dart"
+  - "apps/**/*.go"
+  - "packages/**/*.go"
+  - "packages/**/*.dart"
 ---
 # Money
 
