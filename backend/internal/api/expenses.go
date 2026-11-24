@@ -355,6 +355,9 @@ func (a *API) listActivity(w http.ResponseWriter, r *http.Request) error {
 	if f.GroupID, err = queryID(r, "groupId"); err != nil {
 		return err
 	}
+	if f.ExpenseID, err = queryID(r, "expenseId"); err != nil {
+		return err
+	}
 	items, total, err := a.svc.Activity.List(r.Context(), f)
 	if err != nil {
 		return err

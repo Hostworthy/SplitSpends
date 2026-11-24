@@ -27,13 +27,13 @@ func (r *Activities) Create(ctx context.Context, a *activity.Activity) error {
 }
 
 func (r *Activities) List(ctx context.Context, f activity.Filter) ([]*activity.Activity, int, error) {
-	cond := `$1 = ANY(involved) AND ($2::uuid IS NULL OR group_id = $2)`
+	cond := `$1 = ANY(involved) AND ($2::uuid IS NULL OR group_id = $2) AND ($3::uuid IS NULL OR expense_id = $3)`
 	var total int
-	if err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM activities WHERE `+cond, f.UserID, f.GroupID).Scan(&total); err != nil {
+	if err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM activities WHERE `+cond, f.UserID, f.GroupID, f.ExpenseID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	rows, err := r.db.Q(ctx).Query(ctx, `SELECT id, actor_id, group_id, expense_id, created_at, kind, involved, data FROM activities
-		WHERE `+cond+` ORDER BY created_at DESC LIMIT $3 OFFSET $4`, f.UserID, f.GroupID, f.Limit, f.Offset)
+		WHERE `+cond+` ORDER BY created_at DESC LIMIT $4 OFFSET $5`, f.UserID, f.GroupID, f.ExpenseID, f.Limit, f.Offset)
 	if err != nil {
 		return nil, 0, err
 	}

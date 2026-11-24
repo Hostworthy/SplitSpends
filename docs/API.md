@@ -159,7 +159,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| GET | `/activity` | `?groupId=` | List of `Activity`, newest first |
+| GET | `/activity` | `?groupId=&expenseId=` | List of `Activity`, newest first |
 | GET | `/stats` | `?groupId=&from=&to=&currency=` | `{ data: { currency, totalSpent, byCategory: [{ category, amount }], byMonth: [{ month: "2026-11", amount }], byMember: [{ userId, paid, owed }] } }`. `totalSpent` is your share (or the group total when `groupId` is set) |
 
 ### Receipts and AI

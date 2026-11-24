@@ -43,8 +43,9 @@ type Activity struct {
 // Filter narrows a feed query.
 type Filter struct {
 	UserID  uuid.UUID
-	GroupID *uuid.UUID
-	Limit   int
+	GroupID   *uuid.UUID
+	ExpenseID *uuid.UUID
+	Limit     int
 	Offset  int
 }
 
