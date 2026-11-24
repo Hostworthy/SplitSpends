@@ -115,10 +115,12 @@ jobs:
       - name: Build and package
         env:
           TAG: ${{ needs.version.outputs.tag }}
+          BUILD_NAME: ${{ needs.version.outputs.build_name }}
+          BUILD_NUMBER: ${{ github.run_number }}
         working-directory: apps/web
         run: |
           flutter build web --release --no-web-resources-cdn \
-            --build-name=${{ needs.version.outputs.build_name }} --build-number=${{ github.run_number }}
+            --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER"
           mkdir -p ../../dist
           tar -C build -czf "../../dist/splitspends-web-${TAG}.tar.gz" web
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -149,6 +151,8 @@ jobs:
         # written and removed within this step so no later step can read it.
         env:
           TAG: ${{ needs.version.outputs.tag }}
+          BUILD_NAME: ${{ needs.version.outputs.build_name }}
+          BUILD_NUMBER: ${{ github.run_number }}
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -164,7 +168,7 @@ jobs:
             echo "No signing secrets: using the debug key."
           fi
           flutter build apk --release \
-            --build-name=${{ needs.version.outputs.build_name }} --build-number=${{ github.run_number }}
+            --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER"
           mkdir -p ../../dist
           cp build/app/outputs/flutter-apk/app-release.apk "../../dist/splitspends-android-${TAG}.apk"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -190,10 +194,12 @@ jobs:
         # the project has an Apple Developer account in CI.
         env:
           TAG: ${{ needs.version.outputs.tag }}
+          BUILD_NAME: ${{ needs.version.outputs.build_name }}
+          BUILD_NUMBER: ${{ github.run_number }}
         working-directory: apps/ios
         run: |
           flutter build ios --release --no-codesign \
-            --build-name=${{ needs.version.outputs.build_name }} --build-number=${{ github.run_number }}
+            --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER"
           mkdir -p Payload ../../dist
           cp -R build/ios/iphoneos/Runner.app Payload/
           zip -qr "../../dist/splitspends-ios-${TAG}-unsigned.ipa" Payload
