@@ -169,7 +169,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | POST | `/receipts` | `multipart/form-data` field `file` (jpeg, png, webp, heic; max 10 MB) | 201 `{ data: { id, contentType, size, createdAt } }` |
 | GET | `/receipts/{receiptId}` | | the image bytes |
 | POST | `/receipts/{receiptId}/scan` | `{ currency? }` | `{ data: ReceiptScan }`; 503 `AI_DISABLED` when the host did not configure AI |
-| POST | `/ai/expense-draft` | `{ text, groupId? }` | `{ data: ExpenseDraft }` turns "dinner 60 paid by me split with Sam" into a draft |
+| POST | `/ai/expense-draft` | `{ text?, groupId?, receiptId? }` | `{ data: ExpenseDraft }`; 503 `AI_DISABLED` when the host did not configure AI |
 
 ```jsonc
 // ReceiptScan
@@ -178,11 +178,17 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
   "subtotal": 4000, "tax": 320, "tip": 400, "total": 4720, "category": "food.dining" }
 
 // ExpenseDraft: a ready-to-review POST /expenses body (never saved automatically)
-{ "groupId": "uuid" | null, "description": "Dinner", "currency": "EUR", "total": 6000,
-  "date": "2026-11-24", "category": "food.dining", "splitMethod": "equal",
-  "payers": [{ "userId": "uuid", "amount": 6000 }], "splits": [{ "userId": "uuid" }],
-  "warnings": ["Could not match “Sam” to a friend"] }
+{ "groupId": "uuid" | null, "receiptId": "uuid" | null, "description": "Dinner", "currency": "EUR",
+  "total": 5000, "date": "2026-11-24", "category": "food.dining",
+  "splitMethod": "equal" | "itemized",
+  "payers": [{ "userId": "uuid", "amount": 5000 }],
+  "splits": [{ "userId": "uuid" }],                                    // equal drafts
+  "items": [{ "name": "Pasta", "amount": 2000, "userIds": ["uuid"] }],  // itemized drafts
+  "tax": 400, "tip": 0,
+  "warnings": ["Could not match “Sam” to anyone you know."] }
 ```
+
+**How drafts work.** SplitSpends runs no model itself. The server sends the user's instructions (for example "Ben had the pasta, split the rest with everyone in Lisbon trip"), the receipt photo when `receiptId` is given, and a system prompt to the provider the host configured (see [ENVIRONMENT.md](ENVIRONMENT.md#ai-optional)). The system prompt lists today's date, the user's people and groups with their ids, group members and currencies, the categories, and the rules for filling the answer; the provider must answer in a fixed JSON schema. The server then checks the answer: ids the user cannot use are dropped (with a warning), people outside the chosen group are left out, item totals are reconciled with the receipt total, and the result is a valid expense body. A draft becomes an expense only when the user saves it. `POST /receipts/{receiptId}/scan` remains for clients that only want the raw receipt lines.
 
 ### Offline Clients and Import
 

@@ -1,0 +1,16 @@
+# Dart workspace: one dependency resolution for every Dart package and app.
+name: splitspends_workspace
+publish_to: none
+
+environment:
+  sdk: ^3.14.0
+
+workspace:
+  - packages/ledger
+  - packages/client
+  - apps/android
+  - apps/ios
+  - apps/web
+
+dev_dependencies:
+  flutter_lints: ^6.0.0

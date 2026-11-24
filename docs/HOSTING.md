@@ -26,7 +26,7 @@ SplitSpends is self-hosted: there is no central SplitSpends service. You (or a f
 
 | Option | Monthly cost | Effort | Good for |
 | ------ | ------------ | ------ | -------- |
-| [Home lab with Docker](#home-lab-with-docker) | Free (your hardware) | Low | You already run a home server or a NAS |
+| [Homelab with Docker](#homelab-with-docker) | Free (your hardware) | Low | You already run a home server or a NAS |
 | [Any VPS with Docker](#any-vps-with-docker) | About 4 to 6 USD | Low | Simple, always on, full control |
 | [Render (one click)](#render-one-click) | Free, sleeps when idle | Lowest | Trying it out |
 | [Google Cloud Run](#google-cloud-run) | Free tier, plus database | Medium | Low traffic, scales to zero |
@@ -36,7 +36,7 @@ Free PostgreSQL databases that work with every option: [Neon](https://neon.tech)
 
 Every option needs an email account that can send mail over SMTP (for example Gmail with an app password). See [ENVIRONMENT.md](ENVIRONMENT.md#email).
 
-### Home Lab with Docker
+### Homelab with Docker
 
 Requires Docker, a domain name pointing at your home IP, and ports 80 and 443 forwarded to the machine.
 
@@ -52,7 +52,7 @@ LAN or VPN only (no public domain): skip Caddy and use `deploy/docker-compose.ym
 
 ### Any VPS with Docker
 
-The same as the home lab, on a small Linux VPS from any provider (1 vCPU and 1 GB RAM is plenty). Point your domain at the VPS and follow the home-lab steps.
+The same as the homelab, on a small Linux VPS from any provider (1 vCPU and 1 GB RAM is plenty). Point your domain at the VPS and follow the homelab steps.
 
 ### Render (One Click)
 
@@ -79,7 +79,3 @@ Terraform in [`deploy/aws`](../deploy/aws/README.md): Lambda (arm64) running the
 - If you enable AI, receipt images and expense text are sent to that provider. Choose one you trust, or run a local model through an OpenAI-compatible server.
 - The web app bundles its engine and Latin font, so it makes no third-party requests, with one exception: the first time emoji are shown (group icons), the browser downloads the Noto Color Emoji font from Google Fonts. Only the font file is fetched; no app data is sent.
 - Terraform state contains your secrets. Keep it in an encrypted, private backend.
-
-## Why Not Firebase or Firestore?
-
-SplitSpends keeps money in PostgreSQL, where balances are computed with exact integer arithmetic and transactions. Firestore would need a second, separate data layer and gives up those guarantees, so it is not supported. Firebase Hosting could serve the web app, but Cloud Run already does that for free. For a zero-cost setup, use local-only mode, Render, or Cloud Run with a Neon database.

@@ -1,6 +1,7 @@
 ---
 paths:
-  - "backend/**/*.go"
+  - "apps/**/*.go"
+  - "packages/**/*.go"
 ---
 # Structured Logging
 

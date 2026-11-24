@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SplitSpends talks to servers people host themselves. Plain HTTP is allowed
+     so a homelab on the local network (http://192.168.x.x:8080) works; the app
+     warns when a server address is not HTTPS. User-installed certificates are
+     trusted so homelabs with their own certificate authority work over HTTPS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

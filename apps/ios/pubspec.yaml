@@ -1,0 +1,17 @@
+name: splitspends_ios
+description: SplitSpends for iOS. A thin shell around packages/client.
+publish_to: none
+resolution: workspace
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.14.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  splitspends:
+    path: ../../packages/client
+
+flutter:
+  uses-material-design: true

@@ -1,6 +1,6 @@
 ---
 paths:
-  - "backend/internal/database/migrations/**"
+  - "packages/database/migrations/**"
 ---
 # Migrations
 

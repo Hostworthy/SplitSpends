@@ -1,70 +1,65 @@
-# SplitSpends
-
-Self-hosted expense splitting for friends, flatmates and trips. Everything you would use Splitwise for, with no paid tier, no ads and no limits, on your own server. Free for personal and other noncommercial use (see [License](#license)).
-
-- **Every split**: equal, exact amounts, percentages, shares, adjustments, and itemized bills with tax and tip.
-- **Groups and friends**: trips, homes, couples; non-group expenses; multiple payers; per-currency balances.
-- **Settle up**: simplified debts, recorded payments, friend and group balances that always add up.
-- **Everything else**: comments, activity feed, email notifications, recurring expenses, search, charts, CSV export, undo delete.
-- **Passwordless login** with one-time codes sent from any SMTP provider (Gmail, Microsoft 365, SES, Postmark...).
-- **AI, if you want it**: snap a receipt and split it item by item, or type "dinner 60 paid by me split with Sam". Works with Claude or any OpenAI-compatible server, including local models. Off by default.
-- **MCP server** so assistants like Claude can check balances and add expenses for you.
-- **No account needed**: use it entirely on your phone or in your browser. Connect a server only when you want sync, sharing and emails.
-- **One app** for iOS, Android and the web (Flutter), backed by a small Go server and PostgreSQL.
-
-## Screenshots
+<h1 align="center">SplitSpends</h1>
 
 <p align="center">
-  <img src="docs/images/phone-home.png" alt="Home: total balance, groups and recent activity" width="240">
-  <img src="docs/images/phone-group-expenses.png" alt="Group expenses by month" width="240">
-  <img src="docs/images/phone-group-balances.png" alt="Simplified settle-up plan and member balances" width="240">
+  <strong>Split bills with friends, flatmates and trips. Self-hosted, private, and every feature included.</strong>
 </p>
-<p align="center">
-  <img src="docs/images/phone-expense-editor.png" alt="Expense editor with a shares split" width="240">
-  <img src="docs/images/phone-expense-detail.png" alt="Itemized dinner with tax and tip" width="240">
-  <img src="docs/images/phone-group-stats.png" alt="Spending by category" width="240">
-</p>
-
-On a desktop browser the same app switches to a side rail with list and detail side by side:
 
 <p align="center">
-  <img src="docs/images/desktop-group-expenses.png" alt="Desktop layout with groups list and group detail" width="860">
+  <a href="https://github.com/Hostworthy/SplitSpends/actions/workflows/ci.yml"><img src="https://github.com/Hostworthy/SplitSpends/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-0F7B6C" alt="License: PolyForm Noncommercial"></a>
+  <img src="https://img.shields.io/badge/platforms-Android%20%7C%20iOS%20%7C%20Web-0F7B6C" alt="Platforms: Android, iOS, Web">
 </p>
-
-And it starts with an honest choice, no account required:
 
 <p align="center">
-  <img src="docs/images/desktop-welcome.png" alt="Welcome screen: use on this device or connect to a server" width="860">
+  <img src="docs/images/hero.webp" alt="SplitSpends on desktop and phone: a trip's expenses and its simplified settle-up plan" width="900">
 </p>
 
-## Hosting
+SplitSpends keeps track of who paid what and who owes whom, so shared costs never get awkward. It covers everything people use Splitwise for (groups, every kind of split, receipts, settling up) without a paid tier, ads or daily limits. Use it on your own, or run your own server so everyone in the group sees the same numbers.
 
-Home lab, any VPS, Render (one click), Google Cloud Run or AWS Lambda, including free options: see [docs/HOSTING.md](docs/HOSTING.md).
+## How It Works
 
-## Quick Start (Docker)
+1. **Start right away, no account.** Open the app on your phone or in a browser and choose *Use on this device*. Groups, expenses and balances stay on that device.
+2. **Add expenses the way they really happened.** Split equally, by exact amounts, percentages, shares or adjustments, or item by item from a receipt with tax and tip. Several people can pay for one bill.
+3. **Settle up with fewer payments.** SplitSpends works out who owes whom, simplifies the debts in a group to the fewest transfers, and records payments when people pay each other back.
+4. **Connect a server when you want to share.** Point the app at a SplitSpends server that you or a friend hosts, sign in with a code sent to your email (no password), and your on-device data uploads in one step. From then on your friends see the same groups, get email notifications, and you can use it on all your devices.
+
+## Features
+
+- **Every split**: equal, exact, percent, shares, adjustment and itemized; multiple payers; recurring expenses.
+- **Groups and friends**: trips, homes and couples, expenses outside groups, people added by name or email, balances per currency.
+- **Clear money**: amounts are stored as exact integers, so balances always add up to the cent.
+- **Everything else**: comments, activity feed, email notifications, search, charts, CSV export, undo delete, backup and restore, dark mode.
+- **Works offline**: on-device mode needs no network; connected mode queues changes and syncs when you are back online.
+- **Optional AI**: snap a receipt to split it line by line, or type "dinner 60 paid by me split with Sam". Works with Claude or any OpenAI-compatible server, including local models.
+- **AI assistants**: a built-in MCP server lets assistants such as Claude check balances and add expenses for you.
+- **Small and portable**: one Go binary and PostgreSQL. Runs on a home server, a VPS, Render, Google Cloud Run or AWS Lambda.
+
+## Get Started
+
+**Just using it?** Open the app and choose *Use on this device*. You can connect to a server later.
+
+**Hosting a server for your group?** With Docker:
 
 ```bash
+git clone https://github.com/Hostworthy/SplitSpends && cd SplitSpends
 cp deploy/.env.example deploy/.env    # set SECRET_KEY, BASE_URL, POSTGRES_PASSWORD and SMTP
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-Open `http://localhost:8080`, sign in with your email, and you are the first user. In the default `invite` mode, people join when you add them to a group or as a friend. Put a TLS reverse proxy (Caddy, Traefik, nginx) in front for public use and set `TRUST_PROXY=true`.
+Open `http://localhost:8080` and sign in with your email: the first account belongs to you, and others join when you add them. For HTTPS, a homelab setup with automatic certificates, free cloud options and a security checklist, see the [hosting guide](docs/HOSTING.md). Every setting is in [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
 
-All settings: [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
+**Mobile apps:** [`apps/android`](apps/android) and [`apps/ios`](apps/ios) build the phone apps from the same code as the web app ([`packages/client`](packages/client/README.md)); `make apk` builds the Android app.
 
-## Mobile Apps
-
-The Flutter app in [`app/`](app/README.md) builds for iOS and Android. On first launch it asks for your server URL.
-
-## For Developers
+## Documentation
 
 | Need | Read |
-| ---- | ---- |
-| Local setup and layout | [docs/DEV.md](docs/DEV.md) |
-| HTTP API contract | [docs/API.md](docs/API.md) |
-| MCP server | [docs/MCP.md](docs/MCP.md) |
-| Splitwise study and feature parity | [docs/FEATURES.md](docs/FEATURES.md) |
-| Hosting options and security checklist | [docs/HOSTING.md](docs/HOSTING.md) |
+| --- | --- |
+| Hosting options, costs and security | [docs/HOSTING.md](docs/HOSTING.md) |
+| Settings | [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) |
+| MCP server for AI assistants | [docs/MCP.md](docs/MCP.md) |
+| HTTP API | [docs/API.md](docs/API.md) |
+| Feature comparison with Splitwise | [docs/FEATURES.md](docs/FEATURES.md) |
+| Development setup and code layout | [docs/DEV.md](docs/DEV.md) |
 | Architecture decisions | [docs/adr/README.md](docs/adr/README.md) |
 
 ## License
@@ -74,6 +69,4 @@ SplitSpends is source-available under the [PolyForm Noncommercial License 1.0.0]
 - **Free for noncommercial use.** Use it, self-host it, change it and share it for personal, family, hobby, study and research use. Charities, schools, public research bodies and government institutions may use it too.
 - **Commercial use needs permission.** Examples: running it as a paid or ad-supported service, bundling it into a commercial product, or using it inside a business. Ask for a commercial license by opening an issue at <https://github.com/Hostworthy/SplitSpends/issues>.
 
-When you share copies or changed versions, include the license and the `Required Notice` line at the top of [LICENSE](LICENSE). Third-party components keep their own licenses (for example the bundled Inter font, under the SIL Open Font License in `app/assets/fonts/`).
-
-Contributions are accepted under the same license.
+When you share copies or changed versions, include the license and the `Required Notice` line at the top of [LICENSE](LICENSE). Third-party components keep their own licenses (for example the bundled Inter font, under the SIL Open Font License in `packages/client/assets/fonts/`). Contributions are accepted under the same license.

@@ -1,5 +1,5 @@
 {
- "description": "Shared test vectors for split and balance rules. Go (backend/internal/core) and Dart (app) tests both run these. Amounts are minor units. Debts are sorted by currency, then amount descending, then from, then to.",
+ "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. Debts are sorted by currency, then amount descending, then from, then to.",
  "splits": [
   {
    "name": "equal three ways",

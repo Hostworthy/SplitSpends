@@ -10,27 +10,27 @@ SplitSpends has real business rules (split methods, rounding, debt simplificatio
 
 ## Decision
 
-Dependencies point inward. `internal/core` is the centre and imports no infrastructure.
+Dependencies point inward. `packages/core` is the centre and imports no infrastructure.
 
 ```mermaid
 flowchart TB
   subgraph transports [Transports]
-    API[internal/api]
-    MCP[internal/mcp]
-    Jobs[cmd/server jobs]
+    API[apps/api/routes]
+    MCP[packages/mcp]
+    Jobs[apps/api jobs]
   end
   subgraph composition [Composition]
-    Boot[internal/bootstrap]
-    Plat[internal/platform]
+    Boot[packages/bootstrap]
+    Plat[packages/platform]
   end
   subgraph domain [Domain]
-    Core[internal/core]
+    Core[packages/core]
   end
   subgraph adapters [Adapters]
-    DB[internal/database]
-    Mail[internal/notifications]
-    Store[internal/storage]
-    AI[internal/ai]
+    DB[packages/database]
+    Mail[packages/notifications]
+    Store[packages/storage]
+    AI[packages/ai]
   end
   API --> Boot
   API --> Plat
@@ -68,14 +68,18 @@ flowchart TB
 - `Service` with use cases. Services return typed `errs.Error` values with human-readable messages; transports map kinds to status codes.
 - Pure helpers (split math, debt simplification) are plain functions with table tests.
 
+### Repository Layout
+
+`apps/` holds only runnable apps: `api` (Go HTTP server), `mcp` (Go stdio MCP host), and the `android`, `ios` and `web` Flutter shells. Everything they are built from lives in `packages/`: the Go packages above, `packages/ledger` (the Dart twin of `packages/core`) and `packages/client` (the shared Flutter UI). Packages never import apps. The repository root is one Go module and one Dart workspace.
+
 ### Rules
 
 - Core never imports `internal/*` outside core, `net/http`, database drivers or vendor SDKs.
 - Repositories hold no business rules.
-- `internal/platform` is the wire contract and depends only on the standard library.
-- Wiring happens only in `internal/bootstrap`.
+- `packages/platform` is the wire contract and depends only on the standard library.
+- Wiring happens only in `packages/bootstrap`.
 - The MCP server goes through the HTTP API (ADR-004).
-- `internal/archtest` enforces these rules in `go test`.
+- `packages/archtest` enforces these rules in `go test`.
 
 ### Naming and Logging
 

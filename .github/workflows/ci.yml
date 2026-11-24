@@ -9,7 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  backend:
+  go:
+    name: backend
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -22,27 +23,22 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U splitspends"
           --health-interval 5s --health-retries 10
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: backend/go.mod
+          go-version-file: go.mod
       - name: Format
-        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+        run: test -z "$(gofmt -l apps packages)" || (gofmt -l apps packages && exit 1)
       - run: go vet ./...
       - name: Unit, boundary and integration tests
         env:
           TEST_DATABASE_URL: postgres://splitspends:splitspends@localhost:5432/splitspends_test?sslmode=disable
         run: go test -count=1 ./...
 
-  app:
+  dart:
+    name: app
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: app
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -50,7 +46,12 @@ jobs:
           flutter-version: 3.50.1
           channel: stable
       - run: flutter pub get
-      - run: dart format --output=none --set-exit-if-changed .
-      - run: flutter analyze
+      - run: dart format --output=none --set-exit-if-changed packages/ledger packages/client apps/android apps/ios apps/web
+      - name: Analyze
+        run: for d in packages/ledger packages/client apps/android apps/ios apps/web; do (cd $d && flutter analyze) || exit 1; done
+      - run: dart test
+        working-directory: packages/ledger
       - run: flutter test
+        working-directory: packages/client
       - run: flutter build web --release --no-web-resources-cdn
+        working-directory: apps/web

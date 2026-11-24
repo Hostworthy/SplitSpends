@@ -1,0 +1,188 @@
+package bootstrap
+
+import (
+	"context"
+	"log/slog"
+	"time"
+
+	"github.com/Hostworthy/SplitSpends/packages/ai"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/assist"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/balance"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/friend"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/stats"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/transfer"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
+	"github.com/Hostworthy/SplitSpends/packages/core/ports"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/clock"
+	"github.com/Hostworthy/SplitSpends/packages/database"
+	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
+	"github.com/Hostworthy/SplitSpends/packages/notifications"
+	"github.com/Hostworthy/SplitSpends/packages/storage"
+)
+
+// Services are the core use cases the transports call.
+type Services struct {
+	Auth     *auth.Service
+	Users    *user.Service
+	Friends  *friend.Service
+	Groups   *group.Service
+	Expenses *expense.Service
+	Balances *balance.Service
+	Activity *activity.Service
+	Receipts *receipt.Service
+	Assist   *assist.Service
+	Stats    *stats.Service
+	Transfer *transfer.Service
+}
+
+// Runtime is a fully wired application.
+type Runtime struct {
+	Config   *Config
+	Log      *slog.Logger
+	Services *Services
+	db       *database.DB
+	notifier *notifications.Notifier
+}
+
+// Load connects, migrates and wires every service.
+func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) {
+	pool, err := database.Connect(ctx, cfg.DatabaseURL, cfg.DatabaseConns)
+	if err != nil {
+		return nil, err
+	}
+	if err := database.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	log.Info("bootstrap.database.migrated")
+	db := &database.DB{Pool: pool}
+
+	notifier, err := notifications.New(notifications.Config{
+		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword,
+		From: cfg.SMTPFrom, Security: cfg.SMTPSecurity, AppName: cfg.AppName, BaseURL: cfg.BaseURL, Sync: cfg.Serverless,
+	}, log)
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+	var blobs ports.BlobStore
+	switch cfg.BlobStore {
+	case "s3":
+		blobs, err = storage.NewS3(storage.S3Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, Endpoint: cfg.S3Endpoint,
+			AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey, Prefix: cfg.S3Prefix})
+	case "postgres":
+		blobs = repositories.NewBlobs(db)
+	default:
+		blobs, err = storage.NewLocal(cfg.DataDir)
+	}
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+	log.Info("bootstrap.storage.ready", "store", cfg.BlobStore)
+
+	var reader ports.ReceiptReader
+	switch cfg.AIProvider {
+	case "anthropic":
+		reader = ai.NewAnthropic(cfg.AIAPIKey, cfg.AIBaseURL, cfg.AIModel, cfg.AIEffort)
+	case "openai":
+		reader = ai.NewOpenAICompatible(cfg.AIBaseURL, cfg.AIAPIKey, cfg.AIModel)
+	}
+	if reader != nil {
+		log.Info("bootstrap.ai.enabled", "provider", cfg.AIProvider)
+	}
+
+	return &Runtime{Config: cfg, Log: log, db: db, notifier: notifier,
+		Services: Wire(db, notifier, blobs, reader, clock.System{}, cfg)}, nil
+}
+
+// Wire builds services from adapters. Tests call it with fakes.
+func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reader ports.ReceiptReader, c clock.Clock, cfg *Config) *Services {
+	tx := database.NewTx(db)
+	userRepo := repositories.NewUsers(db)
+	groupRepo := repositories.NewGroups(db)
+	friendRepo := repositories.NewFriends(db)
+	expenseRepo := repositories.NewExpenses(db)
+	receiptRepo := repositories.NewReceipts(db)
+
+	policy := auth.DefaultPolicy()
+	policy.Secret, policy.Mode, policy.AllowedDomains = cfg.Secret, cfg.SignupMode, cfg.AllowedDomains
+	if cfg.SessionTTL > 0 {
+		policy.SessionTTL = cfg.SessionTTL
+	}
+
+	users := user.NewService(userRepo, notifier, c)
+	act := activity.NewService(repositories.NewActivities(db), c)
+	balances := balance.NewService(expenseRepo)
+	groups := group.NewService(groupRepo, users, balances, act, notifier, tx, c, cfg.BaseURL)
+	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
+	receipts := receipt.NewService(receiptRepo, blobs, reader, c)
+	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
+		Connections: friends, Receipts: receiptRepo, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+	return &Services{
+		Auth:     auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, notifier, tx, c),
+		Users:    users,
+		Friends:  friends,
+		Groups:   groups,
+		Balances: balances,
+		Activity: act,
+		Expenses: expenses,
+		Transfer: transfer.NewService(users, friendRepo, groups, expenses, tx),
+		Receipts: receipts,
+		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, c),
+		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users),
+	}
+}
+
+// RunJobsOnce creates due recurring expenses and removes expired
+// credentials. Serverless hosts call it from a scheduler via /internal/jobs.
+func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
+	for pass := 0; pass < 50; pass++ {
+		n, err := rt.Services.Expenses.RunRecurring(ctx)
+		if err != nil {
+			rt.Log.Error("jobs.recurring.failed", "error", err)
+			return err
+		}
+		if n > 0 {
+			rt.Log.Info("jobs.recurring.created", "count", n)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	if err := rt.Services.Auth.Cleanup(ctx); err != nil {
+		rt.Log.Error("jobs.cleanup.failed", "error", err)
+		return err
+	}
+	return nil
+}
+
+// RunJobs runs RunJobsOnce every 15 minutes until ctx ends.
+func (rt *Runtime) RunJobs(ctx context.Context) {
+	tick := func() { _ = rt.RunJobsOnce(ctx) }
+	tick()
+	t := time.NewTicker(15 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			tick()
+		}
+	}
+}
+
+// Ping checks database connectivity.
+func (rt *Runtime) Ping(ctx context.Context) error { return rt.db.Pool.Ping(ctx) }
+
+// Close releases resources.
+func (rt *Runtime) Close() {
+	rt.notifier.Close()
+	rt.db.Pool.Close()
+}

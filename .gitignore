@@ -2,8 +2,25 @@ bin/
 *.log
 .env
 !*.env.example
-backend/data/
+apps/api/data/
 .DS_Store
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Dart and Flutter
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+build/
+coverage/
+*.iml
+*.ipr
+*.iws
+**/doc/api/
+**/ios/Flutter/.last_build_id
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+.widget_preview/
+**/android/.kotlin/

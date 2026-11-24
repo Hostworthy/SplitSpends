@@ -1,0 +1,109 @@
+import 'package:test/test.dart';
+
+import 'package:splitspends_ledger/ledger.dart';
+
+void main() {
+  test('allocate keeps input order on ties and sums exactly', () {
+    expect(even(100, 3), [34, 33, 33]);
+    expect(even(-100, 3), [-34, -33, -33]);
+    expect(
+      allocate(1000, [
+        Rational.integer(1),
+        Rational.integer(2),
+        Rational.integer(2),
+      ]),
+      [200, 400, 400],
+    );
+    final parts = allocate(98765, [
+      Rational.tryParseDecimal('33.33')!,
+      Rational.tryParseDecimal('33.33')!,
+      Rational.tryParseDecimal('33.34')!,
+    ]);
+    expect(parts.reduce((a, b) => a + b), 98765);
+    expect(() => allocate(1, [Rational.zero]), throwsA(isA<NoWeightsError>()));
+  });
+
+  test('decimal parsing is exact and strict', () {
+    expect(
+      Rational.tryParseDecimal('0.1')! + Rational.tryParseDecimal('0.2')!,
+      Rational.tryParseDecimal('0.3'),
+    );
+    expect(Rational.tryParseDecimal('1/2'), isNull);
+    expect(Rational.tryParseDecimal('1e3'), isNull);
+    expect(Rational.tryParseDecimal(''), isNull);
+    expect(Rational.tryParseDecimal('.5'), Rational(BigInt.one, BigInt.two));
+  });
+
+  test('normalize validates like the server', () {
+    ExpenseRequest req({
+      String desc = 'Taxi',
+      int total = 100,
+      String value = '1.23456',
+    }) => ExpenseRequest(
+      description: desc,
+      currency: 'usd',
+      total: total,
+      method: 'shares',
+      payers: const [PayerInput('a', 100)],
+      splits: [SplitValueInput('a', value)],
+    );
+    expect(
+      () => normalize(req(desc: '  '), today: DateTime.utc(2026)),
+      throwsA(isA<LedgerError>().having((e) => e.field, 'f', 'description')),
+    );
+    expect(
+      () => normalize(req(), today: DateTime.utc(2026)),
+      throwsA(isA<LedgerError>().having((e) => e.field, 'f', 'splits')),
+    );
+    final n = normalize(req(value: '2'), today: DateTime.utc(2026, 3, 4));
+    expect(n.currency, 'USD');
+    expect(n.category, 'general');
+    expect(formatDay(n.date), '2026-03-04');
+    expect(n.shares.single.value, '2');
+  });
+
+  test('recurrence overflows months like Go AddDate', () {
+    expect(
+      formatDay(nextOccurrence('monthly', DateTime.utc(2026, 1, 31))!),
+      '2026-03-03',
+    );
+    expect(
+      formatDay(nextOccurrence('yearly', DateTime.utc(2028, 2, 29))!),
+      '2029-03-01',
+    );
+    expect(nextOccurrence('none', DateTime.utc(2026)), isNull);
+  });
+
+  test('sheet honours simplification per group plus non-group pairwise', () {
+    const g = LedgerGroup('g', 'Trip', simplified: true);
+    final sheet = sheetFor(
+      'a',
+      groups: [g],
+      groupEntries: {
+        'g': const [
+          LedgerEntry(
+            groupId: 'g',
+            currency: 'EUR',
+            shares: [
+              LedgerShare('a', 300, 100),
+              LedgerShare('b', 0, 100),
+              LedgerShare('c', 0, 100),
+            ],
+          ),
+        ],
+      },
+      nonGroup: const [
+        LedgerEntry(
+          currency: 'EUR',
+          shares: [LedgerShare('a', 0, 50), LedgerShare('b', 100, 50)],
+        ),
+      ],
+    );
+    expect(sheet.friends['b']!.total['EUR'], 50);
+    expect(sheet.friends['c']!.total['EUR'], 100);
+    final t = sheet.totals();
+    expect(t.net['EUR'], 150);
+    expect(t.owed['EUR'], 150);
+    expect(sheet.groups['g']!['EUR'], 200);
+  });
+}
