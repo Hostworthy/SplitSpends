@@ -1,0 +1,8 @@
+.git
+**/.dart_tool
+**/build
+app/ios/Pods
+app/android/.gradle
+backend/data
+deploy/.env
+*.log
