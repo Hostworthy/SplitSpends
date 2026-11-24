@@ -247,30 +247,71 @@ func TestRequireAuth(t *testing.T) {
 	}
 }
 
-func TestClientIPWithoutProxy(t *testing.T) {
-	for _, tc := range []struct{ remote, forwarded, real, want string }{
-		{"203.0.113.7:4321", "", "", "203.0.113.7"},
-		{"[2001:db8::1]:4321", "", "", "2001:db8::1"},
-		{"203.0.113.7", "", "", "203.0.113.7"},
-		{"203.0.113.7:4321", "198.51.100.1", "198.51.100.2", "203.0.113.7"},
+func TestClientIP(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		hops      int
+		remote    string
+		forwarded []string
+		real      string
+		want      string
+	}{
+		{"peer without a proxy", 0, "203.0.113.7:4321", nil, "", "203.0.113.7"},
+		{"IPv6 peer", 0, "[2001:db8::1]:4321", nil, "", "2001:db8::1"},
+		{"peer without a port", 0, "203.0.113.7", nil, "", "203.0.113.7"},
+		{"headers ignored without a proxy", 0, "10.0.0.1:4321", []string{"198.51.100.1"}, "198.51.100.2", "10.0.0.1"},
+		{"one hop takes the entry the proxy appended", 1, "10.0.0.1:4321", []string{"6.6.6.6, 203.0.113.9"}, "", "203.0.113.9"},
+		{"one hop with only the appended entry", 1, "10.0.0.1:4321", []string{"203.0.113.9"}, "", "203.0.113.9"},
+		{"one hop ignores X-Real-Ip", 1, "10.0.0.1:4321", nil, "6.6.6.6", "10.0.0.1"},
+		{"one hop with a spoofed X-Real-Ip", 1, "10.0.0.1:4321", []string{"203.0.113.9"}, "6.6.6.6", "203.0.113.9"},
+		{"two hops skip the inner proxy", 2, "127.0.0.1:4321", []string{"6.6.6.6, 203.0.113.9, 130.176.1.1"}, "", "203.0.113.9"},
+		{"header lines are joined in order", 2, "127.0.0.1:4321", []string{"6.6.6.6", "203.0.113.9, 130.176.1.1"}, "", "203.0.113.9"},
+		{"fewer entries than hops falls back to the peer", 2, "127.0.0.1:4321", []string{"203.0.113.9"}, "", "127.0.0.1"},
+		{"missing header falls back to the peer", 1, "10.0.0.1:4321", nil, "", "10.0.0.1"},
+		{"garbage falls back to the peer", 1, "10.0.0.1:4321", []string{"6.6.6.6, unknown"}, "", "10.0.0.1"},
+		{"entry with a port", 1, "10.0.0.1:4321", []string{"203.0.113.9:5555"}, "", "203.0.113.9"},
+		{"bracketed IPv6 entry", 1, "10.0.0.1:4321", []string{"[2001:db8::9]"}, "", "2001:db8::9"},
+		{"bracketed IPv6 entry with a port", 1, "10.0.0.1:4321", []string{"[2001:db8::9]:5555"}, "", "2001:db8::9"},
+		{"IPv4-mapped entry", 1, "10.0.0.1:4321", []string{"::ffff:203.0.113.9"}, "", "203.0.113.9"},
 	} {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.RemoteAddr = tc.remote
-		if tc.forwarded != "" {
-			req.Header.Set("X-Forwarded-For", tc.forwarded)
+		for _, v := range tc.forwarded {
+			req.Header.Add("X-Forwarded-For", v)
 		}
 		if tc.real != "" {
 			req.Header.Set("X-Real-Ip", tc.real)
 		}
-		if got := ClientIP(req, false); got != tc.want {
-			t.Errorf("%+v: want %q, got %q", tc, tc.want, got)
+		if got := ClientIP(req, tc.hops); got != tc.want {
+			t.Errorf("%s: want %q, got %q", tc.name, tc.want, got)
+		}
+	}
+}
+
+// TestLimitBehindProxy keys requests by the address the trusted proxy
+// appended, so changing the client-written part of the header does not buy
+// a fresh budget.
+func TestLimitBehindProxy(t *testing.T) {
+	h := Limit(NewLimiter(20, time.Minute), quiet(), 1, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	for i := range 25 {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/otp/verify", nil)
+		req.RemoteAddr = "10.0.0.1:4321"
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d, 203.0.113.9", i))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		want := http.StatusOK
+		if i >= 20 {
+			want = http.StatusTooManyRequests
+		}
+		if rec.Code != want {
+			t.Fatalf("request %d: want %d, got %d", i+1, want, rec.Code)
 		}
 	}
 }
 
 func TestLimit(t *testing.T) {
 	calls := 0
-	h := Limit(NewLimiter(2, time.Hour), quiet(), false, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	h := Limit(NewLimiter(2, time.Hour), quiet(), 0, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
 	status := func(remote string) int {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/otp/request", nil)
 		req.RemoteAddr = remote

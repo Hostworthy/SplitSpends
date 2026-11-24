@@ -26,7 +26,7 @@ type Config struct {
 	AllowedDomains []string
 	SessionTTL     time.Duration
 	CORSOrigins    []string
-	TrustProxy     bool
+	ProxyHops      int
 	DataDir        string
 	WebDir         string
 	LogLevel       string
@@ -90,6 +90,21 @@ func list(v string) []string {
 		}
 	}
 	return out
+}
+
+// hops reads TRUST_PROXY: a count of trusted proxies, or a boolean where
+// true means one, as it did before counts were accepted.
+func hops(v string) (int, error) {
+	if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+		return n, nil
+	}
+	if b, err := strconv.ParseBool(v); err == nil {
+		if b {
+			return 1, nil
+		}
+		return 0, nil
+	}
+	return 0, fmt.Errorf("bootstrap.config.env.invalid.TRUST_PROXY: use the number of proxies in front of the server, or false")
 }
 
 // LoadConfig reads configuration from the environment.
@@ -157,7 +172,9 @@ func LoadConfig() (*Config, error) {
 	if c.SMTPHost != "" && c.SMTPFrom == "" {
 		return nil, fmt.Errorf("bootstrap.config.env.required.not-found.SMTP_FROM")
 	}
-	c.TrustProxy, _ = strconv.ParseBool(env("TRUST_PROXY", "false"))
+	if c.ProxyHops, err = hops(env("TRUST_PROXY", "false")); err != nil {
+		return nil, err
+	}
 	c.MCPEnabled, _ = strconv.ParseBool(env("MCP_ENABLED", "true"))
 	switch strings.ToLower(env("GRAVATAR", "on")) {
 	case "on", "true", "1":

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -212,9 +213,9 @@ func (l *Limiter) Allow(key string) bool {
 }
 
 // Limit applies l to next.
-func Limit(l *Limiter, log *slog.Logger, trustProxy bool, next http.Handler) http.Handler {
+func Limit(l *Limiter, log *slog.Logger, hops int, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !l.Allow(ClientIP(r, trustProxy)) {
+		if !l.Allow(ClientIP(r, hops)) {
 			WriteError(w, r, log, errs.RateLimited("Too many requests. Slow down and try again shortly."))
 			return
 		}
@@ -222,14 +223,23 @@ func Limit(l *Limiter, log *slog.Logger, trustProxy bool, next http.Handler) htt
 	})
 }
 
-// ClientIP returns the caller IP, honouring X-Forwarded-For when trusted.
-func ClientIP(r *http.Request, trustProxy bool) string {
-	if trustProxy {
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			return strings.TrimSpace(strings.Split(fwd, ",")[0])
+// ClientIP returns the caller's address. hops is the number of trusted
+// proxies in front of the server, each of which appends the address it was
+// connected from to X-Forwarded-For. Entries further left were written by
+// the client and prove nothing, so the address is the hops-th entry from the
+// right. When the header is shorter than that, or the entry is not an
+// address, the request did not come through the proxies as configured and
+// the peer address is used instead.
+func ClientIP(r *http.Request, hops int) string {
+	if hops > 0 {
+		var entries []string
+		for _, v := range r.Header.Values("X-Forwarded-For") {
+			entries = append(entries, strings.Split(v, ",")...)
 		}
-		if real := r.Header.Get("X-Real-Ip"); real != "" {
-			return real
+		if len(entries) >= hops {
+			if ip := address(entries[len(entries)-hops]); ip != "" {
+				return ip
+			}
 		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -237,6 +247,20 @@ func ClientIP(r *http.Request, trustProxy bool) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// address parses one X-Forwarded-For entry, which some proxies write with a
+// port or in brackets, and returns "" when it is not an IP address.
+func address(entry string) string {
+	entry = strings.TrimSpace(entry)
+	if host, _, err := net.SplitHostPort(entry); err == nil {
+		entry = host
+	}
+	ip, err := netip.ParseAddr(strings.Trim(entry, "[]"))
+	if err != nil {
+		return ""
+	}
+	return ip.Unmap().String()
 }
 
 var statusByKind = map[errs.Kind]int{

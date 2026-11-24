@@ -25,7 +25,8 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://splitspends:${POSTGRES_PASSWORD}@db:5432/splitspends?sslmode=disable
-      TRUST_PROXY: "true"
+      # Caddy replaces X-Forwarded-For with the address that connected to it.
+      TRUST_PROXY: "1"
     volumes:
       - data:/data
     depends_on:
