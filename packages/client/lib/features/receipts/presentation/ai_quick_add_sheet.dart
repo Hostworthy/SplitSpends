@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
@@ -52,9 +54,11 @@ class _AiQuickAddSheetState extends ConsumerState<_AiQuickAddSheet> {
       if (!mounted) return;
       final router = GoRouter.of(context);
       Navigator.pop(context);
-      router.push(
-        Routes.newExpense,
-        extra: ExpenseEditorArgs(groupId: draft.groupId, draft: draft),
+      unawaited(
+        router.push(
+          Routes.newExpense,
+          extra: ExpenseEditorArgs(groupId: draft.groupId, draft: draft),
+        ),
       );
     } on ApiError catch (error) {
       setState(

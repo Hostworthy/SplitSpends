@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -34,7 +36,7 @@ class ExpenseDetailScreen extends ConsumerWidget {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await repo.delete(expenseId);
-      HapticFeedback.mediumImpact();
+      unawaited(HapticFeedback.mediumImpact());
       ref.refreshLedger();
       if (context.mounted) context.pop();
       messenger.showSnackBar(

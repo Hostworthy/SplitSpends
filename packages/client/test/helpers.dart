@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:sembast/sembast_memory.dart';
@@ -29,20 +31,22 @@ Future<T> pumpFuture<T>(WidgetTester tester, Future<T> future) async {
   T? value;
   Object? error;
   var done = false;
-  future.then(
-    (v) {
-      value = v;
-      done = true;
-    },
-    onError: (Object e) {
-      error = e;
-      done = true;
-    },
+  unawaited(
+    future.then(
+      (v) {
+        value = v;
+        done = true;
+      },
+      onError: (Object e) {
+        error = e;
+        done = true;
+      },
+    ),
   );
   for (var i = 0; i < 200 && !done; i++) {
     await tester.pump(const Duration(milliseconds: 20));
   }
   if (!done) throw StateError('Future did not complete');
-  if (error != null) throw error!;
+  if (error != null) Error.throwWithStackTrace(error!, StackTrace.current);
   return value as T;
 }

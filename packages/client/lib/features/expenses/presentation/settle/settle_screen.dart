@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +17,7 @@ import 'package:splitspends/core/widgets/amount_field.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/friends/domain/friend.dart';
 import 'package:splitspends/features/friends/presentation/people.dart';
 import 'package:splitspends/features/friends/presentation/providers.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';
@@ -96,7 +99,7 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
             date: Dates.toApi(_date),
             notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
           );
-      HapticFeedback.heavyImpact();
+      unawaited(HapticFeedback.heavyImpact());
       ref.refreshLedger();
       if (!mounted) return;
       context.pop();
@@ -142,7 +145,8 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
         group?.members ??
         [
           ?me,
-          for (final f in ref.watch(friendsProvider).value ?? const []) f.user,
+          for (final f in ref.watch(friendsProvider).value ?? const <Friend>[])
+            f.user,
         ];
     final config = ref.watch(configValueProvider);
     final text = Theme.of(context).textTheme;
@@ -163,7 +167,7 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
         );
       }
     } else if (me != null) {
-      for (final f in ref.watch(friendsProvider).value ?? const []) {
+      for (final f in ref.watch(friendsProvider).value ?? const <Friend>[]) {
         if (widget.args.friendId != null && f.user.id != widget.args.friendId) {
           continue;
         }

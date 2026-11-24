@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -215,7 +216,7 @@ class _SettingsState extends ConsumerState<_Settings> {
                     context,
                     selected: group.displayEmoji,
                   );
-                  if (e != null) _patch(GroupInput(emoji: e));
+                  if (e != null) unawaited(_patch(GroupInput(emoji: e)));
                 },
               ),
             ],
@@ -255,7 +256,9 @@ class _SettingsState extends ConsumerState<_Settings> {
               context,
               selected: group.defaultCurrency,
             );
-            if (code != null) _patch(GroupInput(defaultCurrency: code));
+            if (code != null) {
+              unawaited(_patch(GroupInput(defaultCurrency: code)));
+            }
           },
         ),
         SwitchListTile(

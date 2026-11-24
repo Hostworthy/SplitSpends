@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -11,7 +13,7 @@ Future<void> showJoinLinkDialog(BuildContext context) async {
     builder: (context) => const _JoinLinkDialog(),
   );
   if (link != null && context.mounted) {
-    context.push(Routes.join(link.token, server: link.server));
+    unawaited(context.push(Routes.join(link.token, server: link.server)));
   }
 }
 

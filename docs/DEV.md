@@ -25,11 +25,23 @@ Migrations are embedded in the binary and applied on start.
 | `make setup` | Env file, Postgres, dependencies |
 | `make dev` | API plus Flutter web |
 | `make api` / `make web` | One side only |
-| `make check` | gofmt, go vet, Go tests (including the architecture test), `dart format`, `flutter analyze`, `flutter test` |
+| `make check` | `make lint` and `make test` |
+| `make lint` | gofmt, go vet, golangci-lint, `dart format`, `flutter analyze` on every Dart member, web fallback fonts |
+| `make test` | Go tests (including the architecture test), `dart test` for the ledger, `flutter test` for the client |
+| `make fmt` | gofmt, `dart fix --apply` and `dart format` |
+| `make hooks` | Quick gofmt and dart format checks before every commit (`scripts/hooks/pre-commit`) |
+| `make brand` | Re-render icons, splash images and banners from `scripts/brand/render.py` (see [packages/brand](../packages/brand/README.md)) |
 | `make test-integration` | Database-backed tests against `TEST_DATABASE_URL` (the database is wiped) |
 | `make build` | `bin/splitspends` and `bin/splitspends-mcp` |
 | `make web-build` / `make apk` | Web build (`apps/web/build/web`) / Android APK (`apps/apk/build`) |
 | `make docker` | Production image |
+
+## Linting and Formatting
+
+- Go: `gofmt`, `go vet` and [golangci-lint](https://golangci-lint.run) with `.golangci.yml` (the standard set plus checks for closed bodies and rows, error wrapping, contexts on requests, misspellings and wasted assignments). `make lint` runs a pinned release through `go run`, so it is built with this repository's Go version; the first run takes a minute.
+- Dart: every workspace member includes `analysis_options.yaml` at the root on top of its base set: strict casts and raw types, unawaited futures and unclosed streams as errors, final locals, single quotes and more. `dart format` uses the default style.
+- `.editorconfig` sets UTF-8, LF, final newlines and indentation for every editor.
+- CI runs the same checks: the `backend` job runs gofmt, vet and golangci-lint; the `app` job runs dart format and flutter analyze.
 
 ## Repository Layout
 

@@ -21,7 +21,7 @@ self.addEventListener('push', (event) => {
     self.registration.showNotification(title, {
       body: message.body || '',
       icon: new URL('../icons/Icon-192.png', self.registration.scope).href,
-      badge: new URL('../icons/Icon-192.png', self.registration.scope).href,
+      badge: new URL('../icons/badge-96.png', self.registration.scope).href,
       data: { url: message.url || new URL('..', self.registration.scope).href },
     }),
   );

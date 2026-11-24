@@ -1,0 +1,40 @@
+version: "2"
+
+# Go linting for the whole module. `make lint` runs it; CI builds the same
+# pinned version with the project's Go toolchain.
+run:
+  timeout: 5m
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose # HTTP response bodies are closed
+    - copyloopvar
+    - errorlint # errors.Is / errors.As instead of == and type switches
+    - misspell
+    - nilerr # returning nil after checking an error
+    - noctx # outgoing HTTP requests carry a context
+    - rowserrcheck # rows.Err() is checked
+    - sqlclosecheck # rows are closed
+    - unconvert
+    - usestdlibvars # http.MethodGet and friends instead of literals
+    - wastedassign
+  settings:
+    errcheck:
+      exclude-functions:
+        # Best-effort writes to an HTTP client or a closing body.
+        - (io.Closer).Close
+        - (net/http.ResponseWriter).Write
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      # Tests may ignore errors from setup helpers.
+      - path: _test\.go
+        linters: [errcheck, bodyclose, noctx]
+
+formatters:
+  enable:
+    - gofmt
