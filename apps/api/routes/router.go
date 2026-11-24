@@ -64,6 +64,10 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("GET "+p+"/me/tokens", authed(a.listTokens))
 	mux.Handle("POST "+p+"/me/tokens", authed(a.createToken))
 	mux.Handle("DELETE "+p+"/me/tokens/{tokenId}", authed(a.deleteToken))
+	mux.Handle("GET "+p+"/me/push-subscriptions", authed(a.listPushSubscriptions))
+	mux.Handle("POST "+p+"/me/push-subscriptions", authed(a.createPushSubscription))
+	mux.Handle("POST "+p+"/me/push-subscriptions/test", authed(a.testPush))
+	mux.Handle("DELETE "+p+"/me/push-subscriptions/{subscriptionId}", authed(a.deletePushSubscription))
 
 	mux.Handle("GET "+p+"/friends", authed(a.listFriends))
 	mux.Handle("POST "+p+"/friends", authed(a.addFriend))

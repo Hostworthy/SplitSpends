@@ -37,6 +37,7 @@ Several of these sit behind Splitwise Pro today (receipt scanning, itemization, 
 | Comments on expenses | Yes | Yes |
 | Activity feed | Yes | Yes |
 | Email notifications with preferences | Yes | Yes |
+| Push notifications | Yes (through Google and Apple) | Web app and Android (Web Push and UnifiedPush, no Google account needed), per-kind preferences for email and push. iPhone app not yet |
 | Recurring expenses | Yes | Weekly, every two weeks, monthly, yearly |
 | Search and filters | Pro | Yes |
 | Charts by category, month and member | Pro | Yes |
@@ -49,7 +50,7 @@ Several of these sit behind Splitwise Pro today (receipt scanning, itemization, 
 
 ## Roadmap Ideas
 
-- Push notifications for the mobile app.
+- Push notifications in the iPhone app (needs Apple Push Notification service keys).
 - Payment links (UPI, PayPal, Venmo) on settle-up.
 - Offline queue for adding expenses without connectivity.
 - S3-compatible receipt storage behind the existing `BlobStore` port.

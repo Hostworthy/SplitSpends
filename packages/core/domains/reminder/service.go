@@ -120,8 +120,10 @@ func (s *Service) Send(ctx context.Context, actor, to uuid.UUID, groupID *uuid.U
 	}
 
 	now := s.clock.Now()
+	note, notify := Compose(sender.Name, groupName, owed, s.link(actor, groupID)).Notification(target)
+	notify = notify && !ports.IsQuiet(ctx)
 	r := &Reminder{ID: uuid.New(), FromID: actor, ToID: to, GroupID: groupID, Owed: owed, SentAt: now,
-		Emailed: target.Notifications.Reminders && !ports.IsQuiet(ctx)}
+		Emailed: notify && note.To != ""}
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
 		ok, err := s.repo.Claim(ctx, r, now.Add(-Window))
 		if err != nil {
@@ -140,8 +142,8 @@ func (s *Service) Send(ctx context.Context, actor, to uuid.UUID, groupID *uuid.U
 	if err != nil {
 		return nil, err
 	}
-	if r.Emailed {
-		s.notifier.Notify(ctx, Compose(sender.Name, groupName, owed, s.link(actor, groupID)).Notification(target))
+	if notify {
+		s.notifier.Notify(ctx, note)
 	}
 	return r, nil
 }

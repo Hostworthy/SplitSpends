@@ -10,6 +10,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/friend"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/money"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
@@ -51,10 +52,15 @@ func toUser(u *user.User) platform.User {
 }
 
 func toMe(u *user.User) platform.Me {
-	n := u.Notifications
-	reminders := n.Reminders
-	return platform.Me{User: toUser(u), Timezone: u.Timezone, Notifications: platform.Notifications{ExpenseAdded: n.ExpenseAdded,
-		ExpenseUpdated: n.ExpenseUpdated, PaymentReceived: n.PaymentReceived, AddedToGroup: n.AddedToGroup, Reminders: &reminders}}
+	return platform.Me{User: toUser(u), Timezone: u.Timezone, Notifications: platform.Notifications{
+		NotificationSwitches: platform.NotificationSwitches(u.Notifications.Switches),
+		Push:                 platform.NotificationSwitches(u.Notifications.Push),
+	}}
+}
+
+func toPushSubscription(s *push.Subscription) platform.PushSubscription {
+	return platform.PushSubscription{ID: s.ID.String(), Platform: string(s.Platform), Label: s.Label, Endpoint: s.Endpoint,
+		CreatedAt: stamp(s.CreatedAt), LastSuccessAt: stampPtr(s.LastSuccessAt), Failures: s.Failures}
 }
 
 func toToken(s *auth.Session, token string) platform.Token {

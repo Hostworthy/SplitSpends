@@ -295,3 +295,22 @@ func TestOwedAndAmounts(t *testing.T) {
 		t.Fatalf("overall message must not name a group: %+v", m)
 	}
 }
+
+func TestReminderChannels(t *testing.T) {
+	m := Message{Subject: "Reminder", Lines: []string{"You owe Ada $10.00."}, Link: "https://x"}
+	off := false
+	active := &user.User{ID: uuid.New(), Name: "Ben", Email: "ben@example.com", Status: user.StatusActive, Notifications: user.DefaultNotifications()}
+	active.Notifications.Apply(user.NotificationsPatch{SwitchesPatch: user.SwitchesPatch{Reminders: &off}})
+	n, ok := m.Notification(active)
+	if !ok || n.To != "" || n.UserID != active.ID || n.Kind != "reminders" {
+		t.Fatalf("email off, push on: want push only, got %+v %v", n, ok)
+	}
+	invited := &user.User{ID: uuid.New(), Name: "Cleo", Email: "cleo@example.com", Status: user.StatusInvited, Notifications: user.DefaultNotifications()}
+	if n, ok := m.Notification(invited); !ok || n.To != "cleo@example.com" || n.UserID != uuid.Nil {
+		t.Fatalf("invited people get the email only, got %+v %v", n, ok)
+	}
+	invited.Notifications.Apply(user.NotificationsPatch{SwitchesPatch: user.SwitchesPatch{Reminders: &off}})
+	if _, ok := m.Notification(invited); ok {
+		t.Fatal("reminders turned off must send nothing")
+	}
+}

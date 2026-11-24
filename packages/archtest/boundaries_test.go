@@ -30,6 +30,7 @@ var rules = []rule{
 	{name: "api routes do not touch persistence", from: "apps/api/routes", forbid: []string{"packages/database", "github.com/jackc", "packages/notifications", "packages/ai", "packages/storage", "packages/exchange"}},
 	{name: "middleware does not touch persistence", from: "packages/middleware", forbid: []string{"packages/database", "packages/bootstrap", "apps/", "github.com/jackc"}},
 	{name: "notifications stay an adapter", from: "packages/notifications", forbid: []string{"packages/database", "packages/bootstrap", "packages/mcp", "apps/"}},
+	{name: "webpush stays an adapter", from: "packages/webpush", forbid: []string{"packages/database", "packages/bootstrap", "packages/mcp", "packages/notifications", "apps/"}},
 	{name: "ai stays an adapter", from: "packages/ai", forbid: []string{"packages/database", "packages/bootstrap", "packages/mcp", "apps/"}},
 	{name: "exchange stays an adapter", from: "packages/exchange", forbid: []string{"packages/database", "packages/bootstrap", "packages/mcp", "packages/platform", "apps/"}},
 	{name: "storage stays an adapter", from: "packages/storage", forbid: []string{"packages/", "apps/"}, allow: []string{"packages/storage"}},

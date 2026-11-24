@@ -147,13 +147,11 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 }
 
 func (s *Service) notifyAdded(ctx context.Context, u, by *user.User, g *Group) {
-	if u.Status != user.StatusActive || !u.Notifications.AddedToGroup {
-		return
+	n, ok := u.Notice(user.AddedToGroup, by.Name+" added you to "+g.Name,
+		[]string{by.Name + " added you to the group “" + g.Name + "”."}, s.baseURL)
+	if ok {
+		s.notifier.Notify(ctx, n)
 	}
-	s.notifier.Notify(ctx, ports.Notification{To: u.Email, Name: u.Name,
-		Subject: by.Name + " added you to " + g.Name,
-		Lines:   []string{by.Name + " added you to the group “" + g.Name + "”."},
-		Link:    s.baseURL})
 }
 
 // Mine returns the actor's active groups with their members, without

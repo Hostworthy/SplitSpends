@@ -65,3 +65,9 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// The UnifiedPush connector depends on Tink for Java, flutter_secure_storage
+// on Tink for Android; both ship the same classes. Keep the Android build.
+configurations.all {
+    exclude(group = "com.google.crypto.tink", module = "tink")
+}

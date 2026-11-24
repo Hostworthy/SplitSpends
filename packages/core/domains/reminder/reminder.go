@@ -77,9 +77,18 @@ func Compose(sender, group string, owed money.Balances, link string) Message {
 	}
 }
 
-// Notification addresses m to the recipient.
-func (m Message) Notification(to *user.User) ports.Notification {
-	return ports.Notification{To: to.Email, Name: to.Name, Subject: m.Subject, Lines: m.Lines, Link: m.Link}
+// Notification addresses m to the recipient on the channels they want
+// (email, push or both). People who were invited but never signed in have
+// no devices yet, so they get the email only. ok is false when nothing
+// would be sent.
+func (m Message) Notification(to *user.User) (n ports.Notification, ok bool) {
+	if n, ok := to.Notice(user.Reminder, m.Subject, m.Lines, m.Link); ok {
+		return n, true
+	}
+	if to.Status == user.StatusInvited && to.Email != "" && to.Notifications.On(user.Reminder) {
+		return ports.Notification{Kind: string(user.Reminder), To: to.Email, Name: to.Name, Subject: m.Subject, Lines: m.Lines, Link: m.Link}, true
+	}
+	return ports.Notification{}, false
 }
 
 // Amounts renders balances as "€12.50 and $5.00", sorted by currency.

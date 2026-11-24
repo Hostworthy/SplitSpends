@@ -54,20 +54,12 @@ func (a *API) patchMe(w http.ResponseWriter, r *http.Request) error {
 	}
 	p := user.Patch{Name: in.Name, DefaultCurrency: in.DefaultCurrency, Timezone: in.Timezone, AvatarColor: in.AvatarColor}
 	if in.Notifications != nil {
-		n := in.Notifications
-		prefs := user.Notifications{ExpenseAdded: n.ExpenseAdded, ExpenseUpdated: n.ExpenseUpdated,
-			PaymentReceived: n.PaymentReceived, AddedToGroup: n.AddedToGroup}
-		if n.Reminders != nil {
-			prefs.Reminders = *n.Reminders
-		} else {
-			// Older clients do not know this preference: keep what is stored.
-			current, err := a.svc.Users.Get(r.Context(), me(r))
-			if err != nil {
-				return err
-			}
-			prefs.Reminders = current.Notifications.Reminders
+		n := user.NotificationsPatch{SwitchesPatch: user.SwitchesPatch(in.Notifications.NotificationSwitchesPatch)}
+		if in.Notifications.Push != nil {
+			push := user.SwitchesPatch(*in.Notifications.Push)
+			n.Push = &push
 		}
-		p.Notifications = &prefs
+		p.Notifications = &n
 	}
 	u, err := a.svc.Users.Update(r.Context(), me(r), p)
 	if err != nil {

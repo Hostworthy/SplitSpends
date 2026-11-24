@@ -19,7 +19,7 @@ func Handler(dir string) http.Handler {
 		full := filepath.Join(dir, filepath.FromSlash(clean))
 		if info, err := os.Stat(full); err == nil && !info.IsDir() {
 			switch {
-			case strings.HasSuffix(clean, ".html"), clean == "/flutter_service_worker.js", clean == "/version.json", clean == "/manifest.json":
+			case strings.HasSuffix(clean, ".html"), clean == "/flutter_service_worker.js", clean == "/push_sw.js", clean == "/version.json", clean == "/manifest.json":
 				w.Header().Set("Cache-Control", "no-cache")
 			case strings.HasPrefix(clean, "/assets/"), strings.HasPrefix(clean, "/canvaskit/"), strings.HasPrefix(clean, "/icons/"), strings.HasPrefix(clean, "/fonts/"):
 				w.Header().Set("Cache-Control", "public, max-age=604800")
