@@ -84,6 +84,7 @@ The server creates its push key on first start and keeps it in the database. If 
 - Set a long random `SECRET_KEY` (`openssl rand -hex 32`) and keep it secret.
 - Keep `SIGNUP_MODE=invite` unless you really want strangers to sign up. `approval` lets anyone ask while you decide who gets in, and `closed` stops new accounts. You can change this later in the app (Account, Administration).
 - Behind a proxy or CDN, set `TRUST_PROXY` to the number of proxies in front of the server (`1` for a single reverse proxy; the shipped Docker, Cloud Run, Render and AWS setups already set it) so rate limits see real client addresses; leave it `false` when the server is directly exposed. See [Client Addresses](ENVIRONMENT.md#client-addresses).
+- Rate limits on sign-in and invite links are counted in each server instance's memory. Cloud Run and Lambda run several instances and start empty after idling, so there the limits apply per instance and are looser. Each sign-in code still stops working after a few wrong attempts.
 - Back up the database. Receipts live in `DATA_DIR`, S3 or the database, depending on `BLOB_STORE`.
 - Update regularly: pull the latest code and rebuild. Migrations run automatically on start.
 - If you enable AI, receipt images and expense text are sent to that provider. Choose one you trust, or run a local model through an OpenAI-compatible server.
