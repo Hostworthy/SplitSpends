@@ -19,6 +19,7 @@ The server reads everything from the environment. Invalid or missing required va
 | `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API from elsewhere, or `*` |
 | `TRUST_PROXY` | `false` | Use `X-Forwarded-For` for client IPs (rate limits) behind a reverse proxy |
 | `MCP_ENABLED` | `true` | Serve the MCP endpoint at `/mcp` |
+| `GRAVATAR` | `on` | `off` hides the "Use my Gravatar picture" option and stops sending picture links. People opt in one by one; their app then loads the picture from gravatar.com, which sees a hash of their email and who views it |
 
 ## Serverless and Storage
 

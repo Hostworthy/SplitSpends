@@ -40,11 +40,14 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 ```jsonc
 // User (email is null for people added by name only)
 { "id": "uuid", "email": "a@b.c" | null, "name": "Ada", "defaultCurrency": "USD",
-  "avatarColor": "#7C4DFF", "status": "active" | "invited" | "placeholder" }
+  "avatarColor": "#7C4DFF", "avatarUrl": "https://gravatar.com/avatar/<sha256>?s=160&d=404" | null,
+  "status": "active" | "invited" | "placeholder" }
+// avatarUrl is set only when the person turned on Gravatar (and the host allows it).
+// It answers 404 when they have no Gravatar, so clients keep the initials as a fallback.
 
 // Me (User plus private settings). In notifications the top-level switches
 // are email (as before push existed); push has the same keys.
-{ ...User, "timezone": "Europe/Berlin",
+{ ...User, "timezone": "Europe/Berlin", "gravatar": false,
   "notifications": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true,
                      "reminders": true,
                      "push": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true, "reminders": true } } }
@@ -130,7 +133,7 @@ A `percent` or `shares` default applies only while its members are exactly the g
 | Method | Path | Notes |
 | ------ | ---- | ----- |
 | GET | `/health` | **public**, outside `/api/v1`: `{ "ok": true }` |
-| GET | `/config` | **public**: `{ data: { appName, aiEnabled, signupMode: "open" \| "invite" \| "domain", currencies: [{ code, name, symbol, exponent }], categories: [{ id, name, group, icon }], pushEnabled, vapidPublicKey } }`. `vapidPublicKey` is the base64url VAPID key to subscribe with (empty when `pushEnabled` is false) |
+| GET | `/config` | **public**: `{ data: { appName, aiEnabled, signupMode: "open" \| "invite" \| "domain", currencies: [{ code, name, symbol, exponent }], categories: [{ id, name, group, icon }], pushEnabled, vapidPublicKey, gravatarEnabled } }`. `vapidPublicKey` is the base64url VAPID key to subscribe with (empty when `pushEnabled` is false) |
 
 ### Auth
 
@@ -145,7 +148,7 @@ A `percent` or `shares` default applies only while its members are exactly the g
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/me` | | `{ data: Me }` |
-| PATCH | `/me` | `{ name?, defaultCurrency?, timezone?, avatarColor?, notifications? }` | `{ data: Me }`. In `notifications`, an omitted `reminders` keeps its current value |
+| PATCH | `/me` | `{ name?, defaultCurrency?, timezone?, avatarColor?, gravatar?, notifications? }` | `{ data: Me }`. In `notifications`, an omitted `reminders` keeps its current value. `gravatar: true` needs an email and `gravatarEnabled` on the server |
 | GET | `/me/balances` | | `{ data: { balances: [Balance], owed: [Balance], owing: [Balance] } }` totals across everything |
 | GET | `/me/tokens` | | List of `{ id, name, createdAt, lastUsedAt }` |
 | POST | `/me/tokens` | `{ name }` | 201 `{ data: { id, name, token, createdAt } }` (token shown once) |

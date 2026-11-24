@@ -11,6 +11,7 @@ abstract interface class AccountRepository {
     String? defaultCurrency,
     String? timezone,
     String? avatarColor,
+    bool? gravatar,
     NotificationPrefs? notifications,
   });
 }

@@ -9,6 +9,8 @@ abstract class LocalStore {
   Future<void> writeToken(String? token);
   Future<String?> readThemeMode();
   Future<void> writeThemeMode(String mode);
+  Future<String?> readThemeColor();
+  Future<void> writeThemeColor(String color);
 
   /// `local` or `connected`; null until the user picks on the welcome screen.
   Future<String?> readAppMode();
@@ -23,6 +25,7 @@ class DeviceLocalStore implements LocalStore {
   static const _serverKey = 'server_url';
   static const _tokenKey = 'session_token';
   static const _themeKey = 'theme_mode';
+  static const _colorKey = 'theme_color';
   static const _modeKey = 'app_mode';
 
   final FlutterSecureStorage _secure;
@@ -62,6 +65,14 @@ class DeviceLocalStore implements LocalStore {
       (await SharedPreferences.getInstance()).setString(_themeKey, mode);
 
   @override
+  Future<String?> readThemeColor() async =>
+      (await SharedPreferences.getInstance()).getString(_colorKey);
+
+  @override
+  Future<void> writeThemeColor(String color) async =>
+      (await SharedPreferences.getInstance()).setString(_colorKey, color);
+
+  @override
   Future<String?> readAppMode() async =>
       (await SharedPreferences.getInstance()).getString(_modeKey);
 
@@ -78,11 +89,18 @@ class DeviceLocalStore implements LocalStore {
 
 /// In-memory store for tests.
 class MemoryLocalStore implements LocalStore {
-  MemoryLocalStore({this.serverUrl, this.token, this.themeMode, this.appMode});
+  MemoryLocalStore({
+    this.serverUrl,
+    this.token,
+    this.themeMode,
+    this.themeColor,
+    this.appMode,
+  });
 
   String? serverUrl;
   String? token;
   String? themeMode;
+  String? themeColor;
   String? appMode;
 
   @override
@@ -102,6 +120,12 @@ class MemoryLocalStore implements LocalStore {
 
   @override
   Future<void> writeThemeMode(String mode) async => themeMode = mode;
+
+  @override
+  Future<String?> readThemeColor() async => themeColor;
+
+  @override
+  Future<void> writeThemeColor(String color) async => themeColor = color;
 
   @override
   Future<String?> readAppMode() async => appMode;

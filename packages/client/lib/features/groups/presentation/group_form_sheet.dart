@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:splitspends/features/groups/presentation/emoji_picker.dart';
 import 'package:splitspends/app/refresh.dart';
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/core/auth/session.dart';
@@ -34,6 +35,7 @@ class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
   final _personFocus = FocusNode();
   final _members = <MemberInput>[];
   GroupKind _kind = GroupKind.trip;
+  String? _emoji; // null follows the kind
   late String _currency = ref.read(meProvider)?.defaultCurrency ?? 'USD';
   bool _busy = false;
 
@@ -77,7 +79,7 @@ class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
             GroupInput(
               name: name,
               kind: _kind,
-              emoji: _kind.emoji,
+              emoji: _emoji ?? _kind.emoji,
               defaultCurrency: _currency,
               simplifyDebts: true,
               members: _members,
@@ -115,9 +117,20 @@ class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
             textCapitalization: TextCapitalization.sentences,
             decoration: InputDecoration(
               labelText: 'Group name',
-              prefixIcon: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(_kind.emoji, style: const TextStyle(fontSize: 20)),
+              prefixIcon: IconButton(
+                key: const Key('new-group-emoji'),
+                tooltip: 'Choose an icon',
+                onPressed: () async {
+                  final e = await pickEmoji(
+                    context,
+                    selected: _emoji ?? _kind.emoji,
+                  );
+                  if (e != null) setState(() => _emoji = e);
+                },
+                icon: Text(
+                  _emoji ?? _kind.emoji,
+                  style: const TextStyle(fontSize: 20),
+                ),
               ),
             ),
           ),

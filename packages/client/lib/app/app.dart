@@ -15,8 +15,8 @@ class SplitSpendsApp extends ConsumerWidget {
       locale: const Locale('en', 'US'),
       supportedLocales: const [Locale('en', 'US')],
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
+      theme: AppTheme.light(ref.watch(themeColorProvider)),
+      darkTheme: AppTheme.dark(ref.watch(themeColorProvider)),
       themeMode: ref.watch(themeModeProvider),
       routerConfig: ref.watch(routerProvider),
     );

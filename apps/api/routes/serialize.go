@@ -43,16 +43,24 @@ func toBalances(b money.Balances) []platform.Balance {
 	return out
 }
 
+// pictures mirrors the host's GRAVATAR setting; New sets it once at startup
+// so every serializer can honour it.
+var pictures = true
+
 func toUser(u *user.User) platform.User {
-	var email *string
+	var email, picture *string
 	if u.Email != "" {
 		email = &u.Email
 	}
-	return platform.User{ID: u.ID.String(), Email: email, Name: u.Name, DefaultCurrency: u.DefaultCurrency, AvatarColor: u.AvatarColor, Status: string(u.Status)}
+	if p := u.Picture(160); pictures && p != "" {
+		picture = &p
+	}
+	return platform.User{ID: u.ID.String(), Email: email, Name: u.Name, DefaultCurrency: u.DefaultCurrency, AvatarColor: u.AvatarColor,
+		AvatarURL: picture, Status: string(u.Status)}
 }
 
 func toMe(u *user.User) platform.Me {
-	return platform.Me{User: toUser(u), Timezone: u.Timezone, Notifications: platform.Notifications{
+	return platform.Me{User: toUser(u), Timezone: u.Timezone, Gravatar: u.Gravatar, Notifications: platform.Notifications{
 		NotificationSwitches: platform.NotificationSwitches(u.Notifications.Switches),
 		Push:                 platform.NotificationSwitches(u.Notifications.Push),
 	}}

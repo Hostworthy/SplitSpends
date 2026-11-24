@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/middleware"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 )
@@ -52,7 +53,10 @@ func (a *API) patchMe(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	p := user.Patch{Name: in.Name, DefaultCurrency: in.DefaultCurrency, Timezone: in.Timezone, AvatarColor: in.AvatarColor}
+	if in.Gravatar != nil && *in.Gravatar && !a.cfg.Gravatar {
+		return errs.Validation("gravatar", "Gravatar pictures are turned off on this server.")
+	}
+	p := user.Patch{Name: in.Name, DefaultCurrency: in.DefaultCurrency, Timezone: in.Timezone, AvatarColor: in.AvatarColor, Gravatar: in.Gravatar}
 	if in.Notifications != nil {
 		n := user.NotificationsPatch{SwitchesPatch: user.SwitchesPatch(in.Notifications.NotificationSwitchesPatch)}
 		if in.Notifications.Push != nil {
