@@ -58,7 +58,8 @@ class AccountScreen extends ConsumerWidget {
   }
 
   Future<void> _signOut(BuildContext context, WidgetRef ref) async {
-    final waiting = ref.read(outboxCountProvider).value ?? 0;
+    final waiting = (await ref.read(outboxProvider).pending()).length;
+    if (!context.mounted) return;
     if (waiting > 0) {
       final ok = await showDialog<bool>(
         context: context,

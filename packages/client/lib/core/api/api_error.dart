@@ -8,6 +8,8 @@ class ApiError implements Exception {
     this.code = 'INTERNAL',
     this.field,
     this.requestId,
+    this.hasEnvelope = false,
+    this.retryAfter,
   });
 
   /// Network or parsing failure (no HTTP status).
@@ -15,41 +17,57 @@ class ApiError implements Exception {
     : status = 0,
       code = 'NETWORK',
       field = null,
-      requestId = null;
+      requestId = null,
+      hasEnvelope = false,
+      retryAfter = null;
 
   /// Errors raised by on-device code, shaped like the server's.
   const ApiError.validation(String this.field, this.message)
     : status = 422,
       code = 'VALIDATION_ERROR',
-      requestId = null;
+      requestId = null,
+      hasEnvelope = false,
+      retryAfter = null;
 
   const ApiError.conflict(this.message)
     : status = 409,
       code = 'CONFLICT',
       field = null,
-      requestId = null;
+      requestId = null,
+      hasEnvelope = false,
+      retryAfter = null;
 
   ApiError.notFound(String what)
     : status = 404,
       code = 'NOT_FOUND',
       message = '$what not found.',
       field = null,
-      requestId = null;
+      requestId = null,
+      hasEnvelope = false,
+      retryAfter = null;
 
   /// A feature that needs a server connection.
   const ApiError.needsServer(this.message)
     : status = 501,
       code = 'NEEDS_SERVER',
       field = null,
-      requestId = null;
+      requestId = null,
+      hasEnvelope = false,
+      retryAfter = null;
 
-  factory ApiError.fromJson(int status, Map<String, dynamic> json) {
+  factory ApiError.fromJson(
+    int status,
+    Map<String, dynamic> json, {
+    Duration? retryAfter,
+  }) {
     return ApiError(
       status: status,
       message: (json['error'] as String?) ?? 'Something went wrong.',
       code: (json['code'] as String?) ?? _codeFor(status),
       field: json['field'] as String?,
       requestId: json['requestId'] as String?,
+      hasEnvelope: json['error'] is String && json['code'] is String,
+      retryAfter: retryAfter,
     );
   }
 
@@ -58,6 +76,14 @@ class ApiError implements Exception {
   final String code;
   final String? field;
   final String? requestId;
+
+  /// True when the API itself answered with its error envelope. Without it
+  /// the answer came from something in front of the API (a proxy, a CDN or
+  /// a wrong address) and says nothing about the request.
+  final bool hasEnvelope;
+
+  /// How long the server asked clients to wait (the Retry-After header).
+  final Duration? retryAfter;
 
   bool get isUnauthorized => status == 401;
   bool get isNetwork => status == 0;

@@ -9,6 +9,7 @@ import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/auth/presentation/auth_layout.dart';
+import 'package:splitspends/features/auth/presentation/waiting_changes.dart';
 import 'package:splitspends/features/invites/presentation/providers.dart';
 
 final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
@@ -91,6 +92,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 '6-digit code.'
           : 'Sign in with your email to sync and share. We will email you a 6-digit code.',
       children: [
+        const WaitingChanges(),
         TextField(
           key: const Key('login-email'),
           controller: _email,
