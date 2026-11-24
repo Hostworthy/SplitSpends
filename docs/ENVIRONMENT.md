@@ -17,9 +17,25 @@ The server reads everything from the environment. Invalid or missing required va
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `LOG_FORMAT` | `json` | `json` or `text` |
 | `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API from elsewhere, or `*` |
-| `TRUST_PROXY` | `false` | Use `X-Forwarded-For` for client IPs (rate limits) behind a reverse proxy |
+| `TRUST_PROXY` | `false` | How many reverse proxies sit in front of the server, each appending the address it was connected from to `X-Forwarded-For`. Rate limits use the entry that many places from the right; entries further left are written by the client and ignored. `true` means `1`, `false` means `0` (use the connecting address). See [Client Addresses](#client-addresses) |
 | `MCP_ENABLED` | `true` | Serve the MCP endpoint at `/mcp` |
 | `GRAVATAR` | `on` | `off` hides the "Use my Gravatar picture" option and stops sending picture links. People opt in one by one; their app then loads the picture from gravatar.com, which sees a hash of their email and who views it |
+
+### Client Addresses
+
+Sign-in codes and invite previews are rate limited per client address. Behind a reverse proxy the connecting address is the proxy's, so the server reads `X-Forwarded-For` instead. Each proxy appends the address it was connected from to the right of whatever the client sent, so only the right-most entries can be trusted: set `TRUST_PROXY` to the number of proxies in front of the server, and the server uses the entry that many places from the right. If the header has fewer entries, the connecting address is used. `X-Real-Ip` is never read.
+
+| Setup | `TRUST_PROXY` |
+| ----- | ------------- |
+| Server reached directly | `false` |
+| Docker Compose with the bundled Caddy | `1` |
+| One nginx, Traefik or similar proxy that appends to `X-Forwarded-For` | `1` |
+| Google Cloud Run (`deploy/gcp`) | `1` |
+| Render (`render.yaml`) | `1` |
+| AWS: CloudFront then API Gateway (`deploy/aws`) | `2` |
+| A CDN in front of any of the above | add one per extra proxy |
+
+A value that is too high lets clients choose the address that is rate limited; one that is too low puts everyone behind the same proxy into one shared limit. To check a setup, log the `X-Forwarded-For` header of one request from a known address and count the entries to the right of it, plus one.
 
 ## Serverless and Storage
 

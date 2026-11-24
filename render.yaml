@@ -23,7 +23,7 @@ services:
       - key: BLOB_STORE
         value: postgres
       - key: TRUST_PROXY
-        value: "true"
+        value: "1"
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
