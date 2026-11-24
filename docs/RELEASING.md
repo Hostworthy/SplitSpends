@@ -16,7 +16,7 @@ To stop anyone tagging by mistake, add a tag ruleset for `v*` (Settings, Rules, 
 | --- | --- | --- |
 | Server and MCP binaries for Linux (amd64, arm64), macOS (amd64, arm64) and Windows (amd64) | Ubuntu | `main.version` is the tag, so `splitspends version` prints it |
 | Web app (`splitspends-web-<tag>.tar.gz`) | Ubuntu | Serve with `WEB_DIR` |
-| Android APK | Ubuntu | Signed with your upload key when the secrets below exist, otherwise with the debug key |
+| Android APK | Ubuntu | Signed with your upload key when the secrets below exist; otherwise named `-debug-signed.apk` and signed with a key the runner generates for that run |
 | iOS app (`-unsigned.ipa`) | macOS | Unsigned until an Apple Developer account is set up; install with Xcode, AltStore or Sideloadly |
 | Container image `ghcr.io/hostworthy/splitspends:<tag>` | Ubuntu | linux/amd64; includes the server and the web app |
 | `SHA256SUMS` | | Checksums of every file |
@@ -63,4 +63,4 @@ Add these repository secrets to sign the APK with your upload key (see [apps/apk
 | `ANDROID_KEY_ALIAS` | Key alias, for example `upload` |
 | `ANDROID_KEY_PASSWORD` | Key password |
 
-Keep the same key for every release: Android only installs updates signed with the key of the installed app.
+Keep the same key for every release: Android only installs updates signed with the key of the installed app. Without these secrets the workflow still publishes the APK, as `splitspends-android-<tag>-debug-signed.apk` with a warning in the run and a line in the release notes, but every release is signed with a different debug key, so people must uninstall the previous version (losing the app's local data) before installing the next. Add the secrets before the first release people will keep using.

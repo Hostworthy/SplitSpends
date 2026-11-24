@@ -16,7 +16,7 @@ The CI workflow, started by hand from the Actions tab, builds the release APK an
 
 ## Release Signing
 
-Without a key, release builds are signed with the debug key: fine for installing and testing, not for Google Play. To sign with your upload key, create `android/key.properties` (it is git-ignored):
+Without a key, release builds are signed with the debug key: fine for installing and testing, not for Google Play. A build signed with a different key cannot update the installed app, so publish only APKs signed with one upload key (see [Releasing](../../docs/RELEASING.md#android-signing-secrets-optional)). To sign with your upload key, create `android/key.properties` (it is git-ignored):
 
 ```properties
 storeFile=/absolute/path/to/upload-keystore.jks

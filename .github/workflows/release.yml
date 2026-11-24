@@ -146,9 +146,10 @@ jobs:
           channel: stable
       - run: flutter pub get --enforce-lockfile
       - name: Build
-        # Without the signing secrets the APK is signed with the debug key:
-        # fine to install directly, not accepted by Google Play. The key is
-        # written and removed within this step so no later step can read it.
+        # Without the signing secrets the APK is signed with a debug key the
+        # runner generates afresh, so it cannot update an earlier install; the
+        # file name and the release notes say so. The key is written and
+        # removed within this step so no later step can read it.
         env:
           TAG: ${{ needs.version.outputs.tag }}
           BUILD_NAME: ${{ needs.version.outputs.build_name }}
@@ -160,17 +161,19 @@ jobs:
         working-directory: apps/apk
         run: |
           trap 'rm -f android/upload-keystore.jks android/key.properties' EXIT
+          apk="splitspends-android-${TAG}.apk"
           if [ -n "$KEYSTORE" ]; then
             echo "$KEYSTORE" | base64 -d > android/upload-keystore.jks
             printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
               "$PWD/android/upload-keystore.jks" "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
           else
-            echo "No signing secrets: using the debug key."
+            apk="splitspends-android-${TAG}-debug-signed.apk"
+            echo "::warning::No Android signing secrets: the APK is signed with a new debug key and cannot update an earlier install. See docs/RELEASING.md."
           fi
           flutter build apk --release \
             --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER"
           mkdir -p ../../dist
-          cp build/app/outputs/flutter-apk/app-release.apk "../../dist/splitspends-android-${TAG}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "../../dist/$apk"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-android
@@ -290,7 +293,13 @@ jobs:
           [ -n "$DIGEST" ] || { echo "::error::The docker job reported no image digest."; exit 1; }
           cd dist && sha256sum * > SHA256SUMS && cd ..
           name="ghcr.io/${GITHUB_REPOSITORY,,}"
+          apk="splitspends-android-${TAG}.apk"; apk_note=""
+          if [ -e "dist/splitspends-android-${TAG}-debug-signed.apk" ]; then
+            apk="splitspends-android-${TAG}-debug-signed.apk"
+            apk_note=" **Signed with a temporary key**: it cannot update an earlier install, so uninstall the old app first, which removes its local data"
+          fi
           sed -e "s|{{TAG}}|${TAG}|g" -e "s|{{REPO}}|${GITHUB_REPOSITORY}|g" \
+            -e "s|{{APK}}|${apk}|g" -e "s|{{APK_NOTE}}|${apk_note}|g" \
             -e "s|{{IMAGE}}|${name}:${TAG}|g" -e "s|{{IMAGE_DIGEST}}|${name}@${DIGEST}|g" \
             .github/release-notes.md > notes.md
       # A signed attestation that this workflow built every file; checksums
