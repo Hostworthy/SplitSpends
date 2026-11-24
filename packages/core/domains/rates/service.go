@@ -53,11 +53,11 @@ func (s *Service) Latest(ctx context.Context) (*Table, error) {
 	if t != nil && s.clock.Now().Sub(t.Fetched) < Fresh {
 		return t, nil
 	}
-	fresh, err := s.refresh(ctx)
-	if err != nil {
-		return t, nil
+	if fresh, err := s.refresh(ctx); err == nil {
+		return fresh, nil
 	}
-	return fresh, nil
+	// The provider is down: a stale table is better than none.
+	return t, nil
 }
 
 // Refresh fetches new rates when the stored ones are stale. Background jobs

@@ -64,7 +64,7 @@ func (o *OpenAICompatible) ask(ctx context.Context, system string, user any, nam
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return "", errs.RateLimited("The AI provider is busy. Try again in a minute.")
 	}
-	if resp.StatusCode >= 300 {
+	if resp.StatusCode >= http.StatusMultipleChoices {
 		return "", fmt.Errorf("ai.openai.status.%d: %s", resp.StatusCode, truncate(string(raw), 300))
 	}
 	var parsed struct {

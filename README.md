@@ -1,3 +1,5 @@
+<p align="center"><img src="packages/brand/icon.svg" width="88" height="88" alt=""></p>
+
 <h1 align="center">SplitSpends</h1>
 
 <p align="center">

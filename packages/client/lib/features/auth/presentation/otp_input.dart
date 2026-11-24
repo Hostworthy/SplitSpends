@@ -54,7 +54,7 @@ class _OtpInputState extends State<OtpInput> {
     final scheme = Theme.of(context).colorScheme;
     final text = _controller.text;
     return GestureDetector(
-      onTap: () => _focus.requestFocus(),
+      onTap: _focus.requestFocus,
       child: Stack(
         alignment: Alignment.center,
         children: [

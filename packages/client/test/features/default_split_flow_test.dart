@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -57,7 +59,7 @@ void main() {
           ),
     );
     final router = container.read(routerProvider);
-    router.push('/groups/${flat.id}/settings');
+    unawaited(router.push('/groups/${flat.id}/settings'));
     await settle(tester);
 
     final section = find.byKey(const Key('default-split'));
@@ -91,7 +93,7 @@ void main() {
     expect(saved.defaultSplit?.method, SplitMethod.percent);
 
     // A new expense in the flat starts at 60/40.
-    router.push('/expenses/new?groupId=${flat.id}');
+    unawaited(router.push('/expenses/new?groupId=${flat.id}'));
     await settle(tester);
     await tester.enterText(
       find.byKey(const Key('expense-description')),

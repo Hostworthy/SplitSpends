@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
@@ -42,7 +43,7 @@ func NewAnthropic(apiKey, baseURL, model, effort string) *Anthropic {
 
 func (a *Anthropic) ask(ctx context.Context, system string, content []anthropic.BetaContentBlockParamUnion, schema map[string]any) (string, error) {
 	params := anthropic.BetaMessageNewParams{
-		Model:     anthropic.Model(a.model),
+		Model:     a.model,
 		MaxTokens: 16000,
 		System:    []anthropic.BetaTextBlockParam{{Text: system}},
 		Messages:  []anthropic.BetaMessageParam{anthropic.NewBetaUserMessage(content...)},
@@ -62,9 +63,9 @@ func (a *Anthropic) ask(ctx context.Context, system string, content []anthropic.
 		var apiErr *anthropic.Error
 		if errors.As(err, &apiErr) {
 			switch apiErr.StatusCode {
-			case 401, 403:
+			case http.StatusUnauthorized, http.StatusForbidden:
 				return "", fmt.Errorf("ai.anthropic.auth.failed: %w", err)
-			case 429:
+			case http.StatusTooManyRequests:
 				return "", errs.RateLimited("The AI provider is busy. Try again in a minute.")
 			}
 		}

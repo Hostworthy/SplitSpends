@@ -2,18 +2,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/user.dart';
+import 'package:splitspends/features/friends/domain/friend.dart';
+import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/friends/presentation/providers.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';
 
 /// Everyone the signed-in user knows (friends, group members, self), by id.
 final peopleProvider = Provider<Map<String, User>>((ref) {
   final people = <String, User>{};
-  for (final group in ref.watch(groupsProvider).value ?? const []) {
+  for (final group in ref.watch(groupsProvider).value ?? const <Group>[]) {
     for (final member in group.members) {
       people[member.id] = member;
     }
   }
-  for (final friend in ref.watch(friendsProvider).value ?? const []) {
+  for (final friend in ref.watch(friendsProvider).value ?? const <Friend>[]) {
     people[friend.user.id] = friend.user;
   }
   final me = ref.watch(meProvider);

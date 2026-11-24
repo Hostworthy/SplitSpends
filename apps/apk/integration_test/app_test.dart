@@ -1,3 +1,5 @@
+import 'dart:async';
+
 // Runs the real app on an Android device or emulator: on-device mode first,
 // then connecting to a server and uploading what was created offline.
 //
@@ -69,7 +71,7 @@ void main() {
     timeout: const Timeout(Duration(minutes: 8)),
     (tester) async {
       step('starting the app');
-      client.main();
+      unawaited(client.main());
       await waitFor(tester, find.text('Use on this device'));
 
       // On-device mode: no account, no server.
@@ -96,7 +98,7 @@ void main() {
 
       // Add \$90 groceries through the editor, split equally three ways.
       final router = container.read(routerProvider);
-      router.push('/expenses/new?groupId=${group.id}');
+      unawaited(router.push('/expenses/new?groupId=${group.id}'));
       await waitFor(tester, find.byKey(const Key('expense-description')));
       await tester.enterText(
         find.byKey(const Key('expense-description')),

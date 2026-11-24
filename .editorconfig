@@ -1,3 +1,4 @@
+# Editor defaults for every file; gofmt and dart format have the last word.
 root = true
 
 [*]
@@ -8,8 +9,12 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 2
 
-[*.go]
+[{*.go,Makefile,go.mod,go.sum}]
 indent_style = tab
+indent_size = 4
 
-[Makefile]
-indent_style = tab
+[*.{kt,kts,swift,py}]
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false

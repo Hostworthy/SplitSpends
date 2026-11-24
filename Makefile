@@ -1,8 +1,10 @@
-.PHONY: help setup dev api web check test test-integration lint fmt build docker web-build apk lambda
+.PHONY: help setup dev api web check test test-integration lint fmt hooks brand build docker web-build apk lambda
 
 .DEFAULT_GOAL := help
 TEST_DATABASE_URL ?= postgres://splitspends:splitspends@localhost:5432/splitspends_test?sslmode=disable
 DART_MEMBERS := packages/ledger packages/client apps/apk apps/ios apps/web
+# Built with the project's Go toolchain, so it understands this Go version.
+GOLANGCI ?= go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
 
 help:
 	@echo "Targets:"
@@ -10,7 +12,11 @@ help:
 	@echo "  dev               Run the API (:8080) and the web app (:5173)"
 	@echo "  api               Run only the API (apps/api)"
 	@echo "  web               Run only the web app (apps/web) against the local API"
-	@echo "  check             Format check, vet, unit tests, boundaries, analyze, fonts, Dart tests"
+	@echo "  check             lint and test"
+	@echo "  lint              gofmt, go vet, golangci-lint, dart format, flutter analyze, fonts"
+	@echo "  fmt               Format Go and Dart and apply Dart fixes"
+	@echo "  hooks             Run quick format checks before every commit"
+	@echo "  brand             Render icons, splash images and banners"
 	@echo "  test-integration  Database tests (needs TEST_DATABASE_URL)"
 	@echo "  build             Build the API and MCP binaries into bin/"
 	@echo "  web-build         Build the web app into apps/web/build/web"
@@ -37,11 +43,20 @@ dev:
 
 fmt:
 	gofmt -w apps packages
+	for d in $(DART_MEMBERS); do (cd $$d && dart fix --apply >/dev/null) || exit 1; done
 	dart format $(DART_MEMBERS)
+
+hooks:
+	git config core.hooksPath scripts/hooks
+	@echo "Pre-commit checks enabled. Disable with: git config --unset core.hooksPath"
+
+brand:
+	python3 scripts/brand/render.py
 
 lint:
 	@test -z "$$(gofmt -l apps packages)" || (echo "gofmt needed:"; gofmt -l apps packages; exit 1)
 	go vet ./...
+	$(GOLANGCI) run ./...
 	dart format --output=none --set-exit-if-changed $(DART_MEMBERS)
 	for d in $(DART_MEMBERS); do (cd $$d && flutter analyze) || exit 1; done
 	scripts/fonts/fallback.sh check

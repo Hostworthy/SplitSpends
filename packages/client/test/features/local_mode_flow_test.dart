@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -63,7 +65,7 @@ void main() {
 
     // Add an expense through the editor: \$90 paid by Ada, split equally.
     final router = container.read(routerProvider);
-    router.push('/expenses/new?groupId=${group.id}');
+    unawaited(router.push('/expenses/new?groupId=${group.id}'));
     await settle(tester);
     await tester.enterText(
       find.byKey(const Key('expense-description')),

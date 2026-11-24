@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Fast checks on staged files. Enable with `make hooks`; skip once with
+# `git commit --no-verify`. `make lint` runs the full set.
+set -euo pipefail
+
+go_files=$(git diff --cached --name-only --diff-filter=ACM -- '*.go')
+if [ -n "$go_files" ]; then
+  unformatted=$(gofmt -l $go_files)
+  if [ -n "$unformatted" ]; then
+    echo "gofmt needed (run make fmt):"
+    echo "$unformatted"
+    exit 1
+  fi
+fi
+
+dart_files=$(git diff --cached --name-only --diff-filter=ACM -- '*.dart' | grep -v '/build/' || true)
+if [ -n "$dart_files" ] && command -v dart >/dev/null; then
+  if ! dart format --output=none --set-exit-if-changed $dart_files >/dev/null; then
+    echo "dart format needed (run make fmt):"
+    dart format --output=none --set-exit-if-changed $dart_files | grep '^Changed' || true
+    exit 1
+  fi
+fi

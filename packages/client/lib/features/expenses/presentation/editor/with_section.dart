@@ -92,7 +92,7 @@ class WithSection extends ConsumerWidget {
                         title: Text(f.user.displayName),
                         subtitle: Text(f.user.statusLine),
                         onChanged: (v) => setState(() {
-                          v == true
+                          v ?? false
                               ? selected.add(f.user.id)
                               : selected.remove(f.user.id);
                         }),

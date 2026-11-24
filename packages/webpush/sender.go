@@ -115,7 +115,7 @@ func (w *Sender) Send(ctx context.Context, s *push.Subscription, payload []byte)
 	switch {
 	case res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusGone:
 		return push.ErrGone
-	case res.StatusCode >= 200 && res.StatusCode < 300:
+	case res.StatusCode >= http.StatusOK && res.StatusCode < http.StatusMultipleChoices:
 		return nil
 	default:
 		return fmt.Errorf("webpush.send.rejected: status %d", res.StatusCode)

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -167,7 +169,7 @@ class _EditorBodyState extends ConsumerState<_EditorBody> {
       final saved = widget.existing == null
           ? await repo.create(input)
           : await repo.update(widget.existing!.id, input);
-      HapticFeedback.mediumImpact();
+      unawaited(HapticFeedback.mediumImpact());
       ref.refreshLedger();
       if (!mounted) return;
       final router = GoRouter.of(context);

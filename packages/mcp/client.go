@@ -89,7 +89,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode >= 300 {
+	if resp.StatusCode >= http.StatusMultipleChoices {
 		apiErr := &APIError{Status: resp.StatusCode}
 		_ = json.Unmarshal(raw, &apiErr.Body)
 		return apiErr

@@ -90,7 +90,7 @@ func (s *Switches) apply(p SwitchesPatch) {
 
 // Apply merges p into n.
 func (n *Notifications) Apply(p NotificationsPatch) {
-	n.Switches.apply(p.SwitchesPatch)
+	n.apply(p.SwitchesPatch)
 	if p.Push != nil {
 		n.Push.apply(*p.Push)
 	}

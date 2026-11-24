@@ -143,7 +143,7 @@ class _PersonRow extends StatelessWidget {
           title: Text(name),
           subtitle: on ? owedText : null,
           onChanged: (v) => form.update(() {
-            v == true
+            v ?? false
                 ? form.included.add(userId)
                 : form.included.remove(userId);
           }),
