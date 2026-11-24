@@ -36,10 +36,13 @@ COPY apps/api apps/api
 COPY apps/mcp apps/mcp
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/splitspends ./apps/api \
- && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/splitspends-mcp ./apps/mcp
+ && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/splitspends-mcp ./apps/mcp \
+ && mkdir -p /data
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=api /out/ /usr/local/bin/
+# /data must belong to the runtime user: Docker seeds new volumes from it.
+COPY --from=api --chown=nonroot:nonroot /data /data
 COPY --from=web /src/apps/web/build/web /srv/web
 ENV ADDR=:8080 WEB_DIR=/srv/web DATA_DIR=/data
 VOLUME ["/data"]
