@@ -23,7 +23,7 @@ The server reads everything from the environment. Invalid or missing required va
 
 ### Client Addresses
 
-Sign-in codes and invite previews are rate limited per client address. Behind a reverse proxy the connecting address is the proxy's, so the server reads `X-Forwarded-For` instead. Each proxy appends the address it was connected from to the right of whatever the client sent, so only the right-most entries can be trusted: set `TRUST_PROXY` to the number of proxies in front of the server, and the server uses the entry that many places from the right. If the header has fewer entries, the connecting address is used. `X-Real-Ip` is never read.
+Sign-in codes and invite previews are rate limited per client address. IPv6 clients are counted per /64 network, the block one home or mobile connection is usually given. Behind a reverse proxy the connecting address is the proxy's, so the server reads `X-Forwarded-For` instead. Each proxy appends the address it was connected from to the right of whatever the client sent, so only the right-most entries can be trusted: set `TRUST_PROXY` to the number of proxies in front of the server, and the server uses the entry that many places from the right. If the header has fewer entries, the connecting address is used. `X-Real-Ip` is never read.
 
 | Setup | `TRUST_PROXY` |
 | ----- | ------------- |

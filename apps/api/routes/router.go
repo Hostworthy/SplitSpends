@@ -42,11 +42,12 @@ func (a *API) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	authed := func(h handler) http.Handler { return middleware.RequireAuth(a.svc.Auth, a.log, a.wrap(h)) }
 	public := func(h handler) http.Handler { return a.wrap(h) }
+	byAddress := middleware.ByAddress(a.cfg.ProxyHops)
 	otpLimit := middleware.NewLimiter(20, time.Minute)
-	limited := func(h handler) http.Handler { return middleware.Limit(otpLimit, a.log, a.cfg.ProxyHops, a.wrap(h)) }
+	limited := func(h handler) http.Handler { return middleware.Limit(otpLimit, a.log, byAddress, a.wrap(h)) }
 	// Invite previews are public; limit them per IP so tokens cannot be guessed.
 	inviteLimit := middleware.NewLimiter(30, time.Minute)
-	previews := func(h handler) http.Handler { return middleware.Limit(inviteLimit, a.log, a.cfg.ProxyHops, a.wrap(h)) }
+	previews := func(h handler) http.Handler { return middleware.Limit(inviteLimit, a.log, byAddress, a.wrap(h)) }
 	p := platform.Prefix
 
 	mux.Handle("GET /health", public(a.health))

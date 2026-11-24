@@ -292,7 +292,7 @@ func TestClientIP(t *testing.T) {
 // appended, so changing the client-written part of the header does not buy
 // a fresh budget.
 func TestLimitBehindProxy(t *testing.T) {
-	h := Limit(NewLimiter(20, time.Minute), quiet(), 1, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	h := Limit(NewLimiter(20, time.Minute), quiet(), ByAddress(1), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	for i := range 25 {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/otp/verify", nil)
 		req.RemoteAddr = "10.0.0.1:4321"
@@ -311,7 +311,7 @@ func TestLimitBehindProxy(t *testing.T) {
 
 func TestLimit(t *testing.T) {
 	calls := 0
-	h := Limit(NewLimiter(2, time.Hour), quiet(), 0, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	h := Limit(NewLimiter(2, time.Hour), quiet(), ByAddress(0), http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
 	status := func(remote string) int {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/otp/request", nil)
 		req.RemoteAddr = remote
@@ -329,5 +329,140 @@ func TestLimit(t *testing.T) {
 	}
 	if calls != 3 {
 		t.Fatalf("limited requests must not reach the handler: %d calls", calls)
+	}
+}
+
+// clock returns a limiter whose time moves only when the test says so.
+func clock(limit int, window time.Duration) (*Limiter, func(time.Duration)) {
+	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+	l := NewLimiter(limit, window)
+	l.now = func() time.Time { return now }
+	return l, func(d time.Duration) { now = now.Add(d) }
+}
+
+func TestLimiterSlidingWindow(t *testing.T) {
+	l, advance := clock(2, time.Minute)
+	for i, step := range []struct {
+		after time.Duration
+		want  bool
+	}{
+		{0, true},
+		{0, true},
+		{0, false},
+		{59 * time.Second, false},
+		// A fixed window would allow two more here; the previous window
+		// still almost fully overlaps.
+		{2 * time.Second, true},
+		{0, false},
+		// Half of the previous window overlaps: 2/2 + 1 counted.
+		{29 * time.Second, false},
+		// Next window: the previous one held 1 request.
+		{30 * time.Second, true},
+		{0, false},
+		// Two idle windows clear the budget.
+		{2 * time.Minute, true},
+		{0, true},
+		{0, false},
+	} {
+		advance(step.after)
+		if got := l.Allow("203.0.113.7"); got != step.want {
+			t.Fatalf("step %d: want %v, got %v", i+1, step.want, got)
+		}
+	}
+	if !l.Allow("203.0.113.8") {
+		t.Fatal("another key has its own budget")
+	}
+}
+
+func TestLimiterSweepsIdleKeys(t *testing.T) {
+	l, advance := clock(1, time.Minute)
+	for i := range 3 {
+		l.Allow(fmt.Sprintf("203.0.113.%d", i))
+	}
+	advance(time.Minute)
+	l.Allow("203.0.113.9")
+	if len(l.keys) != 4 {
+		t.Fatalf("keys idle for one window still count: %d keys", len(l.keys))
+	}
+	advance(time.Minute)
+	l.Allow("203.0.113.10")
+	if len(l.keys) != 2 || l.recent.Len() != 2 {
+		t.Fatalf("keys idle for two windows must be dropped: %d keys, %d in order", len(l.keys), l.recent.Len())
+	}
+}
+
+func TestLimiterBoundedMemory(t *testing.T) {
+	l, _ := clock(1, time.Hour)
+	for i := range 1_000_000 {
+		l.Allow(fmt.Sprint(i))
+	}
+	if len(l.keys) > maxKeys || l.recent.Len() != len(l.keys) {
+		t.Fatalf("want at most %d keys, got %d (%d in order)", maxKeys, len(l.keys), l.recent.Len())
+	}
+	if l.Allow("999999") {
+		t.Fatal("a recent key must keep its count")
+	}
+}
+
+func TestLimiterIPv6Prefix(t *testing.T) {
+	h := Limit(NewLimiter(1, time.Hour), quiet(), ByAddress(0), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	status := func(remote string) int {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = remote
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for _, step := range []struct {
+		remote string
+		want   int
+	}{
+		{"[2001:db8:1:2::1]:4321", http.StatusOK},
+		{"[2001:db8:1:2:ffff:ffff:ffff:9]:4321", http.StatusTooManyRequests},
+		{"[2001:db8:1:3::1]:4321", http.StatusOK},
+		{"203.0.113.7:4321", http.StatusOK},
+		{"[::ffff:203.0.113.7]:4321", http.StatusTooManyRequests},
+	} {
+		if got := status(step.remote); got != step.want {
+			t.Errorf("%s: want %d, got %d", step.remote, step.want, got)
+		}
+	}
+}
+
+func TestByUser(t *testing.T) {
+	key := ByUser(0)
+	req := func(p *auth.Principal) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = "203.0.113.7:4321"
+		if p != nil {
+			r = r.WithContext(WithPrincipal(r.Context(), p))
+		}
+		return r
+	}
+	ada, bob := uuid.New(), uuid.New()
+	if key(req(&auth.Principal{UserID: ada})) == key(req(&auth.Principal{UserID: bob})) {
+		t.Fatal("two people at one address must have their own budgets")
+	}
+	if a, b := key(req(&auth.Principal{UserID: ada})), key(req(&auth.Principal{UserID: ada, SessionID: uuid.New()})); a != b {
+		t.Fatalf("one person's sessions share a budget: %q, %q", a, b)
+	}
+	if got := key(req(nil)); got != "203.0.113.7" {
+		t.Fatalf("without a principal the address is the key, got %q", got)
+	}
+}
+
+// BenchmarkLimiterManyKeys measures Allow with the limiter full of live keys,
+// half the calls for new keys and half for known ones.
+func BenchmarkLimiterManyKeys(b *testing.B) {
+	l, _ := clock(20, time.Minute)
+	keys := make([]string, 2*maxKeys)
+	for i := range keys {
+		keys[i] = fmt.Sprint(i)
+	}
+	for _, k := range keys[:maxKeys] {
+		l.Allow(k)
+	}
+	for i := 0; b.Loop(); i++ {
+		l.Allow(keys[i%len(keys)])
 	}
 }
