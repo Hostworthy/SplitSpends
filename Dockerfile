@@ -27,7 +27,8 @@ COPY apps/web apps/web
 WORKDIR /src/apps/web
 RUN flutter build web --release --no-web-resources-cdn
 
-FROM golang:1.26-alpine AS api
+# The Go release go.mod names, so the image and the release binaries match.
+FROM golang:1.26.11-alpine AS api
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
