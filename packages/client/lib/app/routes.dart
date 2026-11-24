@@ -17,12 +17,19 @@ abstract final class Routes {
   static const newExpense = '/expenses/new';
   static const settle = '/settle';
   static const scan = '/scan';
+  static const joinPrefix = '/join';
 
   static String group(String id) => '/groups/$id';
   static String groupSettings(String id) => '/groups/$id/settings';
   static String friend(String id) => '/friends/$id';
   static String expense(String id) => '/expenses/$id';
   static String editExpense(String id) => '/expenses/$id/edit';
+
+  /// An invite link inside the app; [server] is set for links from another
+  /// origin (pasted on a phone).
+  static String join(String token, {String? server}) => server == null
+      ? '$joinPrefix/$token'
+      : '$joinPrefix/$token?server=${Uri.encodeQueryComponent(server)}';
 }
 
 /// Arguments for the expense editor (`extra` of [Routes.newExpense]).

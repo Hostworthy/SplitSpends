@@ -18,6 +18,7 @@ import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/domain/groups_repository.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';
+import 'package:splitspends/features/invites/presentation/invite_section.dart';
 
 const _emojis = [
   '🏠',
@@ -165,7 +166,7 @@ class _SettingsState extends ConsumerState<_Settings> {
     final meId = ref.watch(meProvider)?.id;
     final scheme = Theme.of(context).colorScheme;
     return ListView(
-      padding: const EdgeInsets.only(bottom: 48),
+      padding: const EdgeInsets.only(bottom: 96),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -291,6 +292,7 @@ class _SettingsState extends ConsumerState<_Settings> {
                     onPressed: () => _removeMember(m.id, self: false),
                   ),
           ),
+        InviteSection(group: group),
         const SectionHeader('Danger zone'),
         ListTile(
           leading: Icon(

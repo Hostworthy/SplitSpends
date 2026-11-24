@@ -63,9 +63,10 @@ Build or download `splitspends-mcp` (`make build` writes `bin/splitspends-mcp`; 
 | `list_categories` | Category ids for new expenses |
 | `add_expense` | Equal, exact, percent or shares split; amounts are decimal strings |
 | `record_payment` | Settle up between two people |
+| `remind_to_settle` | Email someone who owes you a reminder to settle up (one group or everything; once per 24 hours) |
 | `delete_expense` | Soft delete (restorable in the app) |
 
-Example prompts: "How much do I owe in the Lisbon trip?", "Add 84.20 for groceries in Flat, split with everyone", "Ben paid me back 25 euros".
+Example prompts: "How much do I owe in the Lisbon trip?", "Add 84.20 for groceries in Flat, split with everyone", "Ben paid me back 25 euros", "Remind Sam about the Lisbon trip".
 
 ## Design
 

@@ -293,6 +293,34 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 	return s.view(ctx, actor, g)
 }
 
+// Join adds the actor to a group, for example through an invite link.
+// Joining a group you already belong to changes nothing.
+func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) {
+	g, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if g.HasMember(actor) {
+		return s.view(ctx, actor, g)
+	}
+	me, err := s.users.Get(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.repo.AddMember(ctx, g.ID, actor, s.clock.Now()); err != nil {
+			return err
+		}
+		g.Members = append(g.Members, actor)
+		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: &g.ID, Kind: activity.GroupMemberJoined,
+			Involved: g.Members, Data: map[string]any{"groupName": g.Name, "targetName": me.Name, "targetId": me.ID.String()}})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.view(ctx, actor, g)
+}
+
 // RemoveMember removes a settled member. Members may remove themselves.
 func (s *Service) RemoveMember(ctx context.Context, actor, id, member uuid.UUID) error {
 	g, err := s.Member(ctx, actor, id)

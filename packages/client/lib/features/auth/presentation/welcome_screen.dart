@@ -6,7 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/app/shell.dart';
 
-final _hostingGuide = Uri.parse(
+final hostingGuide = Uri.parse(
   'https://github.com/Hostworthy/SplitSpends/blob/main/docs/HOSTING.md',
 );
 
@@ -45,7 +45,7 @@ class WelcomeScreen extends ConsumerWidget {
       action: 'Connect',
       onPressed: () => context.push(Routes.login),
       footer: TextButton.icon(
-        onPressed: () => launchUrl(_hostingGuide),
+        onPressed: () => launchUrl(hostingGuide),
         icon: const Icon(Icons.help_outline_rounded, size: 18),
         label: const Text('How do I get a server?'),
       ),

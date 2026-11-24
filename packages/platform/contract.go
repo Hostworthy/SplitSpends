@@ -52,12 +52,14 @@ type User struct {
 	Status          string  `json:"status"`
 }
 
-// Notifications are email preferences.
+// Notifications are email preferences. Reminders is always set in
+// responses; a PATCH that omits it keeps the current value.
 type Notifications struct {
-	ExpenseAdded    bool `json:"expenseAdded"`
-	ExpenseUpdated  bool `json:"expenseUpdated"`
-	PaymentReceived bool `json:"paymentReceived"`
-	AddedToGroup    bool `json:"addedToGroup"`
+	ExpenseAdded    bool  `json:"expenseAdded"`
+	ExpenseUpdated  bool  `json:"expenseUpdated"`
+	PaymentReceived bool  `json:"paymentReceived"`
+	AddedToGroup    bool  `json:"addedToGroup"`
+	Reminders       *bool `json:"reminders,omitempty"`
 }
 
 // Me is the caller's own profile.
@@ -108,9 +110,11 @@ type Config struct {
 	Categories []Category `json:"categories"`
 }
 
-// OTPRequest asks for a login code.
+// OTPRequest asks for a login code. InviteToken, from a group invite link,
+// lets a new person sign up on servers that only admit invited people.
 type OTPRequest struct {
-	Email string `json:"email"`
+	Email       string `json:"email"`
+	InviteToken string `json:"inviteToken,omitempty"`
 }
 
 // OTPSent confirms a code request.
@@ -424,6 +428,44 @@ type ExpenseDraft struct {
 	Tax         int64    `json:"tax"`
 	Tip         int64    `json:"tip"`
 	Warnings    []string `json:"warnings"`
+}
+
+// ReminderInput asks someone who owes the caller to settle up, in one group
+// or across everything.
+type ReminderInput struct {
+	UserID  string  `json:"userId"`
+	GroupID *string `json:"groupId,omitempty"`
+}
+
+// Reminder is a sent reminder. Balances are what the person owes the caller
+// (positive). Emailed is false when they turned reminder emails off.
+type Reminder struct {
+	ID       string    `json:"id"`
+	UserID   string    `json:"userId"`
+	GroupID  *string   `json:"groupId"`
+	Balances []Balance `json:"balances"`
+	Emailed  bool      `json:"emailed"`
+	SentAt   string    `json:"sentAt"`
+}
+
+// Invite is a group invite link. Token and URL are only returned when the
+// link is created.
+type Invite struct {
+	ID        string `json:"id"`
+	Token     string `json:"token,omitempty"`
+	URL       string `json:"url,omitempty"`
+	CreatedBy string `json:"createdBy"`
+	ExpiresAt string `json:"expiresAt"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// InvitePreview is what anyone holding an invite link may see.
+type InvitePreview struct {
+	GroupName   string `json:"groupName"`
+	Emoji       string `json:"emoji"`
+	Color       string `json:"color"`
+	MemberCount int    `json:"memberCount"`
+	InvitedBy   string `json:"invitedBy"`
 }
 
 // Health is the liveness response.

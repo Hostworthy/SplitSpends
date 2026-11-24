@@ -16,7 +16,7 @@ import (
 func TestCurrencyComesFromGroupOrPerson(t *testing.T) {
 	ctx := context.Background()
 	svc, notes := setup(t, time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC))
-	if err := svc.Auth.RequestCode(ctx, "ada@example.com"); err != nil {
+	if err := svc.Auth.RequestCode(ctx, "ada@example.com", ""); err != nil {
 		t.Fatal(err)
 	}
 	login, err := svc.Auth.Verify(ctx, "ada@example.com", notes.codes["ada@example.com"], "Ada", "test")

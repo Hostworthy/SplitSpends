@@ -32,6 +32,8 @@ Several of these sit behind Splitwise Pro today (receipt scanning, itemization, 
 | Natural-language "add expense" | No | Yes, when AI is configured |
 | Multiple currencies | Yes, conversion is Pro | Yes. Each group has one currency and you have your own for everything else, so nobody picks a currency per expense. AI converts receipts from abroad at that day's rate |
 | Settle up and record payments | Yes | Yes |
+| Remind someone to settle up | Yes | Yes, by email once a day per person and group; share a text reminder in on-device mode |
+| Invite to a group with a link or QR code | Yes | Yes, links last 14 days and also let new people sign up |
 | Comments on expenses | Yes | Yes |
 | Activity feed | Yes | Yes |
 | Email notifications with preferences | Yes | Yes |

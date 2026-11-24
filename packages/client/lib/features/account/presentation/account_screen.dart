@@ -266,6 +266,19 @@ class AccountScreen extends ConsumerWidget {
                       notifications: prefs.copyWith(addedToGroup: v),
                     ),
                   ),
+                  SwitchListTile(
+                    key: const Key('notify-reminders'),
+                    title: const Text('Reminders to settle up'),
+                    subtitle: const Text(
+                      'When someone you owe sends you a reminder',
+                    ),
+                    value: prefs.reminders,
+                    onChanged: (v) => _update(
+                      context,
+                      ref,
+                      notifications: prefs.copyWith(reminders: v),
+                    ),
+                  ),
                   const SectionHeader('Developers'),
                   ListTile(
                     leading: const Icon(Icons.key_rounded),

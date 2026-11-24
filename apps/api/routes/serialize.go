@@ -51,7 +51,10 @@ func toUser(u *user.User) platform.User {
 }
 
 func toMe(u *user.User) platform.Me {
-	return platform.Me{User: toUser(u), Timezone: u.Timezone, Notifications: platform.Notifications(u.Notifications)}
+	n := u.Notifications
+	reminders := n.Reminders
+	return platform.Me{User: toUser(u), Timezone: u.Timezone, Notifications: platform.Notifications{ExpenseAdded: n.ExpenseAdded,
+		ExpenseUpdated: n.ExpenseUpdated, PaymentReceived: n.PaymentReceived, AddedToGroup: n.AddedToGroup, Reminders: &reminders}}
 }
 
 func toToken(s *auth.Session, token string) platform.Token {

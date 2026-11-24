@@ -11,6 +11,7 @@ import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/auth/domain/auth_repository.dart';
 import 'package:splitspends/features/auth/presentation/auth_layout.dart';
 import 'package:splitspends/features/auth/presentation/otp_input.dart';
+import 'package:splitspends/features/invites/presentation/providers.dart';
 
 /// Step 2: enter the emailed code; step 3 (new accounts): your name.
 class OtpScreen extends ConsumerStatefulWidget {
@@ -110,7 +111,13 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
   Future<void> _resend() async {
     try {
-      await ref.read(authRepositoryProvider).requestCode(_server, widget.email);
+      await ref
+          .read(authRepositoryProvider)
+          .requestCode(
+            _server,
+            widget.email,
+            inviteToken: ref.read(pendingInviteProvider)?.token,
+          );
       _startCooldown();
       if (mounted) {
         ScaffoldMessenger.of(context)
