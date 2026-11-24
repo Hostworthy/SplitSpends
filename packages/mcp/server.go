@@ -239,7 +239,7 @@ func (t *tools) line(ctx context.Context, e platform.Expense, idx people) string
 			best, payer = s.Paid, s.UserID
 		}
 	}
-	mine := ""
+	var mine string
 	switch {
 	case e.MyBalance > 0:
 		mine = "you lent " + t.c.format(ctx, e.MyBalance, e.Currency)

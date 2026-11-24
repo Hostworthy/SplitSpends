@@ -17,7 +17,7 @@ func (a *API) uploadReceipt(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseMultipartForm(2 << 20); err != nil {
 		return errs.Validation("file", "Upload the image as multipart form field \"file\" (max 10 MB).")
 	}
-	defer r.MultipartForm.RemoveAll()
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		return errs.Validation("file", "Upload the image as multipart form field \"file\".")

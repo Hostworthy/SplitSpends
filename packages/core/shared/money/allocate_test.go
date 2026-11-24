@@ -1,6 +1,7 @@
 package money
 
 import (
+	"errors"
 	"math/big"
 	"testing"
 )
@@ -47,7 +48,7 @@ func TestAllocateLargestRemainder(t *testing.T) {
 }
 
 func TestAllocateZeroWeights(t *testing.T) {
-	if _, err := Allocate(10, []*big.Rat{new(big.Rat)}); err != ErrNoWeights {
+	if _, err := Allocate(10, []*big.Rat{new(big.Rat)}); !errors.Is(err, ErrNoWeights) {
 		t.Fatalf("want ErrNoWeights, got %v", err)
 	}
 }
