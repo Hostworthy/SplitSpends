@@ -7,17 +7,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/core/widgets/back_home_button.dart';
 import 'package:splitspends/core/api/api_error.dart';
-import 'package:splitspends/core/auth/session.dart';
-import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/states.dart';
-import 'package:splitspends/features/expenses/domain/expense.dart';
-import 'package:splitspends/features/groups/presentation/providers.dart';
 import 'package:splitspends/app/repositories.dart';
-import 'package:splitspends/features/receipts/domain/receipt.dart';
 
 enum _Step { pick, uploading, reading, failed }
 
-/// Photo → upload → AI scan → itemized expense editor for review.
+/// Instructions + photo → upload → AI draft → itemized expense editor for
+/// review. The AI runs on the provider the server's host configured.
 class ScanReceiptScreen extends ConsumerStatefulWidget {
   const ScanReceiptScreen({super.key, this.groupId});
 
@@ -31,6 +27,13 @@ class _ScanReceiptScreenState extends ConsumerState<ScanReceiptScreen> {
   _Step _step = _Step.pick;
   Uint8List? _image;
   String? _error;
+  final _instructions = TextEditingController();
+
+  @override
+  void dispose() {
+    _instructions.dispose();
+    super.dispose();
+  }
 
   Future<void> _pick(ImageSource source) async {
     final file = await ImagePicker().pickImage(
@@ -54,16 +57,17 @@ class _ScanReceiptScreenState extends ConsumerState<ScanReceiptScreen> {
       );
       if (!mounted) return;
       setState(() => _step = _Step.reading);
-      final currency = widget.groupId == null
-          ? ref.read(meProvider)?.defaultCurrency
-          : ref.read(groupProvider(widget.groupId!)).value?.defaultCurrency;
-      final scan = await repo.scan(receipt.id, currency: currency);
+      final draft = await repo.draft(
+        _instructions.text.trim(),
+        groupId: widget.groupId,
+        receiptId: receipt.id,
+      );
       if (!mounted) return;
       context.pushReplacement(
         Routes.newExpense,
         extra: ExpenseEditorArgs(
-          groupId: widget.groupId,
-          draft: _draft(scan, receipt.id),
+          groupId: draft.groupId ?? widget.groupId,
+          draft: draft,
         ),
       );
     } on ApiError catch (error) {
@@ -74,24 +78,6 @@ class _ScanReceiptScreenState extends ConsumerState<ScanReceiptScreen> {
             : describeError(error);
       });
     }
-  }
-
-  ExpenseInput _draft(ReceiptScan scan, String receiptId) {
-    final meId = ref.read(meProvider)?.id ?? '';
-    return ExpenseInput(
-      groupId: widget.groupId,
-      description: scan.merchant ?? 'Receipt',
-      currency: scan.currency,
-      total: scan.total,
-      date: scan.date ?? Dates.toApi(Dates.today()),
-      category: scan.category,
-      splitMethod: SplitMethod.itemized,
-      payers: [Payer(userId: meId, amount: scan.total)],
-      items: scan.items,
-      tax: scan.tax,
-      tip: scan.tip,
-      receiptId: receiptId,
-    );
   }
 
   @override
@@ -155,10 +141,25 @@ class _ScanReceiptScreenState extends ConsumerState<ScanReceiptScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                TextField(
+                  controller: _instructions,
+                  enabled: !busy,
+                  minLines: 1,
+                  maxLines: 3,
+                  maxLength: 1000,
+                  decoration: const InputDecoration(
+                    labelText: 'Instructions (optional)',
+                    hintText:
+                        'Ben had the pasta, split the rest with everyone '
+                        'in Lisbon trip',
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Text(
                   _error ??
-                      'Take a clear photo of the whole receipt. AI reads the items, '
-                          'tax and tip, then you assign items to people.',
+                      'Take a clear photo of the whole receipt. AI reads the '
+                          'items, tax and tip and follows your instructions. '
+                          'You review everything before it is saved.',
                   style: text.bodyMedium?.copyWith(
                     color: _error == null ? null : scheme.error,
                   ),

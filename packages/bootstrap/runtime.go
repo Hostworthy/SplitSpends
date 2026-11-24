@@ -121,6 +121,7 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 	balances := balance.NewService(expenseRepo)
 	groups := group.NewService(groupRepo, users, balances, act, notifier, tx, c, cfg.BaseURL)
 	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
+	receipts := receipt.NewService(receiptRepo, blobs, reader, c)
 	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
 		Connections: friends, Receipts: receiptRepo, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	return &Services{
@@ -132,8 +133,8 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 		Activity: act,
 		Expenses: expenses,
 		Transfer: transfer.NewService(users, friendRepo, groups, expenses, tx),
-		Receipts: receipt.NewService(receiptRepo, blobs, reader, c),
-		Assist:   assist.NewService(reader, users, groups, friendRepo, c),
+		Receipts: receipts,
+		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, c),
 		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users),
 	}
 }

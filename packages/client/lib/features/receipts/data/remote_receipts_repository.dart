@@ -29,16 +29,13 @@ class RemoteReceiptsRepository implements ReceiptsRepository {
   Future<Uint8List> image(String id) => _api.getBytes('/receipts/$id');
 
   @override
-  Future<ReceiptScan> scan(String id, {String? currency}) => _api.postData(
-    '/receipts/$id/scan',
-    {'currency': ?currency},
-    (d) => ReceiptScan.fromJson(d as JsonMap),
-  );
-
-  @override
-  Future<ExpenseInput> draft(String text, {String? groupId}) => _api.postData(
-    '/ai/expense-draft',
-    {'text': text, 'groupId': ?groupId},
-    (d) => ExpenseInput.fromJson(d as JsonMap),
-  );
+  Future<ExpenseInput> draft(
+    String text, {
+    String? groupId,
+    String? receiptId,
+  }) => _api.postData('/ai/expense-draft', {
+    'text': text,
+    'groupId': ?groupId,
+    'receiptId': ?receiptId,
+  }, (d) => ExpenseInput.fromJson(d as JsonMap));
 }

@@ -84,10 +84,8 @@ func (a *Anthropic) ask(ctx context.Context, system string, content []anthropic.
 
 // ReadReceipt implements ports.ReceiptReader.
 func (a *Anthropic) ReadReceipt(ctx context.Context, in ports.ReceiptInput) (ports.ReceiptExtract, error) {
-	switch in.ContentType {
-	case "image/jpeg", "image/png", "image/webp":
-	default:
-		return ports.ReceiptExtract{}, errs.Validation("file", "Scanning supports JPEG, PNG and WebP photos.")
+	if err := imageSupported(in.ContentType); err != nil {
+		return ports.ReceiptExtract{}, err
 	}
 	image := anthropic.NewBetaImageBlock(anthropic.BetaBase64ImageSourceParam{
 		Data:      base64.StdEncoding.EncodeToString(in.Image),
@@ -102,7 +100,18 @@ func (a *Anthropic) ReadReceipt(ctx context.Context, in ports.ReceiptInput) (por
 
 // DraftExpense implements ports.ReceiptReader.
 func (a *Anthropic) DraftExpense(ctx context.Context, in ports.DraftInput) (ports.DraftExtract, error) {
-	raw, err := a.ask(ctx, draftInstructions(in), []anthropic.BetaContentBlockParamUnion{anthropic.NewBetaTextBlock(in.Text)}, draftSchema)
+	content := []anthropic.BetaContentBlockParamUnion{}
+	if len(in.Image) > 0 {
+		if err := imageSupported(in.ContentType); err != nil {
+			return ports.DraftExtract{}, err
+		}
+		content = append(content, anthropic.NewBetaImageBlock(anthropic.BetaBase64ImageSourceParam{
+			Data:      base64.StdEncoding.EncodeToString(in.Image),
+			MediaType: anthropic.BetaBase64ImageSourceMediaType(in.ContentType),
+		}))
+	}
+	content = append(content, anthropic.NewBetaTextBlock(instructions(in)))
+	raw, err := a.ask(ctx, draftInstructions(in), content, draftSchema)
 	if err != nil {
 		return ports.DraftExtract{}, err
 	}

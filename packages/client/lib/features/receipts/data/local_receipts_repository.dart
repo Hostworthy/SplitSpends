@@ -25,10 +25,9 @@ class LocalReceiptsRepository implements ReceiptsRepository {
   Future<Uint8List> image(String id) => Future.error(_error);
 
   @override
-  Future<ReceiptScan> scan(String id, {String? currency}) =>
-      Future.error(_error);
-
-  @override
-  Future<ExpenseInput> draft(String text, {String? groupId}) =>
-      Future.error(_error);
+  Future<ExpenseInput> draft(
+    String text, {
+    String? groupId,
+    String? receiptId,
+  }) => Future.error(_error);
 }

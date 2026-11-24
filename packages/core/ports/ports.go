@@ -74,14 +74,20 @@ type ExtractItem struct {
 	Amount   string
 }
 
-// DraftInput carries a free-text description and the people it may mention.
+// DraftInput is everything the AI provider needs to turn the user's
+// instructions (and optionally a receipt photo) into an expense draft.
+// The application builds the system prompt from it; the model runs outside.
 type DraftInput struct {
-	Text       string
-	Today      string
-	Currency   string
-	Me         Person
-	People     []Person
-	Categories []string
+	Text        string
+	Today       string
+	Currency    string
+	Me          Person
+	People      []Person
+	Groups      []GroupOption
+	GroupID     string // preselected group, empty when the user did not pick one
+	Categories  []string
+	Image       []byte // optional receipt photo
+	ContentType string
 }
 
 // Person is a candidate participant the model may reference by id.
@@ -91,16 +97,36 @@ type Person struct {
 	Email string
 }
 
-// DraftExtract is the model's reading of a free-text expense.
+// GroupOption is a group the user belongs to.
+type GroupOption struct {
+	ID        string
+	Name      string
+	Currency  string
+	MemberIDs []string
+}
+
+// DraftExtract is the model's reading of the instructions. Amounts are
+// decimal strings; ids must come from DraftInput.
 type DraftExtract struct {
 	Description    string
 	Amount         string
 	Currency       string
 	Date           string
 	Category       string
+	GroupID        string
 	PayerID        string
 	ParticipantIDs []string
+	Items          []DraftItem
+	Tax            string
+	Tip            string
 	Unmatched      []string
+}
+
+// DraftItem is a receipt line and who shares it.
+type DraftItem struct {
+	Name           string
+	Amount         string
+	ParticipantIDs []string
 }
 
 type quietKey struct{}

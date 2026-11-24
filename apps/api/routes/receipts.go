@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/assist"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
@@ -82,16 +83,20 @@ func (a *API) draftExpense(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	groupID, err := optionalID(in.GroupID, "groupId")
+	req := assist.Request{Text: in.Text}
+	if req.GroupID, err = optionalID(in.GroupID, "groupId"); err != nil {
+		return err
+	}
+	if req.ReceiptID, err = optionalID(in.ReceiptID, "receiptId"); err != nil {
+		return err
+	}
+	d, err := a.svc.Assist.Draft(r.Context(), me(r), req)
 	if err != nil {
 		return err
 	}
-	d, err := a.svc.Assist.Draft(r.Context(), me(r), in.Text, groupID)
-	if err != nil {
-		return err
-	}
-	out := platform.ExpenseDraft{GroupID: in.GroupID, Description: d.Description, Currency: d.Currency, Total: d.Total, Date: d.Date,
-		Category: d.Category, SplitMethod: "equal", Payers: []platform.Payer{}, Splits: []platform.Split{}, Warnings: d.Warnings}
+	out := platform.ExpenseDraft{GroupID: idPtr(d.GroupID), ReceiptID: idPtr(d.ReceiptID), Description: d.Description,
+		Currency: d.Currency, Total: d.Total, Date: d.Date, Category: d.Category, SplitMethod: string(d.Method),
+		Payers: []platform.Payer{}, Splits: []platform.Split{}, Items: []platform.Item{}, Tax: d.Tax, Tip: d.Tip, Warnings: d.Warnings}
 	if out.Warnings == nil {
 		out.Warnings = []string{}
 	}
@@ -103,6 +108,13 @@ func (a *API) draftExpense(w http.ResponseWriter, r *http.Request) error {
 	}
 	for _, s := range d.Splits {
 		out.Splits = append(out.Splits, platform.Split{UserID: s.UserID.String()})
+	}
+	for _, it := range d.Items {
+		ids := make([]string, len(it.UserIDs))
+		for i, id := range it.UserIDs {
+			ids[i] = id.String()
+		}
+		out.Items = append(out.Items, platform.Item{Name: it.Name, Amount: it.Amount, UserIDs: ids})
 	}
 	return details(w, http.StatusOK, out)
 }

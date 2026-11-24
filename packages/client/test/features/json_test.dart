@@ -7,7 +7,6 @@ import 'package:splitspends/features/activity/domain/activity.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/friends/domain/friend.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
-import 'package:splitspends/features/receipts/domain/receipt.dart';
 
 const _user = {
   'id': 'u1',
@@ -195,20 +194,39 @@ void main() {
     });
     expect(activity.actor.firstName, 'Ada');
 
-    final scan = ReceiptScan.fromJson({
-      'merchant': 'Cafe',
-      'date': null,
+    final draft = ExpenseInput.fromJson({
+      'groupId': 'g1',
+      'receiptId': 'r1',
+      'description': 'Dinner at the market',
       'currency': 'EUR',
-      'items': [
-        {'name': 'Pizza', 'quantity': 1, 'amount': 1200},
-      ],
-      'subtotal': 1200,
-      'tax': 0,
-      'tip': 0,
-      'total': 1200,
+      'total': 5000,
+      'date': '2026-10-05',
       'category': 'food.dining',
+      'splitMethod': 'itemized',
+      'payers': [
+        {'userId': 'me', 'amount': 5000},
+      ],
+      'splits': <Object>[],
+      'items': [
+        {
+          'name': 'Pasta',
+          'amount': 2000,
+          'userIds': ['ben'],
+        },
+        {
+          'name': 'Wine',
+          'amount': 2600,
+          'userIds': ['me', 'ben'],
+        },
+      ],
+      'tax': 400,
+      'tip': 0,
+      'warnings': ['Could not match “Zoe” to anyone you know.'],
     });
-    expect(scan.items.single.amount, 1200);
+    expect(draft.splitMethod, SplitMethod.itemized);
+    expect(draft.items.first.userIds, ['ben']);
+    expect(draft.receiptId, 'r1');
+    expect(draft.warnings.single, contains('Zoe'));
 
     final summary = BalanceSummary.fromJson({
       'balances': <Object>[],

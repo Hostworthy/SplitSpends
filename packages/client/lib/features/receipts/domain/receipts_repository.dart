@@ -9,8 +9,7 @@ abstract interface class ReceiptsRepository {
 
   Future<Uint8List> image(String id);
 
-  Future<ReceiptScan> scan(String id, {String? currency});
-
-  /// Turns free text into a draft expense; never saves it.
-  Future<ExpenseInput> draft(String text, {String? groupId});
+  /// Asks the server's AI provider to turn instructions, and optionally an
+  /// uploaded receipt, into a draft expense. Never saves it.
+  Future<ExpenseInput> draft(String text, {String? groupId, String? receiptId});
 }

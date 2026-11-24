@@ -100,7 +100,18 @@ func (o *OpenAICompatible) ReadReceipt(ctx context.Context, in ports.ReceiptInpu
 
 // DraftExpense implements ports.ReceiptReader.
 func (o *OpenAICompatible) DraftExpense(ctx context.Context, in ports.DraftInput) (ports.DraftExtract, error) {
-	raw, err := o.ask(ctx, draftInstructions(in), in.Text, "expense_draft", draftSchema)
+	var user any = instructions(in)
+	if len(in.Image) > 0 {
+		if err := imageSupported(in.ContentType); err != nil {
+			return ports.DraftExtract{}, err
+		}
+		url := "data:" + in.ContentType + ";base64," + base64.StdEncoding.EncodeToString(in.Image)
+		user = []map[string]any{
+			{"type": "image_url", "image_url": map[string]any{"url": url}},
+			{"type": "text", "text": instructions(in)},
+		}
+	}
+	raw, err := o.ask(ctx, draftInstructions(in), user, "expense_draft", draftSchema)
 	if err != nil {
 		return ports.DraftExtract{}, err
 	}

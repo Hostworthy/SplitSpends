@@ -399,15 +399,19 @@ type ReceiptScan struct {
 	Category string     `json:"category"`
 }
 
-// DraftRequest asks to turn text into an expense draft.
+// DraftRequest asks the configured AI provider to turn instructions, and
+// optionally an uploaded receipt, into an expense draft.
 type DraftRequest struct {
-	Text    string  `json:"text"`
-	GroupID *string `json:"groupId,omitempty"`
+	Text      string  `json:"text"`
+	GroupID   *string `json:"groupId,omitempty"`
+	ReceiptID *string `json:"receiptId,omitempty"`
 }
 
-// ExpenseDraft is a reviewable expense body.
+// ExpenseDraft is a reviewable expense body (a POST /expenses body plus
+// warnings). It is never saved automatically.
 type ExpenseDraft struct {
 	GroupID     *string  `json:"groupId"`
+	ReceiptID   *string  `json:"receiptId"`
 	Description string   `json:"description"`
 	Currency    string   `json:"currency"`
 	Total       int64    `json:"total"`
@@ -416,6 +420,9 @@ type ExpenseDraft struct {
 	SplitMethod string   `json:"splitMethod"`
 	Payers      []Payer  `json:"payers"`
 	Splits      []Split  `json:"splits"`
+	Items       []Item   `json:"items"`
+	Tax         int64    `json:"tax"`
+	Tip         int64    `json:"tip"`
 	Warnings    []string `json:"warnings"`
 }
 

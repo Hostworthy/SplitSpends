@@ -72,14 +72,25 @@ Common providers:
 
 ## AI (Optional)
 
-Receipt scanning and natural-language drafts are off unless a provider is configured. The app hides AI buttons when it is off.
+SplitSpends does not run a model. When a provider is configured, the server sends the user's instructions (and a receipt photo, when there is one) together with a system prompt describing their groups, people and the rules to that provider, and turns the structured answer into a draft the user reviews. AI is off unless a provider is configured, and the app hides AI buttons when it is off.
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
 | `AI_PROVIDER` | empty | `anthropic`, `openai` (any OpenAI-compatible server) or `none` |
 | `AI_API_KEY` | empty | Provider key. Required for `anthropic` |
 | `AI_MODEL` | `claude-opus-5-5` for `anthropic` | Model id. Required for `openai` |
-| `AI_BASE_URL` | empty | For `openai`: the API root before `/chat/completions`, such as `http://localhost:11434/v1` (Ollama) or `https://openrouter.ai/api/v1` |
+| `AI_BASE_URL` | empty | For `openai`: the API root before `/chat/completions` (examples below) |
 | `AI_EFFORT` | model default | Anthropic only: `low`, `medium`, `high`, `xhigh`, `max` |
 
-The OpenAI-compatible provider must support JSON-schema response formats and, for receipts, image input (for example a vision model in Ollama). Receipt images are sent to the configured provider, so pick one whose data handling you are comfortable with.
+Examples:
+
+| Provider | `AI_PROVIDER` | `AI_BASE_URL` | `AI_MODEL` (example) |
+| --- | --- | --- | --- |
+| Anthropic | `anthropic` | empty | empty (defaults to `claude-opus-5-5`) |
+| OpenAI | `openai` | `https://api.openai.com/v1` | a vision model of your choice |
+| Google Gemini | `openai` | `https://generativelanguage.googleapis.com/v1beta/openai` | a Gemini model of your choice |
+| OpenRouter | `openai` | `https://openrouter.ai/api/v1` | any listed vision model |
+| Ollama (local) | `openai` | `http://localhost:11434/v1` | a local vision model |
+| Your own server | `openai` | its OpenAI-compatible root | its model id |
+
+The OpenAI-compatible provider must support JSON-schema response formats and, for receipts, image input. Receipt photos and instructions are sent to the configured provider, so pick one whose data handling you are comfortable with, or run a local model.

@@ -156,6 +156,12 @@ func (s *Service) notifyAdded(ctx context.Context, u, by *user.User, g *Group) {
 		Link:    s.baseURL})
 }
 
+// Mine returns the actor's active groups with their members, without
+// balances.
+func (s *Service) Mine(ctx context.Context, actor uuid.UUID) ([]*Group, error) {
+	return s.repo.ForUser(ctx, actor, false)
+}
+
 // View returns a group the actor belongs to.
 func (s *Service) View(ctx context.Context, actor, id uuid.UUID) (*View, error) {
 	g, err := s.Member(ctx, actor, id)
