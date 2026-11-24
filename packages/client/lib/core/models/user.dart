@@ -90,6 +90,7 @@ class NotificationPrefs {
     this.expenseUpdated = true,
     this.paymentReceived = true,
     this.addedToGroup = true,
+    this.reminders = true,
   });
 
   factory NotificationPrefs.fromJson(JsonMap? json) => NotificationPrefs(
@@ -97,6 +98,7 @@ class NotificationPrefs {
     expenseUpdated: (json?['expenseUpdated'] as bool?) ?? true,
     paymentReceived: (json?['paymentReceived'] as bool?) ?? true,
     addedToGroup: (json?['addedToGroup'] as bool?) ?? true,
+    reminders: (json?['reminders'] as bool?) ?? true,
   );
 
   final bool expenseAdded;
@@ -104,16 +106,21 @@ class NotificationPrefs {
   final bool paymentReceived;
   final bool addedToGroup;
 
+  /// Settle-up reminders from people you owe.
+  final bool reminders;
+
   NotificationPrefs copyWith({
     bool? expenseAdded,
     bool? expenseUpdated,
     bool? paymentReceived,
     bool? addedToGroup,
+    bool? reminders,
   }) => NotificationPrefs(
     expenseAdded: expenseAdded ?? this.expenseAdded,
     expenseUpdated: expenseUpdated ?? this.expenseUpdated,
     paymentReceived: paymentReceived ?? this.paymentReceived,
     addedToGroup: addedToGroup ?? this.addedToGroup,
+    reminders: reminders ?? this.reminders,
   );
 
   JsonMap toJson() => {
@@ -121,6 +128,7 @@ class NotificationPrefs {
     'expenseUpdated': expenseUpdated,
     'paymentReceived': paymentReceived,
     'addedToGroup': addedToGroup,
+    'reminders': reminders,
   };
 }
 

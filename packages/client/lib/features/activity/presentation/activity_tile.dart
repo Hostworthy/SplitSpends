@@ -11,6 +11,7 @@ import 'package:splitspends/features/activity/domain/activity.dart';
 IconData _kindIcon(String kind) {
   if (kind.startsWith('payment')) return Icons.payments_rounded;
   if (kind.startsWith('comment')) return Icons.chat_bubble_rounded;
+  if (kind.startsWith('reminder')) return Icons.notifications_active_rounded;
   if (kind.endsWith('deleted') || kind.endsWith('removed')) {
     return Icons.delete_rounded;
   }

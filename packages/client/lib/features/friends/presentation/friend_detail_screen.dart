@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:splitspends/app/refresh.dart';
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/core/auth/session.dart';
+import 'package:splitspends/core/models/balance.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/balance_text.dart';
 import 'package:splitspends/core/widgets/states.dart';
@@ -14,6 +15,7 @@ import 'package:splitspends/features/friends/domain/friend.dart';
 import 'package:splitspends/features/friends/presentation/add_friend_dialog.dart';
 import 'package:splitspends/features/friends/presentation/providers.dart';
 import 'package:splitspends/features/groups/presentation/detail/expenses_tab.dart';
+import 'package:splitspends/features/reminders/presentation/remind_button.dart';
 
 class FriendDetailScreen extends ConsumerWidget {
   const FriendDetailScreen({
@@ -162,6 +164,10 @@ class _FriendHeader extends StatelessWidget {
               ),
             ],
           ),
+          if (_owed.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            RemindButton(user: detail.user, owed: _owed, compact: false),
+          ],
           if (detail.user.email == null) ...[
             const SizedBox(height: 12),
             Card(
@@ -214,4 +220,10 @@ class _FriendHeader extends StatelessWidget {
   }
 
   bool get _owesMe => (detail.balances.firstOrNull?.amount ?? 0) > 0;
+
+  /// What the friend owes you overall, per currency.
+  List<Balance> get _owed => [
+    for (final b in detail.balances)
+      if (b.amount > 0) b,
+  ];
 }

@@ -30,8 +30,16 @@ class FakeAuthRepository implements AuthRepository {
   String? named;
 
   @override
-  Future<int> requestCode(String serverUrl, String email) async {
-    requested.add('$serverUrl|$email');
+  Future<int> requestCode(
+    String serverUrl,
+    String email, {
+    String? inviteToken,
+  }) async {
+    requested.add(
+      inviteToken == null
+          ? '$serverUrl|$email'
+          : '$serverUrl|$email|$inviteToken',
+    );
     return 600;
   }
 

@@ -8,6 +8,7 @@ import 'package:splitspends/features/groups/presentation/detail/group_detail_scr
 import 'package:splitspends/features/groups/presentation/group_card.dart';
 import 'package:splitspends/features/groups/presentation/group_form_sheet.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';
+import 'package:splitspends/features/invites/presentation/join_link_dialog.dart';
 
 /// Groups list; on wide screens also shows the selected group beside it.
 class GroupsScreen extends ConsumerWidget {
@@ -62,6 +63,12 @@ class _GroupsListState extends ConsumerState<_GroupsList> {
         title: const Text('Groups'),
         actions: [
           IconButton(
+            key: const Key('join-with-link'),
+            tooltip: 'Join with a link',
+            icon: const Icon(Icons.link_rounded),
+            onPressed: () => showJoinLinkDialog(context),
+          ),
+          IconButton(
             tooltip: 'New group',
             icon: const Icon(Icons.group_add_rounded),
             onPressed: () => showNewGroupSheet(context),
@@ -85,10 +92,22 @@ class _GroupsListState extends ConsumerState<_GroupsList> {
                       icon: Icons.groups_rounded,
                       title: 'No groups yet',
                       message: 'Create a group for your home, a trip, or anything you share.',
-                      action: FilledButton.icon(
-                        onPressed: () => showNewGroupSheet(context),
-                        icon: const Icon(Icons.add_rounded),
-                        label: const Text('New group'),
+                      action: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: () => showNewGroupSheet(context),
+                            icon: const Icon(Icons.add_rounded),
+                            label: const Text('New group'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () => showJoinLinkDialog(context),
+                            icon: const Icon(Icons.link_rounded),
+                            label: const Text('Join with a link'),
+                          ),
+                        ],
                       ),
                     ),
                     _archivedToggle(),

@@ -26,8 +26,12 @@ import 'package:splitspends/features/friends/data/remote_friends_repository.dart
 import 'package:splitspends/features/friends/domain/friends_repository.dart';
 import 'package:splitspends/features/groups/data/remote_groups_repository.dart';
 import 'package:splitspends/features/groups/domain/groups_repository.dart';
+import 'package:splitspends/features/invites/data/remote_invites_repository.dart';
+import 'package:splitspends/features/invites/domain/invite.dart';
 import 'package:splitspends/features/receipts/data/remote_receipts_repository.dart';
 import 'package:splitspends/features/receipts/domain/receipts_repository.dart';
+import 'package:splitspends/features/reminders/data/remote_reminders_repository.dart';
+import 'package:splitspends/features/reminders/domain/reminder.dart';
 import 'package:splitspends/features/sync/data/backup_service.dart';
 import 'package:splitspends/features/sync/data/import_service.dart';
 
@@ -127,6 +131,21 @@ final receiptsRepositoryProvider = Provider<ReceiptsRepository>(
     remote: RemoteReceiptsRepository.new,
     local: () => const LocalReceiptsRepository(),
   ),
+);
+
+/// Emailed reminders need a server; on this device people share a text.
+final remindersRepositoryProvider = Provider<RemindersRepository>(
+  (ref) => _select(ref, remote: RemoteRemindersRepository.new),
+);
+
+/// Invite links exist only on a server.
+final invitesRepositoryProvider = Provider<InvitesRepository>(
+  (ref) => _select(ref, remote: RemoteInvitesRepository.new),
+);
+
+/// Link previews are public, so they work before signing in.
+final invitePreviewsProvider = Provider<InvitePreviews>(
+  (ref) => RemoteInvitePreviews(ref.read(httpClientProvider)),
 );
 
 /// Login always talks to the server being connected to.

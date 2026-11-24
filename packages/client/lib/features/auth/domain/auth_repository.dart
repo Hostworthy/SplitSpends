@@ -25,8 +25,13 @@ class LoginResult {
 /// Email OTP login against a server (connected mode). Takes the server explicitly because it is chosen on the
 /// login screen before any session exists.
 abstract class AuthRepository {
-  /// Returns how many seconds the code stays valid.
-  Future<int> requestCode(String serverUrl, String email);
+  /// Returns how many seconds the code stays valid. [inviteToken], from a
+  /// group invite link, lets a new person sign up on invite-only servers.
+  Future<int> requestCode(
+    String serverUrl,
+    String email, {
+    String? inviteToken,
+  });
 
   Future<LoginResult> verifyCode(String serverUrl, String email, String code);
 
