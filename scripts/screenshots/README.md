@@ -1,6 +1,6 @@
 # README Screenshots
 
-Regenerates the images in `docs/images/` with demo data.
+Regenerates the README hero image (`docs/images/hero.webp`) with demo data.
 
 1. Build the web app (`make web-build`) and start the server with an empty database, `SIGNUP_MODE=open`, `WEB_DIR=app/build/web` and no `SMTP_HOST`, writing its log to a file (login codes are read from it).
 2. Seed demo data through the API:
@@ -16,6 +16,10 @@ Regenerates the images in `docs/images/` with demo data.
    SERVER_LOG=/path/to/server.log LISBON_ID=<id> DINNER_ID=<id> OUT_DIR=out node capture.js
    ```
 
-4. Copy the chosen images to `docs/images/`, reduced to a 256-colour palette to keep the repository small.
+4. Compose the README hero image from a desktop and a phone shot:
+
+   ```bash
+   python3 hero.py out/desktop-group-expenses.png out/phone-group-balances.png ../../docs/images/hero.webp
+   ```
 
 Keep demo data in plain English.
