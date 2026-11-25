@@ -169,6 +169,44 @@ func TestObserve(t *testing.T) {
 	})
 }
 
+func TestObserveRedactsInviteTokens(t *testing.T) {
+	const secret = "abc123secret"
+	for _, tc := range []struct {
+		path  string
+		fails bool
+	}{
+		{"/api/v1/invites/" + secret, false},
+		{"/api/v1/invites/" + secret + "/accept", false},
+		{"/join/" + secret, false},
+		{"/api/v1/invites/" + secret, true},
+	} {
+		var logs bytes.Buffer
+		log := slog.New(slog.NewJSONHandler(&logs, nil))
+		h := Observe(log, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if tc.fails {
+				WriteError(w, r, log, errors.New("database down"))
+			}
+		}))
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if strings.Contains(logs.String(), secret) {
+			t.Errorf("%s: the log holds the token: %s", tc.path, logs.String())
+		}
+		if !strings.Contains(logs.String(), "{token}") {
+			t.Errorf("%s: the log must still show the route: %s", tc.path, logs.String())
+		}
+	}
+	for path, want := range map[string]string{
+		"/api/v1/groups/g1/invites/i1": "/api/v1/groups/g1/invites/i1",
+		"/api/v1/invites/":             "/api/v1/invites/",
+		"/join/":                       "/join/",
+		"/api/v1/me":                   "/api/v1/me",
+	} {
+		if got := redact(path); got != want {
+			t.Errorf("redact(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
 func TestSecurity(t *testing.T) {
 	rec := httptest.NewRecorder()
 	Security(false, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
