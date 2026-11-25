@@ -36,6 +36,10 @@ type Repository interface {
 	// Update replaces the expense and its shares.
 	Update(ctx context.Context, e *Expense) error
 	List(ctx context.Context, f Filter) ([]*Expense, int, error)
+	// After returns up to limit of the group's live expenses that come after
+	// last, oldest first by date, then creation time, then id. A nil last
+	// starts at the oldest.
+	After(ctx context.Context, groupID uuid.UUID, last *Expense, limit int) ([]*Expense, error)
 	// Due returns live recurring expenses whose next date is on or before day.
 	Due(ctx context.Context, day time.Time, limit int) ([]*Expense, error)
 	// Claim locks the expense for the current transaction and returns it

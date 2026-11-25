@@ -323,11 +323,15 @@ class LocalGroupsRepository implements GroupsRepository {
         if (e['groupId'] == id && !LocalLedger.isDeleted(e)) e,
     ]..sort(_oldestFirst);
     final members = LocalLedger.memberIds(g);
-    final former = <String>{
-      for (final e in list)
-        for (final s in (e['shares'] as List).cast<JsonMap>())
-          if (!members.contains(s['userId'])) s['userId'] as String,
-    }.toList()..sort((a, b) => name(a).compareTo(name(b)));
+    final former =
+        <String>{
+          for (final e in list)
+            for (final s in (e['shares'] as List).cast<JsonMap>())
+              if (!members.contains(s['userId'])) s['userId'] as String,
+        }.toList()..sort((a, b) {
+          final byName = name(a).compareTo(name(b));
+          return byName != 0 ? byName : a.compareTo(b);
+        });
     final columns = [...members, ...former];
 
     final rows = <List<Object?>>[

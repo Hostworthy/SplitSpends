@@ -77,7 +77,7 @@ func TestExportPages(t *testing.T) {
 	ben := s.signIn(t, "ben@example.com", "Ben")
 	g := s.group(t, ada.Token, "Flat", "ben@example.com")
 	groupID, adaID, benID := uuid.MustParse(g.ID), uuid.MustParse(ada.User.ID), uuid.MustParse(ben.User.ID)
-	const count = exportPage + 1
+	const count = expense.ExportPage + 1
 	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := range count {
 		_, err := s.Services.Expenses.Create(context.Background(), adaID, expense.Input{GroupID: &groupID,
