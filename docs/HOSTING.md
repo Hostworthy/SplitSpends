@@ -46,7 +46,28 @@ cp ../.env.example .env          # set DOMAIN, BASE_URL=https://DOMAIN, POSTGRES
 docker compose up -d --build
 ```
 
-This runs PostgreSQL, Split Spends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly `pg_dump` into `deploy/docker/backups/`. Copy those backups off the machine now and then, and delete old ones when you no longer need them.
+This runs PostgreSQL, Split Spends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly backup into `deploy/docker/backups/`: a `pg_dump` of the database (`splitspends-<date>-<time>.dump`) and an archive of the receipts kept in the `data` volume (`receipts-<date>-<time>.tar.gz`). Backups older than `BACKUP_KEEP_DAYS` (14 by default) are deleted after each successful dump. A failed run leaves no file and logs `backup.dump.failed` or `backup.receipts.failed` (`docker compose logs backup`). Your `.env` and Caddy's certificates are not in the backup; keep a copy of `.env` somewhere safe.
+
+The backups hold every account's email address and all expenses, readable only by root on the host. Copy them off the machine regularly (with `sudo`), and encrypt the copies.
+
+#### Restore
+
+Run these in `deploy/docker`, with the file names of the backup you want:
+
+```bash
+docker compose stop app backup
+# Recreate the database from the dump, in one transaction.
+docker compose run --rm --no-deps backup 'set -e
+  dropdb -h db -U splitspends --force splitspends
+  createdb -h db -U splitspends splitspends
+  pg_restore -h db -U splitspends -d splitspends --single-transaction /backups/splitspends-2026-01-31-0300.dump'
+# Replace the receipts. The volume is named <folder>_data; `docker volume ls` shows it.
+docker run --rm -v docker_data:/data -v "$PWD/backups:/backups:ro" postgres:16-alpine \
+  sh -c 'find /data -mindepth 1 -delete && tar -xzf /backups/receipts-2026-01-31-0300.tar.gz -C /data'
+docker compose up -d
+```
+
+Keep the app stopped until the restore has finished without errors: it runs migrations when it starts, and they must not run against a half-restored database. If `pg_restore` fails, the database is left empty; fix the cause and run the restore again before starting the app. On a new machine, start only the database first (`docker compose up -d db`) and use the same `.env` as before.
 
 LAN or VPN only (no public domain): skip Caddy and use `deploy/docker-compose.yml`, then reach the server at `http://<machine-ip>:8080` over your LAN or a VPN such as Tailscale or WireGuard. Browsers and phones treat plain HTTP as insecure, so prefer a VPN with HTTPS (for example Tailscale's built-in certificates) over exposing port 8080.
 
@@ -85,7 +106,7 @@ The server creates its push key on first start and keeps it in the database. If 
 - Keep `SIGNUP_MODE=invite` unless you really want strangers to sign up. `approval` lets anyone ask while you decide who gets in, and `closed` stops new accounts. You can change this later in the app (Account, Administration).
 - Behind a proxy or CDN, set `TRUST_PROXY` to the number of proxies in front of the server (`1` for a single reverse proxy; the shipped Docker, Cloud Run, Render and AWS setups already set it) so rate limits see real client addresses; leave it `false` when the server is directly exposed. See [Client Addresses](ENVIRONMENT.md#client-addresses).
 - Rate limits on sign-in and invite links are counted in each server instance's memory. Cloud Run and Lambda run several instances and start empty after idling, so there the limits apply per instance and are looser. Each sign-in code still stops working after a few wrong attempts.
-- Back up the database. Receipts live in `DATA_DIR`, S3 or the database, depending on `BLOB_STORE`.
+- Back up the database, and the receipts if they are not in it: they live in `DATA_DIR`, S3 or the database, depending on `BLOB_STORE`. The homelab stack backs up both (see [Restore](#restore)). The other setups back up nothing themselves: use your database provider's backups, and back up `DATA_DIR` or the S3 bucket when receipts live there.
 - Update regularly: pull the latest code and rebuild. Migrations run automatically on start.
 - If you enable AI, receipt images and expense text are sent to that provider. Choose one you trust, or run a local model through an OpenAI-compatible server.
 - The web app makes no third-party requests. Its engine, its Latin font and the Noto fallback fonts for emoji and other scripts are all in the repository and served by your own server (see [apps/web/README.md](../apps/web/README.md)).
