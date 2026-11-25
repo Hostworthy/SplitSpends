@@ -19,13 +19,25 @@ class RemoteAdminRepository implements AdminRepository {
     (d) => SignupSettings.fromJson(d as JsonMap),
   );
 
+  /// The server keeps at most this many requests waiting, so reading up to
+  /// it shows every pending request; decided ones stop at the newest.
+  static const _most = 500;
+
+  /// Reads page after page, so the oldest people waiting are listed too.
   @override
-  Future<List<SignupRequest>> requests({String status = 'pending'}) async =>
-      (await _api.getList(
+  Future<List<SignupRequest>> requests({String status = 'pending'}) async {
+    final all = <SignupRequest>[];
+    while (all.length < _most) {
+      final page = await _api.getList(
         '/admin/requests',
         SignupRequest.fromJson,
-        query: {'limit': 200, 'status': status},
-      )).items;
+        query: {'limit': 200, 'offset': all.length, 'status': status},
+      );
+      all.addAll(page.items);
+      if (page.items.isEmpty || all.length >= page.total) break;
+    }
+    return all;
+  }
 
   @override
   Future<SignupRequest> approve(String id) => _api.postData(
