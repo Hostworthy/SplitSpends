@@ -29,8 +29,10 @@ const TokenPrefix = "ss_"
 
 // Challenge is a pending one-time login code.
 type Challenge struct {
-	ID         uuid.UUID
-	Email      string
+	ID    uuid.UUID
+	Email string
+	// CodeHash is empty when no code was sent because the email may not
+	// sign in; the request still counts toward the hourly limits.
 	CodeHash   string
 	Attempts   int
 	ExpiresAt  time.Time
@@ -45,7 +47,7 @@ type Challenge struct {
 
 // Usable reports whether the challenge can still be verified.
 func (c *Challenge) Usable(now time.Time, maxAttempts int) bool {
-	return c.ConsumedAt == nil && now.Before(c.ExpiresAt) && c.Attempts < maxAttempts
+	return c.CodeHash != "" && c.ConsumedAt == nil && now.Before(c.ExpiresAt) && c.Attempts < maxAttempts
 }
 
 // Session is an authenticated credential, interactive or API token.

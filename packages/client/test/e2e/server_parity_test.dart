@@ -274,7 +274,6 @@ void main() {
       ),
       outbox,
       meId: () => serverMe.id,
-      onQueued: () {},
     );
     final members = [for (final m in (await groups.get(g.id)).members) m.id];
     final queued = await offline.create(

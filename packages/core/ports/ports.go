@@ -25,6 +25,16 @@ type Locker interface {
 	TryLock(ctx context.Context, key string) (bool, error)
 }
 
+// Quota counts uses of budgets that refill every window, such as how many
+// people one account may invite a day. A use taken inside a transaction is
+// undone when the transaction rolls back.
+type Quota interface {
+	// Take uses one of the limit units key has per window, counted from the
+	// first use, and reports whether one was left. A refused use is not
+	// counted.
+	Take(ctx context.Context, key string, limit int, window time.Duration, now time.Time) (bool, error)
+}
+
 // Notifier delivers user-facing messages by email and push. Implementations
 // should not block the caller on slow delivery for non-critical messages.
 type Notifier interface {

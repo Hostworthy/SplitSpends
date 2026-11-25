@@ -146,8 +146,9 @@ func (s *Service) decide(ctx context.Context, email, link string) (decision, err
 	return deny, nil
 }
 
-// RequestCode emails a login code. It returns nil for disallowed emails too,
-// so callers cannot probe which addresses have accounts. invite is an
+// RequestCode emails a login code. Disallowed emails get the same answer,
+// count toward the same limits and are sent nothing, so callers cannot probe
+// which addresses may sign in. invite is an
 // optional group invite token that lets a new person sign up. client is the
 // caller's network address; the hourly limit counts per network as well as
 // per email, so requests from elsewhere do not use up the owner's share.
@@ -177,14 +178,18 @@ func (s *Service) RequestCode(ctx context.Context, rawEmail, invite, client stri
 			}
 		}
 		d, err := s.decide(ctx, email, link)
-		if err != nil || d == deny {
+		if err != nil {
 			return err
 		}
-		if code, err = newCode(); err != nil {
-			return err
-		}
+		// A refused request is recorded too, without a code, so the limits
+		// treat every address the same.
 		c := &Challenge{ID: uuid.New(), Email: email, ExpiresAt: now.Add(s.policy.CodeTTL), CreatedAt: now, Client: client, Invite: link}
-		c.CodeHash = hashCode(s.policy.Secret, c.ID, email, code)
+		if d != deny {
+			if code, err = newCode(); err != nil {
+				return err
+			}
+			c.CodeHash = hashCode(s.policy.Secret, c.ID, email, code)
+		}
 		return s.challenges.Create(ctx, c)
 	})
 	if err != nil || code == "" {

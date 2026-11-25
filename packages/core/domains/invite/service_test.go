@@ -91,6 +91,7 @@ func (m users) List(context.Context, []uuid.UUID) ([]*user.User, error) { return
 func (m users) Create(context.Context, *user.User) error                { return nil }
 func (m users) Update(context.Context, *user.User) error                { return nil }
 func (m users) Count(context.Context) (int, error)                      { return len(m), nil }
+func (m users) Placeholders(context.Context, uuid.UUID) (int, error)    { return 0, nil }
 
 type clockAt struct{ at time.Time }
 
@@ -104,7 +105,7 @@ func setup(t *testing.T) (*Service, *groups, *user.User, *clockAt) {
 	}
 	g := &groups{g: &group.Group{ID: uuid.New(), Name: "Flat", Emoji: "🏠", Members: []uuid.UUID{ada.ID}}}
 	c := &clockAt{at: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)}
-	svc := NewService(&memInvites{}, g, g, user.NewService(users{ada.ID: ada}, nil, c), c, "https://split.test")
+	svc := NewService(&memInvites{}, g, g, user.NewService(users{ada.ID: ada}, nil, nil, c), c, "https://split.test")
 	return svc, g, ada, c
 }
 

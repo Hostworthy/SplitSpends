@@ -144,4 +144,4 @@ Read by the backup service in `deploy/docker/docker-compose.yml`, not by the ser
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `BACKUP_KEEP_DAYS` | `14` | Days to keep the nightly database dumps and receipt archives in `deploy/docker/backups/`. Older ones are deleted after each successful dump |
+| `BACKUP_KEEP_DAYS` | `14` | Days to keep the nightly database dumps and receipt archives in `deploy/docker/backups/`. Older dumps are deleted after each successful dump, older archives after each successful archive |

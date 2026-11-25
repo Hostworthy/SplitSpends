@@ -105,6 +105,7 @@ func (m *memUsers) Count(context.Context) (int, error) {
 	}
 	return n, nil
 }
+func (m *memUsers) Placeholders(context.Context, uuid.UUID) (int, error) { return 0, nil }
 
 type codes map[string]string
 
@@ -356,5 +357,35 @@ func TestVerifyAppliesTheRulesAgain(t *testing.T) {
 	}
 	if users.byEmail["friend@example.com"].Status != user.StatusInvited {
 		t.Fatal("the invited account must stay invited")
+	}
+}
+
+// kind is the kind of err, or "" for nil.
+func kind(err error) errs.Kind {
+	if e, ok := errs.As(err); ok {
+		return e.Kind
+	}
+	return ""
+}
+
+func TestRequestCodeLooksTheSameForStrangers(t *testing.T) {
+	ctx := context.Background()
+	s, users, sent := service(SignupInvite)
+	first, _ := user.New("first@example.com", "First", user.StatusActive, time.Now())
+	_ = users.Create(ctx, first)
+	friend, _ := user.New("friend@example.com", "Friend", user.StatusInvited, time.Now())
+	_ = users.Create(ctx, friend)
+	for i := 0; i <= s.policy.MaxCodesHour; i++ {
+		stranger := s.RequestCode(ctx, "stranger@example.com", "", "")
+		invited := s.RequestCode(ctx, "friend@example.com", "", "")
+		if kind(stranger) != kind(invited) {
+			t.Fatalf("request %d: stranger got %v, invited person got %v", i+1, stranger, invited)
+		}
+	}
+	if _, ok := sent["stranger@example.com"]; ok {
+		t.Fatal("no code may be sent to strangers")
+	}
+	if _, err := s.Verify(ctx, "stranger@example.com", "", "", ""); !errs.Is(err, errs.KindUnauthorized) {
+		t.Fatalf("a refused request has no code to verify, got %v", err)
 	}
 }
