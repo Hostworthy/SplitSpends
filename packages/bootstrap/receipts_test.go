@@ -282,3 +282,25 @@ func TestDraftNeedsMembership(t *testing.T) {
 		t.Fatalf("Ada drafts in her own group with her receipt: %v, %d drafts", err, reader.calls)
 	}
 }
+
+// TestDraftNeedsReadableImage checks that a draft from a HEIC receipt, which
+// is stored but which AI providers cannot read, is refused before the
+// provider is asked.
+func TestDraftNeedsReadableImage(t *testing.T) {
+	ctx := context.Background()
+	reader := &drafts{}
+	env := bootstraptest.Open(t, bootstraptest.Options{Reader: reader})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	heic := append([]byte("\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic"), make([]byte, 64)...)
+	r, err := env.Services.Receipts.Upload(ctx, ada, heic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = env.Services.Assist.Draft(ctx, ada, assist.Request{ReceiptID: &r.ID})
+	if e, ok := errs.As(err); !ok || e.Kind != errs.KindValidation || e.Field != "file" {
+		t.Fatalf("want a validation error on file, got %v", err)
+	}
+	if reader.calls != 0 {
+		t.Fatalf("a HEIC receipt must not reach the AI provider: %d drafts", reader.calls)
+	}
+}

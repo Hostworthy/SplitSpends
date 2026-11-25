@@ -114,12 +114,56 @@ func TestToScanRejectsBadAmounts(t *testing.T) {
 	}
 }
 
-func TestSniff(t *testing.T) {
-	if sniff([]byte{0xFF, 0xD8, 0xFF, 0xE0}) != "image/jpeg" {
-		t.Fatal("jpeg")
+// ftyp is the start of an ISO media file with a major brand and compatible
+// brands.
+func ftyp(major string, compatible ...string) []byte {
+	box := []byte{0, 0, 0, byte(16 + 4*len(compatible))}
+	box = append(box, "ftyp"+major+"\x00\x00\x00\x00"...)
+	for _, c := range compatible {
+		box = append(box, c...)
 	}
-	if sniff([]byte("GIF89a")) != "" {
-		t.Fatal("gif must be rejected")
+	return append(box, "\x00\x00\x00\x08meta"...)
+}
+
+func TestSniff(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{"jpeg", []byte{0xFF, 0xD8, 0xFF, 0xE0}, "image/jpeg"},
+		{"gif", []byte("GIF89a"), ""},
+		{"heic", ftyp("heic", "mif1", "heic"), "image/heic"},
+		{"heix", ftyp("heix", "mif1"), "image/heic"},
+		{"heif with heic inside", ftyp("mif1", "mif1", "heic"), "image/heic"},
+		{"avif", ftyp("avif", "mif1", "avif"), ""},
+		{"heif with avif inside", ftyp("mif1", "mif1", "avif", "miaf"), ""},
+		{"video", ftyp("isom", "isom", "mp41"), ""},
+		{"truncated box", ftyp("mif1", "heic")[:18], ""},
+	} {
+		if got := sniff(tc.data); got != tc.want {
+			t.Errorf("%s: want %q, got %q", tc.name, tc.want, got)
+		}
+	}
+}
+
+// TestScanNeedsReadableImage checks that a HEIC receipt, which is stored
+// but which AI providers cannot read, is refused before the reader is asked.
+func TestScanNeedsReadableImage(t *testing.T) {
+	ctx := context.Background()
+	ada := uuid.New()
+	ai := &reader{}
+	s := NewService(&shown{}, stored{}, ai, noTx{}, clock.Fixed{At: time.Now()})
+	r, err := s.Upload(ctx, ada, ftyp("heic", "mif1", "heic"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Scan(ctx, ada, r.ID, "")
+	if e, ok := errs.As(err); !ok || e.Kind != errs.KindValidation || e.Field != "file" || !strings.Contains(e.Message, "JPEG, PNG and WebP") {
+		t.Fatalf("want a validation error naming the readable formats, got %v", err)
+	}
+	if len(ai.calls) != 0 {
+		t.Fatalf("a HEIC receipt must not reach the AI reader: %d calls", len(ai.calls))
 	}
 }
 

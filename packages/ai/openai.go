@@ -86,6 +86,9 @@ func (o *OpenAICompatible) ask(ctx context.Context, system string, user any, nam
 
 // ReadReceipt implements ports.ReceiptReader.
 func (o *OpenAICompatible) ReadReceipt(ctx context.Context, in ports.ReceiptInput) (ports.ReceiptExtract, error) {
+	if err := imageSupported(in.ContentType); err != nil {
+		return ports.ReceiptExtract{}, err
+	}
 	url := "data:" + in.ContentType + ";base64," + base64.StdEncoding.EncodeToString(in.Image)
 	content := []map[string]any{
 		{"type": "image_url", "image_url": map[string]any{"url": url}},

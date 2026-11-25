@@ -171,6 +171,10 @@ func (s *Service) Draft(ctx context.Context, actor uuid.UUID, req Request) (*Dra
 		if err != nil {
 			return nil, err
 		}
+		if err := r.Readable(); err != nil {
+			body.Close()
+			return nil, err
+		}
 		in.Image, err = io.ReadAll(io.LimitReader(body, receipt.MaxSize+1))
 		body.Close()
 		if err != nil {

@@ -150,11 +150,24 @@ func TestAnthropicDraft(t *testing.T) {
 }
 
 func TestRejectsUnsupportedImages(t *testing.T) {
-	in := draftInput()
-	in.ContentType = "image/heic"
-	if _, err := NewOpenAICompatible("http://127.0.0.1:1", "", "m").DraftExpense(context.Background(), in); err == nil ||
-		!strings.Contains(err.Error(), "JPEG, PNG and WebP") {
-		t.Fatalf("want a friendly format error, got %v", err)
+	ctx := context.Background()
+	draft := draftInput()
+	draft.ContentType = "image/heic"
+	scan := receiptInput()
+	scan.ContentType = "image/heic"
+	url, calls := provider(t, http.StatusOK, "{}")
+	for name, call := range map[string]func() error{
+		"openai draft":      func() error { _, err := NewOpenAICompatible(url, "", "m").DraftExpense(ctx, draft); return err },
+		"openai receipt":    func() error { _, err := NewOpenAICompatible(url, "", "m").ReadReceipt(ctx, scan); return err },
+		"anthropic draft":   func() error { _, err := anthropicAt(url).DraftExpense(ctx, draft); return err },
+		"anthropic receipt": func() error { _, err := anthropicAt(url).ReadReceipt(ctx, scan); return err },
+	} {
+		if err := call(); err == nil || !strings.Contains(err.Error(), "JPEG, PNG and WebP") {
+			t.Errorf("%s: want a friendly format error, got %v", name, err)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("an unsupported image must not be sent: %d requests", calls.Load())
 	}
 }
 
