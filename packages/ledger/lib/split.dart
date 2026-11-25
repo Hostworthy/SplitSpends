@@ -157,7 +157,8 @@ NormalizedExpense normalize(
       'Keep the description under 120 characters.',
     );
   }
-  if (input.notes.runes.length > 2000) {
+  final notes = trimSpace(input.notes);
+  if (notes.runes.length > 2000) {
     throw const LedgerError('notes', 'Notes are limited to 2000 characters.');
   }
   final currency = input.currency.trim().toUpperCase();
@@ -202,7 +203,7 @@ NormalizedExpense normalize(
     total: input.total,
     date: date,
     category: category,
-    notes: input.notes,
+    notes: notes,
     method: input.method.isEmpty ? 'equal' : input.method,
     recurrence: recurrence,
     items: itemized ? items : const [],
@@ -498,8 +499,11 @@ final _edges = RegExp('^[$_space]+|[$_space]+\$');
 /// Trims like Go's strings.TrimSpace.
 String trimSpace(String s) => s.replaceAll(_edges, '');
 
+final _runs = RegExp('[$_space]+');
+
+/// Collapses whitespace like Go's strings.Fields joined with single spaces.
 String _collapse(String s) =>
-    s.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).join(' ');
+    s.split(_runs).where((p) => p.isNotEmpty).join(' ');
 
 bool _isNil(String id) => id.isEmpty || id == _nilId;
 

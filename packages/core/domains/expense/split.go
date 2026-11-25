@@ -76,7 +76,8 @@ type Normalized struct {
 }
 
 // Normalize validates in and computes every participant's owed amount. An
-// empty date means today.
+// empty date means today and an empty method means equal. The Dart ledger
+// ports this function, so every rule on the input belongs here.
 func Normalize(in Input, today time.Time) (*Normalized, error) {
 	in.Description = strings.Join(strings.Fields(in.Description), " ")
 	if in.Description == "" {
@@ -85,6 +86,7 @@ func Normalize(in Input, today time.Time) (*Normalized, error) {
 	if utf8.RuneCountInString(in.Description) > 120 {
 		return nil, errs.Validation("description", "Keep the description under 120 characters.")
 	}
+	in.Notes = strings.TrimSpace(in.Notes)
 	if utf8.RuneCountInString(in.Notes) > 2000 {
 		return nil, errs.Validation("notes", "Notes are limited to 2000 characters.")
 	}
@@ -107,6 +109,9 @@ func Normalize(in Input, today time.Time) (*Normalized, error) {
 	}
 	if in.Category == PaymentCategory {
 		return nil, errs.Validation("category", "That category is only for payments. Choose another one.")
+	}
+	if in.Method == "" {
+		in.Method = MethodEqual
 	}
 	if in.Recurrence == "" {
 		in.Recurrence = RecurNone

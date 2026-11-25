@@ -224,11 +224,8 @@ func (s *Service) category(ctx context.Context, actor uuid.UUID, id, kept string
 
 func (s *Service) build(e *Expense, n *Normalized, actor uuid.UUID, now time.Time) {
 	e.Description, e.Category, e.Currency, e.Total = n.Description, n.Category, n.Currency, n.Total
-	e.Date, e.Notes, e.Method, e.Shares = n.Date, strings.TrimSpace(n.Notes), n.Method, n.Shares
+	e.Date, e.Notes, e.Method, e.Shares = n.Date, n.Notes, n.Method, n.Shares
 	e.Items, e.Tax, e.Tip, e.ReceiptID, e.Recurrence = n.Items, n.Tax, n.Tip, n.ReceiptID, n.Recurrence
-	if e.Method == "" {
-		e.Method = MethodEqual
-	}
 	e.NextDate = nil
 	if e.Recurrence != RecurNone {
 		next := e.Recurrence.Next(e.Date)
