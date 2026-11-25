@@ -10,8 +10,10 @@ List<String> _show(List<Debt> debts) => [
   for (final d in debts) '${d.from} > ${d.to} ${d.currency} ${d.amount}',
 ];
 
-Friend _friend(String id, List<Balance> balances) =>
-    Friend(user: User(id: id, name: id), balances: balances);
+Friend _friend(String id, List<Balance> balances) => Friend(
+  user: User(id: id, name: id),
+  balances: balances,
+);
 
 void main() {
   final friends = [
