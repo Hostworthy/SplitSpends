@@ -8,7 +8,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/refresh.dart';
 import 'package:splitspends/app/routes.dart';
-import 'package:splitspends/app/theme.dart';
+import 'package:splitspends/core/widgets/swatches.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/utils/download.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
@@ -233,23 +233,9 @@ class _SettingsState extends ConsumerState<_Settings> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final c in palette)
-                InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: () => _patch(GroupInput(color: toHexColor(c))),
-                  child: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: c,
-                    child: group.color?.toUpperCase() == toHexColor(c)
-                        ? const Icon(Icons.check, color: Colors.white, size: 18)
-                        : null,
-                  ),
-                ),
-            ],
+          child: Swatches(
+            selected: group.color,
+            onSelected: (hex) => _patch(GroupInput(color: hex)),
           ),
         ),
         const SectionHeader('Money'),

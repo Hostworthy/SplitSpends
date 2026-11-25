@@ -115,7 +115,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      StatefulShellRoute.indexedStack(
+      StatefulShellRoute(
+        navigatorContainerBuilder: _branches,
         builder: (context, state, shell) =>
             AppShell(shell: shell, state: state),
         branches: [
@@ -298,3 +299,25 @@ CustomTransitionPage<void> _fade(GoRouterState state, Widget child) =>
       transitionsBuilder: (context, animation, secondary, child) =>
           FadeTransition(opacity: animation, child: child),
     );
+
+/// The tabs kept in an indexed stack, like [StatefulShellRoute.indexedStack].
+/// Hidden tabs also leave hero flights, since a group or friend shown on two
+/// tabs (the dashboard and the groups list) would otherwise put two heroes
+/// with one tag under a screen pushed over the shell.
+Widget _branches(
+  BuildContext context,
+  StatefulNavigationShell shell,
+  List<Widget> children,
+) => IndexedStack(
+  index: shell.currentIndex,
+  children: [
+    for (final (i, child) in children.indexed)
+      Offstage(
+        offstage: i != shell.currentIndex,
+        child: TickerMode(
+          enabled: i == shell.currentIndex,
+          child: HeroMode(enabled: i == shell.currentIndex, child: child),
+        ),
+      ),
+  ],
+);

@@ -32,10 +32,15 @@ class FriendsScreen extends ConsumerWidget {
                   title: 'Pick a friend',
                   message: 'See what you owe each other across all groups.',
                 )
-              : FriendDetailScreen(
-                  key: ValueKey(selectedId),
-                  userId: selectedId!,
-                  embedded: true,
+              // The list beside this pane already shows the friend's avatar as a
+              // hero, and two heroes with one tag break route changes.
+              : HeroMode(
+                  enabled: false,
+                  child: FriendDetailScreen(
+                    key: ValueKey(selectedId),
+                    userId: selectedId!,
+                    embedded: true,
+                  ),
                 ),
         ),
       ],
