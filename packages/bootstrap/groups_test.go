@@ -259,3 +259,34 @@ func TestRemoveMemberKeepsConcurrentExpense(t *testing.T) {
 		t.Fatalf("an expense for someone just removed should be refused as invalid, got %v", err)
 	}
 }
+
+// locking is the group repository with a hook that runs right before the
+// group row is locked.
+type locking struct {
+	*repositories.Groups
+	before func()
+}
+
+func (l locking) Lock(ctx context.Context, id uuid.UUID) (*group.Group, error) {
+	l.before()
+	return l.Groups.Lock(ctx, id)
+}
+
+func TestRemoveMemberChecksBalanceAfterLock(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	// Right before the group is locked for the removal, Ada books an expense
+	// Ben shares. Nothing holds the group yet, so it is saved at once.
+	repo := locking{repositories.NewGroups(env.DB), func() {
+		if _, err := env.Services.Expenses.Create(ctx, ada, expense.Input{GroupID: &g.ID, Description: "Pizza", Currency: "EUR",
+			Total: 3000, Method: expense.MethodEqual, Payers: []expense.Payer{{UserID: ada, Amount: 3000}},
+			Splits: []expense.SplitInput{{UserID: ada}, {UserID: ben}}}); err != nil {
+			t.Error(err)
+		}
+	}}
+	svc := group.NewService(repo, env.Services.Users, env.Services.Balances, env.Services.Activity, env.Notifier,
+		repositories.NewQuotas(env.DB), database.NewTx(env.DB), env.Clock, "http://test")
+	if err := svc.RemoveMember(ctx, ada, g.ID, ben); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("Ben was removed while owing for an expense booked before the lock: %v", err)
+	}
+}
