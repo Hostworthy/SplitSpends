@@ -1,5 +1,5 @@
 {
- "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A split may give date (YYYY-MM-DD) and today, and values, the split values stored for each user after trimming; input description defaults to the name, and description, notes and method give the normalized result; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. recurrence: each series starts on start and books dates in order; monthly and yearly series keep the start day, or use the last day of a shorter month. Pairwise debts within one entry add up to each debtor's and each creditor's net exactly, whatever order the shares are listed in. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members (error names the failing field); when current is given, effective says whether the saved split still applies to those members. currencies and categories: the built-in catalogs, currencies sorted by code and categories in display order; the client bundles the same lists for on-device mode.",
+ "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A case that must be refused gives the failing field as error and the text people see as message. owed lists every person on the expense and adds up to the total; each person's paid is what the input payers give them. A split may give currency (USD when absent), recurrence, date (YYYY-MM-DD) and today, and values, the split values stored for each user after trimming; input description defaults to the name, and description, notes, method and currency give the normalized result; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. balances: named cases of entries with the nets, pairwise debts and simplified debts they produce. sheets: one person's (me) view of their groups, each simplified or not, and of entries outside groups: per friend the total, the amount per group and outside groups, me's net in each group (groupNets), and overall net, owed and owing. recurrence: each series starts on start and books dates in order; monthly and yearly series keep the start day, or use the last day of a shorter month. Pairwise debts within one entry add up to each debtor's and each creditor's net exactly, whatever order the shares are listed in. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members; when current is given, effective says whether the saved split still applies to those members. currencies and categories: the built-in catalogs, currencies sorted by code and categories in display order; the client bundles the same lists for on-device mode.",
  "splits": [
   {
    "name": "equal three ways",
@@ -137,7 +137,8 @@
      }
     ]
    },
-   "error": "splits"
+   "error": "splits",
+   "message": "Amounts must add up to the total."
   },
   {
    "name": "percent with decimals",
@@ -225,7 +226,8 @@
      }
     ]
    },
-   "error": "splits"
+   "error": "splits",
+   "message": "Percentages must add up to 100."
   },
   {
    "name": "shares",
@@ -373,7 +375,8 @@
      }
     ]
    },
-   "error": "payers"
+   "error": "payers",
+   "message": "Paid amounts must add up to the total."
   },
   {
    "name": "itemized with tax and tip",
@@ -441,7 +444,8 @@
     "tax": 100,
     "tip": 200
    },
-   "error": "total"
+   "error": "total",
+   "message": "Items plus tax and tip must equal the total."
   },
   {
    "name": "itemized shared item remainder",
@@ -523,7 +527,8 @@
      }
     ]
    },
-   "error": "date"
+   "error": "date",
+   "message": "Choose a date from 2000 up to a year from today."
   },
   {
    "name": "date a year ahead is allowed",
@@ -574,7 +579,8 @@
      }
     ]
    },
-   "error": "date"
+   "error": "date",
+   "message": "Choose a date from 2000 up to a year from today."
   },
   {
    "name": "split between more than 200 people is refused",
@@ -1193,7 +1199,8 @@
      }
     ]
    },
-   "error": "splits"
+   "error": "splits",
+   "message": "An expense can be split between at most 200 people."
   },
   {
    "name": "itemized tax above the maximum is refused",
@@ -1219,7 +1226,8 @@
     "tax": 1000000000001,
     "tip": 0
    },
-   "error": "tax"
+   "error": "tax",
+   "message": "Tax and tip are too large."
   },
   {
    "name": "itemized tax and tip that would overflow are refused",
@@ -1245,7 +1253,8 @@
     "tax": 9223372036854775807,
     "tip": 9223372036854775807
    },
-   "error": "tax"
+   "error": "tax",
+   "message": "Tax and tip are too large."
   },
   {
    "name": "shares value longer than 20 characters is refused",
@@ -1269,7 +1278,8 @@
      }
     ]
    },
-   "error": "splits"
+   "error": "splits",
+   "message": "Use positive numbers."
   },
   {
    "name": "percent in hexadecimal is refused",
@@ -1293,7 +1303,8 @@
      }
     ]
    },
-   "error": "splits"
+   "error": "splits",
+   "message": "Use positive numbers."
   },
   {
    "name": "exact with digit separators is refused",
@@ -1317,7 +1328,8 @@
      }
     ]
    },
-   "error": "splits"
+   "error": "splits",
+   "message": "Amounts must be whole numbers of minor units."
   },
   {
    "name": "shares as a hexadecimal float are refused",
@@ -1341,7 +1353,8 @@
      }
     ]
    },
-   "error": "splits"
+   "error": "splits",
+   "message": "Use positive numbers."
   },
   {
    "name": "shares with an exponent are refused",
@@ -1365,7 +1378,8 @@
      }
     ]
    },
-   "error": "splits"
+   "error": "splits",
+   "message": "Use positive numbers."
   },
   {
    "name": "byte order mark is not whitespace",
@@ -1389,7 +1403,8 @@
      }
     ]
    },
-   "error": "splits"
+   "error": "splits",
+   "message": "Use positive numbers."
   },
   {
    "name": "shares accept a trailing point, a leading point and a plus sign",
@@ -1509,269 +1524,1620 @@
     "method": "equal",
     "description": "\u0085"
    },
-   "error": "description"
-  }
- ],
- "balances": {
-  "entries": [
-   {
-    "currency": "USD",
-    "shares": [
+   "error": "description",
+   "message": "Add a description."
+  },
+  {
+   "name": "percent remainder tie goes to the earlier person",
+   "input": {
+    "total": 102,
+    "method": "percent",
+    "payers": [
      {
       "userId": "00000000-0000-0000-0000-00000000000a",
-      "paid": 3000,
-      "owed": 1000
-     },
-     {
-      "userId": "00000000-0000-0000-0000-00000000000b",
-      "paid": 0,
-      "owed": 1000
-     },
+      "amount": 102
+     }
+    ],
+    "splits": [
      {
       "userId": "00000000-0000-0000-0000-00000000000c",
-      "paid": 0,
-      "owed": 1000
-     }
-    ]
-   },
-   {
-    "currency": "USD",
-    "shares": [
-     {
-      "userId": "00000000-0000-0000-0000-00000000000a",
-      "paid": 0,
-      "owed": 1000
-     },
-     {
-      "userId": "00000000-0000-0000-0000-00000000000b",
-      "paid": 3000,
-      "owed": 1000
-     },
-     {
-      "userId": "00000000-0000-0000-0000-00000000000c",
-      "paid": 0,
-      "owed": 1000
-     }
-    ]
-   },
-   {
-    "currency": "EUR",
-    "shares": [
-     {
-      "userId": "00000000-0000-0000-0000-00000000000b",
-      "paid": 1000,
-      "owed": 0
+      "value": "25"
      },
      {
       "userId": "00000000-0000-0000-0000-00000000000a",
-      "paid": 0,
-      "owed": 1000
-     }
-    ]
-   },
-   {
-    "currency": "EUR",
-    "shares": [
-     {
-      "userId": "00000000-0000-0000-0000-00000000000c",
-      "paid": 1000,
-      "owed": 0
+      "value": "25"
      },
      {
       "userId": "00000000-0000-0000-0000-00000000000b",
-      "paid": 0,
-      "owed": 1000
+      "value": "50"
      }
     ]
    },
-   {
-    "currency": "GBP",
-    "shares": [
-     {
-      "userId": "00000000-0000-0000-0000-00000000000a",
-      "paid": 2,
-      "owed": 1
-     },
-     {
-      "userId": "00000000-0000-0000-0000-00000000000b",
-      "paid": 2,
-      "owed": 1
-     },
-     {
-      "userId": "00000000-0000-0000-0000-00000000000c",
-      "paid": 0,
-      "owed": 1
-     },
-     {
-      "userId": "00000000-0000-0000-0000-00000000000d",
-      "paid": 0,
-      "owed": 1
-     }
-    ]
-   },
-   {
-    "currency": "JPY",
-    "shares": [
-     {
-      "userId": "00000000-0000-0000-0000-00000000000b",
-      "paid": 100,
-      "owed": 0
-     },
-     {
-      "userId": "00000000-0000-0000-0000-00000000000a",
-      "paid": 100,
-      "owed": 0
-     },
-     {
-      "userId": "00000000-0000-0000-0000-00000000000c",
-      "paid": 0,
-      "owed": 101
-     },
-     {
-      "userId": "00000000-0000-0000-0000-00000000000d",
-      "paid": 0,
-      "owed": 99
-     }
-    ]
-   }
-  ],
-  "nets": {
-   "00000000-0000-0000-0000-00000000000a": {
-    "USD": 1000,
-    "EUR": -1000,
-    "GBP": 1,
-    "JPY": 100
-   },
-   "00000000-0000-0000-0000-00000000000b": {
-    "USD": 1000,
-    "EUR": 0,
-    "GBP": 1,
-    "JPY": 100
-   },
-   "00000000-0000-0000-0000-00000000000c": {
-    "USD": -2000,
-    "EUR": 1000,
-    "GBP": -1,
-    "JPY": -101
-   },
-   "00000000-0000-0000-0000-00000000000d": {
-    "GBP": -1,
-    "JPY": -99
+   "owed": {
+    "00000000-0000-0000-0000-00000000000c": 26,
+    "00000000-0000-0000-0000-00000000000a": 25,
+    "00000000-0000-0000-0000-00000000000b": 51
    }
   },
-  "pairwise": [
-   {
-    "from": "00000000-0000-0000-0000-00000000000a",
-    "to": "00000000-0000-0000-0000-00000000000b",
-    "currency": "EUR",
-    "amount": 1000
+  {
+   "name": "shares remainder tie goes to the earlier person and a zero share stays",
+   "input": {
+    "total": 3,
+    "method": "shares",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000c",
+      "amount": 3
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "1"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "1"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000c",
+      "value": "0"
+     }
+    ]
    },
-   {
-    "from": "00000000-0000-0000-0000-00000000000b",
-    "to": "00000000-0000-0000-0000-00000000000c",
-    "currency": "EUR",
-    "amount": 1000
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000c",
-    "to": "00000000-0000-0000-0000-00000000000a",
-    "currency": "GBP",
-    "amount": 1
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000d",
-    "to": "00000000-0000-0000-0000-00000000000b",
-    "currency": "GBP",
-    "amount": 1
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000c",
-    "to": "00000000-0000-0000-0000-00000000000a",
-    "currency": "JPY",
-    "amount": 51
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000c",
-    "to": "00000000-0000-0000-0000-00000000000b",
-    "currency": "JPY",
-    "amount": 50
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000d",
-    "to": "00000000-0000-0000-0000-00000000000b",
-    "currency": "JPY",
-    "amount": 50
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000d",
-    "to": "00000000-0000-0000-0000-00000000000a",
-    "currency": "JPY",
-    "amount": 49
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000c",
-    "to": "00000000-0000-0000-0000-00000000000a",
-    "currency": "USD",
-    "amount": 1000
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000c",
-    "to": "00000000-0000-0000-0000-00000000000b",
-    "currency": "USD",
-    "amount": 1000
+   "owed": {
+    "00000000-0000-0000-0000-00000000000b": 2,
+    "00000000-0000-0000-0000-00000000000a": 1,
+    "00000000-0000-0000-0000-00000000000c": 0
    }
-  ],
-  "simplified": [
-   {
-    "from": "00000000-0000-0000-0000-00000000000a",
-    "to": "00000000-0000-0000-0000-00000000000c",
-    "currency": "EUR",
-    "amount": 1000
+  },
+  {
+   "name": "itemized tax and tip remainder follows item order",
+   "input": {
+    "total": 302,
+    "method": "itemized",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 302
+     }
+    ],
+    "items": [
+     {
+      "name": "Soup",
+      "amount": 100,
+      "userIds": [
+       "00000000-0000-0000-0000-00000000000c"
+      ]
+     },
+     {
+      "name": "Salad",
+      "amount": 100,
+      "userIds": [
+       "00000000-0000-0000-0000-00000000000a"
+      ]
+     },
+     {
+      "name": "Bread",
+      "amount": 100,
+      "userIds": [
+       "00000000-0000-0000-0000-00000000000b"
+      ]
+     }
+    ],
+    "tax": 1,
+    "tip": 1
    },
-   {
-    "from": "00000000-0000-0000-0000-00000000000c",
-    "to": "00000000-0000-0000-0000-00000000000a",
-    "currency": "GBP",
-    "amount": 1
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000d",
-    "to": "00000000-0000-0000-0000-00000000000b",
-    "currency": "GBP",
-    "amount": 1
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000c",
-    "to": "00000000-0000-0000-0000-00000000000a",
-    "currency": "JPY",
-    "amount": 100
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000d",
-    "to": "00000000-0000-0000-0000-00000000000b",
-    "currency": "JPY",
-    "amount": 99
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000c",
-    "to": "00000000-0000-0000-0000-00000000000b",
-    "currency": "JPY",
-    "amount": 1
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000c",
-    "to": "00000000-0000-0000-0000-00000000000a",
-    "currency": "USD",
-    "amount": 1000
-   },
-   {
-    "from": "00000000-0000-0000-0000-00000000000c",
-    "to": "00000000-0000-0000-0000-00000000000b",
-    "currency": "USD",
-    "amount": 1000
+   "owed": {
+    "00000000-0000-0000-0000-00000000000c": 101,
+    "00000000-0000-0000-0000-00000000000a": 101,
+    "00000000-0000-0000-0000-00000000000b": 100
    }
-  ]
- },
+  },
+  {
+   "name": "adjustments above the total spread the negative remainder",
+   "input": {
+    "total": 100,
+    "method": "adjustment",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "60"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "61"
+     }
+    ]
+   },
+   "owed": {
+    "00000000-0000-0000-0000-00000000000b": 49,
+    "00000000-0000-0000-0000-00000000000a": 51
+   }
+  },
+  {
+   "name": "adjustment leaving someone owing a negative amount is refused",
+   "input": {
+    "total": 100,
+    "method": "adjustment",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "150"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": ""
+     }
+    ]
+   },
+   "error": "splits",
+   "message": "Adjustments leave someone owing a negative amount."
+  },
+  {
+   "name": "exact with a fraction of a minor unit is refused",
+   "input": {
+    "total": 100,
+    "method": "exact",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "50.5"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "49.5"
+     }
+    ]
+   },
+   "error": "splits",
+   "message": "Amounts must be whole numbers of minor units."
+  },
+  {
+   "name": "exact with a negative amount is refused",
+   "input": {
+    "total": 100,
+    "method": "exact",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "150"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "-50"
+     }
+    ]
+   },
+   "error": "splits",
+   "message": "Amounts cannot be negative."
+  },
+  {
+   "name": "percent with five decimals is refused",
+   "input": {
+    "total": 100,
+    "method": "percent",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "33.33333"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "66.66667"
+     }
+    ]
+   },
+   "error": "splits",
+   "message": "Use positive numbers."
+  },
+  {
+   "name": "shares as a fraction are refused",
+   "input": {
+    "total": 100,
+    "method": "shares",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "1/2"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "1"
+     }
+    ]
+   },
+   "error": "splits",
+   "message": "Use positive numbers."
+  },
+  {
+   "name": "shares that are all zero are refused",
+   "input": {
+    "total": 100,
+    "method": "shares",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "0"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "0"
+     }
+    ]
+   },
+   "error": "splits",
+   "message": "At least one share must be above zero."
+  },
+  {
+   "name": "a person twice in the split is refused",
+   "input": {
+    "total": 100,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     }
+    ]
+   },
+   "error": "splits",
+   "message": "Each person can appear in the split once."
+  },
+  {
+   "name": "a split without a person is refused",
+   "input": {
+    "total": 100,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-000000000000"
+     }
+    ]
+   },
+   "error": "splits",
+   "message": "Each person can appear in the split once."
+  },
+  {
+   "name": "a payer listed twice is refused",
+   "input": {
+    "total": 100,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 50
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 50
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "payers",
+   "message": "A person is listed as payer twice."
+  },
+  {
+   "name": "a negative paid amount is refused",
+   "input": {
+    "total": 100,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 150
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "amount": -50
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "payers",
+   "message": "Paid amounts must be positive."
+  },
+  {
+   "name": "an unknown method is refused",
+   "input": {
+    "total": 100,
+    "method": "halves",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "splitMethod",
+   "message": "Unknown split method."
+  },
+  {
+   "name": "no method means equal",
+   "input": {
+    "total": 101,
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "amount": 101
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     }
+    ]
+   },
+   "method": "equal",
+   "owed": {
+    "00000000-0000-0000-0000-00000000000b": 51,
+    "00000000-0000-0000-0000-00000000000a": 50
+   }
+  },
+  {
+   "name": "a total of zero is refused",
+   "input": {
+    "total": 0,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 0
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "total",
+   "message": "The amount must be greater than zero."
+  },
+  {
+   "name": "the maximum total is allowed",
+   "input": {
+    "total": 1000000000000,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000000000000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000c"
+     }
+    ]
+   },
+   "owed": {
+    "00000000-0000-0000-0000-00000000000a": 333333333334,
+    "00000000-0000-0000-0000-00000000000b": 333333333333,
+    "00000000-0000-0000-0000-00000000000c": 333333333333
+   }
+  },
+  {
+   "name": "a total above the maximum is refused",
+   "input": {
+    "total": 1000000000001,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000000000001
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "total",
+   "message": "The amount is too large."
+  },
+  {
+   "name": "an item of zero is refused",
+   "input": {
+    "total": 100,
+    "method": "itemized",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "items": [
+     {
+      "name": "Tea",
+      "amount": 0,
+      "userIds": [
+       "00000000-0000-0000-0000-00000000000a"
+      ]
+     },
+     {
+      "name": "Cake",
+      "amount": 100,
+      "userIds": [
+       "00000000-0000-0000-0000-00000000000b"
+      ]
+     }
+    ]
+   },
+   "error": "items",
+   "message": "Item amounts must be greater than zero."
+  },
+  {
+   "name": "an item without people is refused",
+   "input": {
+    "total": 100,
+    "method": "itemized",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "items": [
+     {
+      "name": "Tea",
+      "amount": 100,
+      "userIds": []
+     }
+    ]
+   },
+   "error": "items",
+   "message": "Assign every item to at least one person."
+  },
+  {
+   "name": "an item with a person twice is refused",
+   "input": {
+    "total": 100,
+    "method": "itemized",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "items": [
+     {
+      "name": "Tea",
+      "amount": 100,
+      "userIds": [
+       "00000000-0000-0000-0000-00000000000a",
+       "00000000-0000-0000-0000-00000000000a"
+      ]
+     }
+    ]
+   },
+   "error": "items",
+   "message": "Each person can be assigned to an item once."
+  },
+  {
+   "name": "negative tax is refused",
+   "input": {
+    "total": 99,
+    "method": "itemized",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 99
+     }
+    ],
+    "items": [
+     {
+      "name": "Tea",
+      "amount": 100,
+      "userIds": [
+       "00000000-0000-0000-0000-00000000000a"
+      ]
+     }
+    ],
+    "tax": -1
+   },
+   "error": "tax",
+   "message": "Tax and tip cannot be negative."
+  },
+  {
+   "name": "description over 120 characters is refused",
+   "input": {
+    "description": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "total": 100,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "description",
+   "message": "Keep the description under 120 characters."
+  },
+  {
+   "name": "notes over 2000 characters are refused",
+   "input": {
+    "notes": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+    "total": 100,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "notes",
+   "message": "Notes are limited to 2000 characters."
+  },
+  {
+   "name": "an unsupported currency is refused",
+   "input": {
+    "currency": "XYZ",
+    "total": 100,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "currency",
+   "message": "Unsupported currency."
+  },
+  {
+   "name": "the currency code is trimmed and upper-cased",
+   "input": {
+    "currency": " eur ",
+    "total": 100,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "currency": "EUR",
+   "owed": {
+    "00000000-0000-0000-0000-00000000000a": 50,
+    "00000000-0000-0000-0000-00000000000b": 50
+   }
+  },
+  {
+   "name": "a date that does not exist is refused",
+   "input": {
+    "date": "2027-02-30",
+    "total": 100,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "today": "2026-11-25",
+   "error": "date",
+   "message": "Use a YYYY-MM-DD date."
+  },
+  {
+   "name": "an unknown recurrence is refused",
+   "input": {
+    "recurrence": "daily",
+    "total": 100,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "recurrence",
+   "message": "Unknown recurrence."
+  }
+ ],
+ "balances": [
+  {
+   "name": "four people in four currencies",
+   "entries": [
+    {
+     "currency": "USD",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 3000,
+       "owed": 1000
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 0,
+       "owed": 1000
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000c",
+       "paid": 0,
+       "owed": 1000
+      }
+     ]
+    },
+    {
+     "currency": "USD",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 0,
+       "owed": 1000
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 3000,
+       "owed": 1000
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000c",
+       "paid": 0,
+       "owed": 1000
+      }
+     ]
+    },
+    {
+     "currency": "EUR",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 1000,
+       "owed": 0
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 0,
+       "owed": 1000
+      }
+     ]
+    },
+    {
+     "currency": "EUR",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000c",
+       "paid": 1000,
+       "owed": 0
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 0,
+       "owed": 1000
+      }
+     ]
+    },
+    {
+     "currency": "GBP",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 2,
+       "owed": 1
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 2,
+       "owed": 1
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000c",
+       "paid": 0,
+       "owed": 1
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000d",
+       "paid": 0,
+       "owed": 1
+      }
+     ]
+    },
+    {
+     "currency": "JPY",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 100,
+       "owed": 0
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 100,
+       "owed": 0
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000c",
+       "paid": 0,
+       "owed": 101
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000d",
+       "paid": 0,
+       "owed": 99
+      }
+     ]
+    }
+   ],
+   "nets": {
+    "00000000-0000-0000-0000-00000000000a": {
+     "USD": 1000,
+     "EUR": -1000,
+     "GBP": 1,
+     "JPY": 100
+    },
+    "00000000-0000-0000-0000-00000000000b": {
+     "USD": 1000,
+     "EUR": 0,
+     "GBP": 1,
+     "JPY": 100
+    },
+    "00000000-0000-0000-0000-00000000000c": {
+     "USD": -2000,
+     "EUR": 1000,
+     "GBP": -1,
+     "JPY": -101
+    },
+    "00000000-0000-0000-0000-00000000000d": {
+     "GBP": -1,
+     "JPY": -99
+    }
+   },
+   "pairwise": [
+    {
+     "from": "00000000-0000-0000-0000-00000000000a",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "EUR",
+     "amount": 1000
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000b",
+     "to": "00000000-0000-0000-0000-00000000000c",
+     "currency": "EUR",
+     "amount": 1000
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "GBP",
+     "amount": 1
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "GBP",
+     "amount": 1
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "JPY",
+     "amount": 51
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "JPY",
+     "amount": 50
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "JPY",
+     "amount": 50
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "JPY",
+     "amount": 49
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "USD",
+     "amount": 1000
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "USD",
+     "amount": 1000
+    }
+   ],
+   "simplified": [
+    {
+     "from": "00000000-0000-0000-0000-00000000000a",
+     "to": "00000000-0000-0000-0000-00000000000c",
+     "currency": "EUR",
+     "amount": 1000
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "GBP",
+     "amount": 1
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "GBP",
+     "amount": 1
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "JPY",
+     "amount": 100
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "JPY",
+     "amount": 99
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "JPY",
+     "amount": 1
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "USD",
+     "amount": 1000
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "USD",
+     "amount": 1000
+    }
+   ]
+  },
+  {
+   "name": "two payers and two debtors with remainders",
+   "entries": [
+    {
+     "currency": "USD",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000d",
+       "paid": 0,
+       "owed": 5
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 5,
+       "owed": 1
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000c",
+       "paid": 0,
+       "owed": 6
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 10,
+       "owed": 3
+      }
+     ]
+    }
+   ],
+   "nets": {
+    "00000000-0000-0000-0000-00000000000a": {
+     "USD": 7
+    },
+    "00000000-0000-0000-0000-00000000000b": {
+     "USD": 4
+    },
+    "00000000-0000-0000-0000-00000000000c": {
+     "USD": -6
+    },
+    "00000000-0000-0000-0000-00000000000d": {
+     "USD": -5
+    }
+   },
+   "pairwise": [
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "USD",
+     "amount": 4
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "USD",
+     "amount": 3
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "USD",
+     "amount": 2
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "USD",
+     "amount": 2
+    }
+   ],
+   "simplified": [
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "USD",
+     "amount": 6
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "USD",
+     "amount": 4
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "USD",
+     "amount": 1
+    }
+   ]
+  },
+  {
+   "name": "tied creditors listed out of id order",
+   "entries": [
+    {
+     "currency": "EUR",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000d",
+       "paid": 0,
+       "owed": 1
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 1,
+       "owed": 0
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000c",
+       "paid": 0,
+       "owed": 1
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 1,
+       "owed": 0
+      }
+     ]
+    }
+   ],
+   "nets": {
+    "00000000-0000-0000-0000-00000000000a": {
+     "EUR": 1
+    },
+    "00000000-0000-0000-0000-00000000000b": {
+     "EUR": 1
+    },
+    "00000000-0000-0000-0000-00000000000c": {
+     "EUR": -1
+    },
+    "00000000-0000-0000-0000-00000000000d": {
+     "EUR": -1
+    }
+   },
+   "pairwise": [
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "EUR",
+     "amount": 1
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "EUR",
+     "amount": 1
+    }
+   ],
+   "simplified": [
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "EUR",
+     "amount": 1
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "EUR",
+     "amount": 1
+    }
+   ]
+  },
+  {
+   "name": "simplify breaks equal amounts by user id",
+   "entries": [
+    {
+     "currency": "GBP",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000d",
+       "paid": 0,
+       "owed": 100
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 200,
+       "owed": 0
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000c",
+       "paid": 0,
+       "owed": 100
+      }
+     ]
+    },
+    {
+     "currency": "GBP",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000c",
+       "paid": 0,
+       "owed": 100
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000d",
+       "paid": 0,
+       "owed": 100
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 200,
+       "owed": 0
+      }
+     ]
+    }
+   ],
+   "nets": {
+    "00000000-0000-0000-0000-00000000000a": {
+     "GBP": 200
+    },
+    "00000000-0000-0000-0000-00000000000b": {
+     "GBP": 200
+    },
+    "00000000-0000-0000-0000-00000000000c": {
+     "GBP": -200
+    },
+    "00000000-0000-0000-0000-00000000000d": {
+     "GBP": -200
+    }
+   },
+   "pairwise": [
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "GBP",
+     "amount": 100
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "GBP",
+     "amount": 100
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "GBP",
+     "amount": 100
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "GBP",
+     "amount": 100
+    }
+   ],
+   "simplified": [
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "GBP",
+     "amount": 200
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000d",
+     "to": "00000000-0000-0000-0000-00000000000b",
+     "currency": "GBP",
+     "amount": 200
+    }
+   ]
+  },
+  {
+   "name": "a payment settles an expense",
+   "entries": [
+    {
+     "currency": "USD",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 1000,
+       "owed": 500
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 0,
+       "owed": 500
+      }
+     ]
+    },
+    {
+     "currency": "USD",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 500,
+       "owed": 0
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 0,
+       "owed": 500
+      }
+     ]
+    }
+   ],
+   "nets": {
+    "00000000-0000-0000-0000-00000000000a": {
+     "USD": 0
+    },
+    "00000000-0000-0000-0000-00000000000b": {
+     "USD": 0
+    }
+   },
+   "pairwise": [],
+   "simplified": []
+  },
+  {
+   "name": "settled in one currency and owed in another",
+   "entries": [
+    {
+     "currency": "USD",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 100,
+       "owed": 50
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 0,
+       "owed": 50
+      }
+     ]
+    },
+    {
+     "currency": "USD",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 100,
+       "owed": 50
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 0,
+       "owed": 50
+      }
+     ]
+    },
+    {
+     "currency": "EUR",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000c",
+       "paid": 0,
+       "owed": 100
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 300,
+       "owed": 100
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 0,
+       "owed": 100
+      }
+     ]
+    }
+   ],
+   "nets": {
+    "00000000-0000-0000-0000-00000000000a": {
+     "USD": 0,
+     "EUR": 200
+    },
+    "00000000-0000-0000-0000-00000000000b": {
+     "USD": 0,
+     "EUR": -100
+    },
+    "00000000-0000-0000-0000-00000000000c": {
+     "EUR": -100
+    }
+   },
+   "pairwise": [
+    {
+     "from": "00000000-0000-0000-0000-00000000000b",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "EUR",
+     "amount": 100
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "EUR",
+     "amount": 100
+    }
+   ],
+   "simplified": [
+    {
+     "from": "00000000-0000-0000-0000-00000000000b",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "EUR",
+     "amount": 100
+    },
+    {
+     "from": "00000000-0000-0000-0000-00000000000c",
+     "to": "00000000-0000-0000-0000-00000000000a",
+     "currency": "EUR",
+     "amount": 100
+    }
+   ]
+  }
+ ],
+ "sheets": [
+  {
+   "name": "groups with and without simplification plus non-group entries",
+   "me": "00000000-0000-0000-0000-00000000000a",
+   "groups": [
+    {
+     "id": "00000000-0000-0000-0000-0000000000f1",
+     "name": "Trip",
+     "simplify": true,
+     "entries": [
+      {
+       "groupId": "00000000-0000-0000-0000-0000000000f1",
+       "currency": "USD",
+       "shares": [
+        {
+         "userId": "00000000-0000-0000-0000-00000000000a",
+         "paid": 300,
+         "owed": 100
+        },
+        {
+         "userId": "00000000-0000-0000-0000-00000000000b",
+         "paid": 0,
+         "owed": 100
+        },
+        {
+         "userId": "00000000-0000-0000-0000-00000000000c",
+         "paid": 0,
+         "owed": 100
+        }
+       ]
+      },
+      {
+       "groupId": "00000000-0000-0000-0000-0000000000f1",
+       "currency": "USD",
+       "shares": [
+        {
+         "userId": "00000000-0000-0000-0000-00000000000c",
+         "paid": 200,
+         "owed": 0
+        },
+        {
+         "userId": "00000000-0000-0000-0000-00000000000b",
+         "paid": 0,
+         "owed": 200
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "00000000-0000-0000-0000-0000000000f2",
+     "name": "Flat",
+     "simplify": false,
+     "entries": [
+      {
+       "groupId": "00000000-0000-0000-0000-0000000000f2",
+       "currency": "EUR",
+       "shares": [
+        {
+         "userId": "00000000-0000-0000-0000-00000000000b",
+         "paid": 90,
+         "owed": 30
+        },
+        {
+         "userId": "00000000-0000-0000-0000-00000000000a",
+         "paid": 0,
+         "owed": 30
+        },
+        {
+         "userId": "00000000-0000-0000-0000-00000000000c",
+         "paid": 0,
+         "owed": 30
+        }
+       ]
+      },
+      {
+       "groupId": "00000000-0000-0000-0000-0000000000f2",
+       "currency": "EUR",
+       "shares": [
+        {
+         "userId": "00000000-0000-0000-0000-00000000000a",
+         "paid": 50,
+         "owed": 25
+        },
+        {
+         "userId": "00000000-0000-0000-0000-00000000000c",
+         "paid": 0,
+         "owed": 25
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "nonGroup": [
+    {
+     "currency": "USD",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000d",
+       "paid": 100,
+       "owed": 50
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 0,
+       "owed": 50
+      }
+     ]
+    },
+    {
+     "currency": "EUR",
+     "shares": [
+      {
+       "userId": "00000000-0000-0000-0000-00000000000a",
+       "paid": 10,
+       "owed": 0
+      },
+      {
+       "userId": "00000000-0000-0000-0000-00000000000b",
+       "paid": 0,
+       "owed": 10
+      }
+     ]
+    }
+   ],
+   "friends": {
+    "00000000-0000-0000-0000-00000000000b": {
+     "total": {
+      "USD": 200,
+      "EUR": -20
+     },
+     "byGroup": {
+      "00000000-0000-0000-0000-0000000000f1": {
+       "USD": 200
+      },
+      "00000000-0000-0000-0000-0000000000f2": {
+       "EUR": -30
+      }
+     },
+     "nonGroup": {
+      "EUR": 10
+     }
+    },
+    "00000000-0000-0000-0000-00000000000c": {
+     "total": {
+      "EUR": 25
+     },
+     "byGroup": {
+      "00000000-0000-0000-0000-0000000000f2": {
+       "EUR": 25
+      }
+     },
+     "nonGroup": {}
+    },
+    "00000000-0000-0000-0000-00000000000d": {
+     "total": {
+      "USD": -50
+     },
+     "byGroup": {},
+     "nonGroup": {
+      "USD": -50
+     }
+    }
+   },
+   "groupNets": {
+    "00000000-0000-0000-0000-0000000000f1": {
+     "USD": 200
+    },
+    "00000000-0000-0000-0000-0000000000f2": {
+     "EUR": -5
+    }
+   },
+   "net": {
+    "USD": 150,
+    "EUR": 5
+   },
+   "owed": {
+    "USD": 200,
+    "EUR": 25
+   },
+   "owing": {
+    "USD": 50,
+    "EUR": 20
+   }
+  }
+ ],
  "recurrence": [
   {
    "name": "monthly from the 31st",
@@ -1821,6 +3187,15 @@
    "dates": [
     "2027-02-14",
     "2027-02-28"
+   ]
+  },
+  {
+   "name": "weekly across the year end",
+   "recurrence": "weekly",
+   "start": "2027-12-27",
+   "dates": [
+    "2028-01-03",
+    "2028-01-10"
    ]
   }
  ],
@@ -2084,7 +3459,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "Percentages must add up to 100."
   },
   {
    "name": "percent over 100",
@@ -2099,7 +3475,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "Percentages must add up to 100."
   },
   {
    "name": "percent needs every member",
@@ -2113,7 +3490,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "Give every member a value (0 leaves them out)."
   },
   {
    "name": "only current members",
@@ -2128,7 +3506,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "Only current members can be part of the default split."
   },
   {
    "name": "negative values are rejected",
@@ -2143,7 +3522,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "Values cannot be negative."
   },
   {
    "name": "at most four decimal places",
@@ -2158,7 +3538,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "Use plain decimal numbers with at most four decimal places."
   },
   {
    "name": "plain decimals only",
@@ -2173,7 +3554,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "Use plain decimal numbers with at most four decimal places."
   },
   {
    "name": "shares",
@@ -2210,7 +3592,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "At least one share must be above zero."
   },
   {
    "name": "equal takes no values",
@@ -2224,7 +3607,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "An equal default split takes no values."
   },
   {
    "name": "exact is not a default method",
@@ -2239,7 +3623,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "A default split is equal, percent or shares."
   },
   {
    "name": "adjustment is not a default method",
@@ -2254,7 +3639,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "A default split is equal, percent or shares."
   },
   {
    "name": "equal survives member changes",
@@ -2346,7 +3732,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "Use plain decimal numbers with at most four decimal places."
   },
   {
    "name": "hexadecimal values are refused",
@@ -2361,7 +3748,8 @@
     "00000000-0000-0000-0000-00000000000a",
     "00000000-0000-0000-0000-00000000000b"
    ],
-   "error": "defaultSplit"
+   "error": "defaultSplit",
+   "message": "Use plain decimal numbers with at most four decimal places."
   }
  ],
  "currencies": [

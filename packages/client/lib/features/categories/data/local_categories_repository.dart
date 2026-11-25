@@ -33,12 +33,7 @@ class LocalCategoriesRepository implements CategoriesRepository {
   CategoryDraft _checked(CategoryDraft draft) {
     final problem = draft.problem(_groups);
     if (problem != null) {
-      final field = switch (problem) {
-        'Choose an icon' => 'icon',
-        'Choose a group' => 'group',
-        _ => 'name',
-      };
-      throw ApiError.validation(field, '$problem.');
+      throw ApiError.validation(problem.field, problem.message);
     }
     return draft..name = draft.cleanName;
   }
@@ -54,7 +49,14 @@ class LocalCategoriesRepository implements CategoriesRepository {
 
   @override
   Future<Category> create(CategoryInput input) async {
-    final id = input.id ?? 'custom.${_ledger.newId()}';
+    final given = input.id?.trim().toLowerCase() ?? '';
+    final id = given.isEmpty ? 'custom.${_ledger.newId()}' : given;
+    if (!customId.hasMatch(id)) {
+      throw const ApiError.validation(
+        'id',
+        'Custom category ids look like custom.<uuid>.',
+      );
+    }
     final draft = _checked(
       CategoryDraft(
         name: input.name ?? '',

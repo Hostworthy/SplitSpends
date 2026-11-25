@@ -1,4 +1,4 @@
-// Opt-in end-to-end check against a running backend:
+// End-to-end check against a running backend; CI's app job starts one:
 //
 //   SPLITSPENDS_E2E_URL=http://localhost:8080 \
 //   SPLITSPENDS_E2E_LOG=/path/to/server.log \
@@ -186,7 +186,7 @@ void main() {
     await add(
       ExpenseInput(
         groupId: g.id,
-        description: 'Snacks',
+        description: 'Ferry',
         currency: 'EUR',
         total: 1001,
         date: '2026-11-06',
@@ -231,6 +231,54 @@ void main() {
       );
     }
     await categories.delete(old.id);
+    // A group that simplifies debts, with two payers and remainders.
+    final shared = await groups.create(
+      const GroupInput(
+        name: 'Flat',
+        defaultCurrency: 'EUR',
+        simplifyDebts: true,
+        members: [
+          MemberInput(name: 'Max'),
+          MemberInput(name: 'Ivy'),
+        ],
+      ),
+    );
+    final sharedIds = [for (final m in shared.members) m.id];
+    final max = sharedIds[1], ivy = sharedIds[2];
+    await add(
+      ExpenseInput(
+        groupId: shared.id,
+        description: 'Rent',
+        currency: 'EUR',
+        total: 10001,
+        date: '2026-11-07',
+        payers: [
+          Payer(userId: me, amount: 6001),
+          Payer(userId: max, amount: 4000),
+        ],
+        splits: [for (final id in sharedIds) SplitEntry(userId: id)],
+      ),
+    );
+    await add(
+      ExpenseInput(
+        groupId: shared.id,
+        description: 'Internet',
+        currency: 'EUR',
+        total: 1000,
+        date: '2026-11-07',
+        splitMethod: SplitMethod.shares,
+        payers: [
+          Payer(userId: max, amount: 333),
+          Payer(userId: ivy, amount: 667),
+        ],
+        splits: [
+          SplitEntry(userId: ivy, value: '1'),
+          SplitEntry(userId: me, value: '1'),
+          SplitEntry(userId: max, value: '1'),
+        ],
+      ),
+    );
+    final localShared = await groups.balances(shared.id);
     final localTotals = await LocalBalancesRepository(ledger).mine();
     final localGroup = await groups.balances(g.id);
 
@@ -258,6 +306,13 @@ void main() {
             .join(' ');
     expect(debts(serverGroup), debts(mapped));
     expect(serverGroup.debts.length, localGroup.debts.length);
+    final serverShared = await api.getData(
+      '/groups/${shared.id}/balances',
+      (d) => GroupBalances.fromJson(d as Map<String, dynamic>),
+    );
+    expect(debts(serverShared), debts(await groups.balances(shared.id)));
+    expect(serverShared.debts, isNotEmpty);
+    expect(serverShared.debts.length, localShared.debts.length);
     final profile = await LocalAccountRepository(ledger).me();
     expect(profile.id, serverMe.id, reason: 'local me maps to the account');
 

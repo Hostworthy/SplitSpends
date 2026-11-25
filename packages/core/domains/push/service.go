@@ -89,12 +89,13 @@ func (s *Service) available() error {
 // Register adds the actor's device or refreshes it when the endpoint is
 // already known. Registering is idempotent on the endpoint; an endpoint
 // registered by someone else moves to the actor, because a browser or phone
-// belongs to whoever is signed in on it now.
-func (s *Service) Register(ctx context.Context, actor uuid.UUID, in Input) (*Subscription, bool, error) {
+// belongs to whoever is signed in on it now. The device belongs to session,
+// the actor's session or API token: it is removed when that ends.
+func (s *Service) Register(ctx context.Context, actor, session uuid.UUID, in Input) (*Subscription, bool, error) {
 	if err := s.available(); err != nil {
 		return nil, false, err
 	}
-	sub, err := New(actor, in, s.clock.Now())
+	sub, err := New(actor, session, in, s.clock.Now())
 	if err != nil {
 		return nil, false, err
 	}
