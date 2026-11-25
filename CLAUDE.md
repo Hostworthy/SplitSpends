@@ -9,7 +9,7 @@ Self-hosted Splitwise alternative: Go API and MCP server on PostgreSQL, Flutter 
 | `go build ./... && go vet ./...` | Compile and vet (repository root is the Go module) |
 | `go test -count=1 ./...` | Unit tests plus `packages/archtest` layer boundaries |
 | `make test-integration` | Database tests (wipes `TEST_DATABASE_URL`) |
-| `make lint` | gofmt, go vet, golangci-lint (`.golangci.yml`), dart format, flutter analyze on every Dart member (root `analysis_options.yaml` is shared) |
+| `make lint` | gofmt, go vet, golangci-lint (`.golangci.yml`), dart format, flutter analyze on every Dart member (root `analysis_options.yaml` is shared), shellcheck on `scripts/` |
 | `make fmt` | gofmt, dart fix and dart format |
 | `make test` | Go tests, `packages/ledger` (dart test), `packages/client` (flutter test) |
 | `make vuln` | govulncheck on the Go code and standard library |
