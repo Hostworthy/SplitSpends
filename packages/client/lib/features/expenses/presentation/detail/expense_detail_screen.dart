@@ -82,12 +82,16 @@ class ExpenseDetailScreen extends ConsumerWidget {
         actions: [
           if (e != null && !e.deleted && !e.isPayment)
             IconButton(
-              tooltip: 'Edit',
+              tooltip: e.editable
+                  ? 'Edit'
+                  : 'Update the app to edit this expense',
               icon: const Icon(Icons.edit_rounded),
-              onPressed: () => context.push(
-                Routes.editExpense(expenseId),
-                extra: ExpenseEditorArgs(existing: e),
-              ),
+              onPressed: e.editable
+                  ? () => context.push(
+                      Routes.editExpense(expenseId),
+                      extra: ExpenseEditorArgs(existing: e),
+                    )
+                  : null,
             ),
           if (e != null && !e.deleted)
             IconButton(
@@ -213,7 +217,15 @@ class _Header extends ConsumerWidget {
                     '${updated != null && expense.updatedBy != null && updated.difference(created).inSeconds > 5 ? ' · edited by ${expense.updatedBy == meId ? 'you' : people.nameOf(expense.updatedBy!, meId: meId)} ${Dates.relative(updated)}' : ''}',
                     style: text.bodySmall?.copyWith(color: muted),
                   ),
-                if (expense.recurrence != Recurrence.none)
+                if (expense.unknownRecurrence != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Chip(
+                      avatar: const Icon(Icons.repeat_rounded, size: 16),
+                      label: Text('Repeats: ${expense.unknownRecurrence}'),
+                    ),
+                  )
+                else if (expense.recurrence != Recurrence.none)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Chip(

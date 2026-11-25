@@ -50,6 +50,18 @@ class ExpenseEditorScreen extends ConsumerWidget {
       }
       existing = loaded.requireValue;
     }
+    if (existing != null && !existing.editable) {
+      return const _Frame(
+        title: 'Edit expense',
+        child: EmptyState(
+          icon: Icons.system_update_rounded,
+          title: 'Update the app to edit this expense',
+          message:
+              'It is split or repeats in a way this version does not know, '
+              'so saving it here would change it.',
+        ),
+      );
+    }
     final groupId = existing?.groupId ?? args.draft?.groupId ?? args.groupId;
     Group? group;
     if (groupId != null) {
