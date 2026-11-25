@@ -46,7 +46,7 @@ cp ../.env.example .env          # set DOMAIN, BASE_URL=https://DOMAIN, POSTGRES
 docker compose up -d --build
 ```
 
-This runs PostgreSQL, Split Spends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly backup into `deploy/docker/backups/`: a `pg_dump` of the database (`splitspends-<date>-<time>.dump`) and an archive of the receipts kept in the `data` volume (`receipts-<date>-<time>.tar.gz`). Backups older than `BACKUP_KEEP_DAYS` (14 by default) are deleted after each successful dump. A failed run leaves no file and logs `backup.dump.failed` or `backup.receipts.failed` (`docker compose logs backup`). Your `.env` and Caddy's certificates are not in the backup; keep a copy of `.env` somewhere safe.
+This runs PostgreSQL, Split Spends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly backup into `deploy/docker/backups/`: a `pg_dump` of the database (`splitspends-<date>-<time>.dump`) and an archive of the receipts kept in the `data` volume (`receipts-<date>-<time>.tar.gz`). Backups older than `BACKUP_KEEP_DAYS` (14 by default) are deleted, dumps after each successful dump and receipt archives after each successful archive, so a run that fails never removes the last good copy. A failed run leaves no file and logs `backup.dump.failed` or `backup.receipts.failed` (`docker compose logs backup`). Your `.env` and Caddy's certificates are not in the backup; keep a copy of `.env` somewhere safe.
 
 The backups hold every account's email address and all expenses, readable only by root on the host. Copy them off the machine regularly (with `sudo`), and encrypt the copies.
 
