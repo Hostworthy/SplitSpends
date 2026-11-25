@@ -113,3 +113,26 @@ func TestCannotDeleteExpenseOfDepartedMember(t *testing.T) {
 	}
 	settled(t, env, ada, g.ID)
 }
+
+func TestRemovedMemberCannotRejoinWithOwnLink(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	svc := env.Services
+	issued, err := svc.Invites.Create(ctx, ben, g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Groups.RemoveMember(ctx, ada, g.ID, ben); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Invites.Accept(ctx, ben, issued.Token); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("a removed member must not rejoin through their own link, got %v", err)
+	}
+	v, err := svc.Groups.View(ctx, ada, g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.HasMember(ben) {
+		t.Fatal("Ben is back in the group")
+	}
+}
