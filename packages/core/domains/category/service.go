@@ -53,22 +53,32 @@ func (s *Service) owned(ctx context.Context, actor uuid.UUID, id string) (*Categ
 }
 
 // Create adds a custom category. Repeating a create with the same id returns
-// the existing category.
+// the existing category. Creating one its owner deleted brings it back with
+// the new details, so a device or an import that still holds it can file
+// expenses under it again.
 func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Category, error) {
 	now := s.clock.Now()
 	c, err := New(actor, in, now)
 	if err != nil {
 		return nil, err
 	}
+	restore := false
 	if in.ID != nil && *in.ID != "" {
 		existing, err := s.repo.Get(ctx, c.ID)
 		if err == nil {
 			if existing.OwnerID != actor {
 				return nil, errs.Taken()
 			}
-			return existing, nil
-		}
-		if !errs.Is(err, errs.KindNotFound) {
+			if existing.DeletedAt == nil {
+				return existing, nil
+			}
+			in.ID = nil
+			if err := existing.Apply(in, now); err != nil {
+				return nil, err
+			}
+			c, restore = existing, true
+			c.DeletedAt = nil
+		} else if !errs.Is(err, errs.KindNotFound) {
 			return nil, err
 		}
 	}
@@ -79,7 +89,12 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Categ
 	if len(mine) >= MaxPerUser {
 		return nil, errs.Conflict(fmt.Sprintf("You can keep up to %d categories of your own.", MaxPerUser))
 	}
-	if err := s.repo.Create(ctx, c); err != nil {
+	if restore {
+		err = s.repo.Update(ctx, c)
+	} else {
+		err = s.repo.Create(ctx, c)
+	}
+	if err != nil {
 		return nil, err
 	}
 	return c, nil

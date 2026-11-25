@@ -264,3 +264,54 @@ func TestImportDefaultSplitAndCategories(t *testing.T) {
 		t.Fatalf("expenses keep their categories: %v", cats)
 	}
 }
+
+// TestRecreateDeletedCategory checks that creating a category again with the
+// id of one its owner deleted brings it back, so expenses can use it, and
+// that an import retry adding expenses under such a category succeeds.
+func TestRecreateDeletedCategory(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{Now: time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC)})
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+
+	id := "custom." + uuid.NewString()
+	if _, err := svc.Categories.Create(ctx, ada, category.Input{ID: &id, Name: str("Plants")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Categories.Delete(ctx, ada, id); err != nil {
+		t.Fatal(err)
+	}
+	back, err := svc.Categories.Create(ctx, ada, category.Input{ID: &id, Name: str("Garden"), Icon: str("park")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.DeletedAt != nil || back.Name != "Garden" || back.Icon != "park" {
+		t.Fatalf("the category must come back with the new details: %+v", back)
+	}
+	if _, err := svc.Expenses.Create(ctx, ada, expense.Input{Description: "Seeds", Currency: "EUR", Total: 500, Category: id,
+		Method: expense.MethodEqual, Payers: []expense.Payer{{UserID: ada, Amount: 500}}, Splits: []expense.SplitInput{{UserID: ada}}}); err != nil {
+		t.Fatalf("a recreated category can be used: %v", err)
+	}
+
+	// The device still holds a category the server deleted after the first
+	// import, and has filed a new expense under it since.
+	me, shed := uuid.New(), "custom."+uuid.NewString()
+	thing := func() transfer.Expense {
+		id := uuid.New()
+		return transfer.Expense{Kind: expense.KindExpense, Input: expense.Input{ID: &id, Description: "Thing", Currency: "EUR",
+			Total: 1000, Date: "2026-04-01", Category: shed, Method: expense.MethodEqual,
+			Payers: []expense.Payer{{UserID: me, Amount: 1000}}, Splits: []expense.SplitInput{{UserID: me}}}}
+	}
+	bundle := transfer.Bundle{Me: me, Categories: []transfer.Category{{Input: category.Input{ID: &shed, Name: str("Shed")}}},
+		Expenses: []transfer.Expense{thing()}}
+	if _, err := svc.Transfer.Import(ctx, ada, bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Categories.Delete(ctx, ada, shed); err != nil {
+		t.Fatal(err)
+	}
+	bundle.Expenses = append(bundle.Expenses, thing())
+	if res, err := svc.Transfer.Import(ctx, ada, bundle); err != nil || res.Expenses != 2 {
+		t.Fatalf("the import retry must succeed: %+v %v", res, err)
+	}
+}

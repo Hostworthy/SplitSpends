@@ -267,7 +267,7 @@ Asks someone who owes you money to settle up: in one group when `groupId` is set
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/categories` | | List of `Category`: the built-ins, then the caller's own custom categories and custom categories used by expenses the caller can see (`mine: false`), by name |
-| POST | `/categories` | `{ id?, name, icon?, group? }` | 201 `{ data: Category }`; repeating a create with the same `id` returns the existing category, an `id` owned by someone else returns 409 |
+| POST | `/categories` | `{ id?, name, icon?, group? }` | 201 `{ data: Category }`; repeating a create with the same `id` returns the existing category; repeating it after you deleted the category brings it back with the details sent; an `id` owned by someone else returns 409 |
 | PATCH | `/categories/{categoryId}` | `{ name?, icon?, group? }` | `{ data: Category }`; owner only (404 otherwise) |
 | DELETE | `/categories/{categoryId}` | | 204; owner only |
 
