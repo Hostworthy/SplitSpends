@@ -24,9 +24,11 @@ func TestSharedVectors(t *testing.T) {
 			Input struct {
 				Description string
 				Notes       string
+				Currency    string
 				Total       int64
 				Date        string
 				Method      Method
+				Recurrence  Recurrence
 				Payers      []struct {
 					UserID uuid.UUID
 					Amount int64
@@ -44,6 +46,7 @@ func TestSharedVectors(t *testing.T) {
 			Description string
 			Notes       string
 			Method      Method
+			Currency    string
 			Error       string
 		}
 	}
@@ -51,10 +54,13 @@ func TestSharedVectors(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range doc.Splits {
-		in := Input{Description: c.Input.Description, Notes: c.Input.Notes, Currency: "USD", Total: c.Input.Total,
-			Method: c.Input.Method, Date: c.Input.Date, Items: c.Input.Items, Tax: c.Input.Tax, Tip: c.Input.Tip}
+		in := Input{Description: c.Input.Description, Notes: c.Input.Notes, Currency: c.Input.Currency, Total: c.Input.Total,
+			Method: c.Input.Method, Recurrence: c.Input.Recurrence, Date: c.Input.Date, Items: c.Input.Items, Tax: c.Input.Tax, Tip: c.Input.Tip}
 		if in.Description == "" {
 			in.Description = c.Name
+		}
+		if in.Currency == "" {
+			in.Currency = "USD"
 		}
 		for _, p := range c.Input.Payers {
 			in.Payers = append(in.Payers, Payer{UserID: p.UserID, Amount: p.Amount})
@@ -99,6 +105,9 @@ func TestSharedVectors(t *testing.T) {
 		}
 		if c.Method != "" && n.Method != c.Method {
 			t.Errorf("%s: method %q, want %q", c.Name, n.Method, c.Method)
+		}
+		if c.Currency != "" && n.Currency != c.Currency {
+			t.Errorf("%s: currency %q, want %q", c.Name, n.Currency, c.Currency)
 		}
 		for id, want := range c.Values {
 			if values[id] != want {
