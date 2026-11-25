@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/clock"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
@@ -29,6 +31,85 @@ func TestToScanBalancesTotals(t *testing.T) {
 	}
 	if s.Tax != 0 || s.Items[0].Amount >= 1200 {
 		t.Fatalf("discount should reduce items: %+v tax %d", s.Items, s.Tax)
+	}
+}
+
+func TestReconcile(t *testing.T) {
+	cases := []struct {
+		name  string
+		items []int64
+		tip   int64
+		total int64
+		want  []int64
+		tax   int64
+		ok    bool
+	}{
+		{"gap goes to tax", []int64{1000, 500}, 100, 1800, []int64{1000, 500}, 200, true},
+		{"lines match", []int64{1000}, 0, 1000, []int64{1000}, 0, true},
+		{"order discount spread by price", []int64{3000, 2000}, 0, 4500, []int64{2700, 1800}, 0, true},
+		{"discount keeps a cent per item", []int64{1000, 1}, 0, 2, []int64{1, 1}, 0, true},
+		{"discount larger than items", []int64{1000, 1}, 0, 1, nil, 0, false},
+		{"tip above total", []int64{1000}, 500, 100, nil, 0, false},
+		{"zero item", []int64{1000, 0}, 0, 1000, nil, 0, false},
+		{"no items", nil, 0, 1000, nil, 0, false},
+		{"unknown total", []int64{1000}, 0, 0, nil, 0, false},
+		{"items above the maximum", []int64{expense.MaxTotal, 1}, 0, expense.MaxTotal, nil, 0, false},
+	}
+	for _, c := range cases {
+		got, tax, ok := Reconcile(c.items, c.tip, c.total)
+		if ok != c.ok || tax != c.tax || !slices.Equal(got, c.want) {
+			t.Errorf("%s: got %v tax %d ok %v, want %v tax %d ok %v", c.name, got, tax, ok, c.want, c.tax, c.ok)
+			continue
+		}
+		if ok {
+			sum := tax + c.tip
+			for _, a := range got {
+				sum += a
+			}
+			if sum != c.total {
+				t.Errorf("%s: items + tax + tip = %d, want %d", c.name, sum, c.total)
+			}
+		}
+	}
+}
+
+func TestToScanRejectsBadAmounts(t *testing.T) {
+	item := func(amounts ...string) []ports.ExtractItem {
+		var list []ports.ExtractItem
+		for _, a := range amounts {
+			list = append(list, ports.ExtractItem{Name: "Line", Amount: a})
+		}
+		return list
+	}
+	cases := []struct {
+		name     string
+		ext      ports.ReceiptExtract
+		items    int
+		itemized bool
+	}{
+		{"negative item", ports.ReceiptExtract{Items: item("10.00", "-3.00"), Total: "4.00"}, 1, true},
+		{"negative tax and tip", ports.ReceiptExtract{Items: item("10.00"), Tax: "-1.00", Tip: "-2", Total: "12.00"}, 1, true},
+		{"no positive item", ports.ReceiptExtract{Items: item("-10.00", "0"), Tip: "20", Total: "5.00"}, 0, false},
+		{"tip above total", ports.ReceiptExtract{Items: item("10.00"), Tip: "5", Total: "1.00"}, 1, true},
+		{"sum beyond int64", ports.ReceiptExtract{Items: item("90000000000000000", "90000000000000000")}, 0, false},
+		{"sum beyond the maximum", ports.ReceiptExtract{Items: item("9000000000", "9000000000"), Total: "1.00"}, 2, true},
+		{"exponent", ports.ReceiptExtract{Items: item("1e3", "2.00"), Tax: "1/3", Total: "1e3"}, 1, true},
+	}
+	for _, c := range cases {
+		s := toScan(c.ext, "USD")
+		var items int64
+		for _, it := range s.Items {
+			if it.Amount <= 0 {
+				t.Errorf("%s: item %d is not positive", c.name, it.Amount)
+			}
+			items += it.Amount
+		}
+		if len(s.Items) != c.items || s.Tax < 0 || s.Tip < 0 || s.Total < 0 || s.Subtotal < 0 {
+			t.Errorf("%s: %+v", c.name, s)
+		}
+		if c.itemized && items+s.Tax+s.Tip != s.Total {
+			t.Errorf("%s: items %d + tax %d + tip %d != total %d", c.name, items, s.Tax, s.Tip, s.Total)
+		}
 	}
 }
 
