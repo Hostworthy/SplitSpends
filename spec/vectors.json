@@ -2237,6 +2237,142 @@
    }
   },
   {
+   "name": "yen have no minor unit and split like any other currency",
+   "input": {
+    "currency": "JPY",
+    "total": 1000,
+    "method": "equal",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000c"
+     }
+    ]
+   },
+   "currency": "JPY",
+   "owed": {
+    "00000000-0000-0000-0000-00000000000a": 334,
+    "00000000-0000-0000-0000-00000000000b": 333,
+    "00000000-0000-0000-0000-00000000000c": 333
+   }
+  },
+  {
+   "name": "Kuwaiti dinar percentages split into thousandths",
+   "input": {
+    "currency": "KWD",
+    "total": 10001,
+    "method": "percent",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 6001
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "amount": 4000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "33.3333"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "33.3333"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000c",
+      "value": "33.3334"
+     }
+    ]
+   },
+   "currency": "KWD",
+   "owed": {
+    "00000000-0000-0000-0000-00000000000a": 3334,
+    "00000000-0000-0000-0000-00000000000b": 3333,
+    "00000000-0000-0000-0000-00000000000c": 3334
+   }
+  },
+  {
+   "name": "itemized without items is refused",
+   "input": {
+    "total": 100,
+    "method": "itemized",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "items": []
+   },
+   "error": "items",
+   "message": "Add at least one item."
+  },
+  {
+   "name": "negative tip is refused",
+   "input": {
+    "total": 99,
+    "method": "itemized",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 99
+     }
+    ],
+    "items": [
+     {
+      "name": "Tea",
+      "amount": 100,
+      "userIds": [
+       "00000000-0000-0000-0000-00000000000a"
+      ]
+     }
+    ],
+    "tip": -1
+   },
+   "error": "tax",
+   "message": "Tax and tip cannot be negative."
+  },
+  {
+   "name": "itemized tip above the maximum is refused",
+   "input": {
+    "total": 100,
+    "method": "itemized",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "items": [
+     {
+      "name": "Soup",
+      "amount": 100,
+      "userIds": [
+       "00000000-0000-0000-0000-00000000000a",
+       "00000000-0000-0000-0000-00000000000b"
+      ]
+     }
+    ],
+    "tip": 1000000000001
+   },
+   "error": "tax",
+   "message": "Tax and tip are too large."
+  },
+  {
    "name": "a date that does not exist is refused",
    "input": {
     "date": "2027-02-30",
