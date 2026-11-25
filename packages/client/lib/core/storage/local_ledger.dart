@@ -9,6 +9,16 @@ import 'package:splitspends/core/models/json.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/storage/local_db.dart';
 
+/// How a profile is stored on this device: everything [Me.fromJson] reads
+/// back, including the private settings [User.toJson] leaves out.
+JsonMap profileRecord(Me me) => {
+  ...me.toJson(),
+  'timezone': me.timezone,
+  'notifications': me.notifications.toJson(),
+  'gravatar': me.gravatar,
+  'role': me.role,
+};
+
 /// Shared access to the on-device ledger. Records are stored in the same
 /// shape the API returns, so feature models parse them unchanged:
 ///
