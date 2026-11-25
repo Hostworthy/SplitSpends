@@ -51,7 +51,7 @@ A value that is too high lets clients choose the address that is rate limited; o
 | `BLOB_STORE` | `local` | Where receipt images go: `local` (`DATA_DIR`), `s3` or `postgres` (in the database; good for small free-tier hosts) |
 | `S3_BUCKET` | empty | Bucket for `BLOB_STORE=s3` |
 | `S3_REGION` | `AWS_REGION` | Bucket region |
-| `S3_ENDPOINT` | AWS | Other S3-compatible services: `<account>.r2.cloudflarestorage.com`, `storage.googleapis.com`, `minio:9000` |
+| `S3_ENDPOINT` | AWS | Other S3-compatible services: `<account>.r2.cloudflarestorage.com`, `storage.googleapis.com`, `http://minio:9000`. The store uses TLS unless the endpoint starts with `http://`; use plain HTTP only on a local network |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | empty | Static keys; without them the standard `AWS_*` variables and instance or function roles are used |
 | `S3_PREFIX` | empty | Optional key prefix |
 
