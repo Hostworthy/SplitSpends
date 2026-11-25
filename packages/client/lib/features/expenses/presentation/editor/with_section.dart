@@ -150,7 +150,10 @@ class WithSection extends ConsumerWidget {
             label: Text(
               form.groupId == null ? 'No group' : group?.name ?? 'Group',
             ),
-            onPressed: () => _pickGroup(context, ref),
+            tooltip: form.groupLocked
+                ? 'The group of an expense cannot change'
+                : null,
+            onPressed: form.groupLocked ? null : () => _pickGroup(context, ref),
           ),
           if (form.groupId == null) ...[
             for (final id in others)

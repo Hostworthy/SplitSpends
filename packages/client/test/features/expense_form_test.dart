@@ -65,6 +65,20 @@ void main() {
     expect(form.canSave, isTrue);
   });
 
+  test('an edited expense keeps its group', () {
+    final form = ExpenseForm(
+      meId: 'me',
+      currency: 'USD',
+      groupId: 'g',
+      groupLocked: true,
+      people: ['me', 'a', 'b'],
+    )..description = 'Dinner';
+    form.update(() => form.total = 3000);
+    form.setPeople(['me', 'c'], group: 'h');
+    expect(form.groupId, 'g');
+    expect(form.toInput().groupId, 'g');
+  });
+
   test('switching to itemized seeds an item for everyone', () {
     final form = make()
       ..description = 'Lunch'
