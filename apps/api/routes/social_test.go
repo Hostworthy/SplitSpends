@@ -31,7 +31,7 @@ func TestAddFriendDoesNotRevealAccount(t *testing.T) {
 		}
 	}
 	if accounts := items[platform.Account](t, s.call(t, http.MethodGet, platform.Prefix+"/admin/accounts?status=disabled", admin, nil).
-		want(t, http.StatusOK)); len(accounts.Items) != 1 || accounts.Items[0].User.Status != "disabled" {
+		want(t, http.StatusOK)); len(accounts.Items) != 1 || accounts.Items[0].Status != "disabled" {
 		t.Fatalf("administrators still see the real status, got %+v", accounts.Items)
 	}
 
