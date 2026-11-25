@@ -28,10 +28,9 @@ Stream<List<int>> _dropped() async* {
 }
 
 /// A body that starts and then never finishes.
-Stream<List<int>> _stalled() {
-  final controller = StreamController<List<int>>();
-  controller.add(utf8.encode('{"data": '));
-  return controller.stream;
+Stream<List<int>> _stalled() async* {
+  yield utf8.encode('{"data": ');
+  await Completer<void>().future;
 }
 
 void main() {
