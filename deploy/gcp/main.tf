@@ -171,6 +171,7 @@ resource "google_cloud_run_v2_service" "app" {
           BASE_URL      = local.base_url
           TRUST_PROXY   = "1"
           SIGNUP_MODE   = var.signup_mode
+          ADMIN_EMAIL   = var.admin_email
           BLOB_STORE    = "postgres"
           SMTP_HOST     = var.smtp.host
           SMTP_PORT     = tostring(var.smtp.port)

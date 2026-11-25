@@ -390,3 +390,36 @@ func TestRequestCodeLooksTheSameForStrangers(t *testing.T) {
 		t.Fatalf("a refused request has no code to verify, got %v", err)
 	}
 }
+
+func TestBootstrapRestrictedToAdminEmail(t *testing.T) {
+	ctx := context.Background()
+	s, _, sent := service(SignupOpen)
+	if open, err := s.Unclaimed(ctx); err != nil || !open {
+		t.Fatalf("an empty server without an administrator email is open to claim, got %v %v", open, err)
+	}
+	s.policy.AdminEmail = "owner@example.com"
+	if open, err := s.Unclaimed(ctx); err != nil || open {
+		t.Fatalf("an administrator email keeps the server from being claimed, got %v %v", open, err)
+	}
+	if err := s.RequestCode(ctx, "stranger@example.com", "", ""); err != nil {
+		t.Fatalf("others get the same response, got %v", err)
+	}
+	if _, ok := sent["stranger@example.com"]; ok {
+		t.Fatal("only the administrator email may get a code on an empty server")
+	}
+	if err := s.RequestCode(ctx, "Owner@Example.com", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	login, err := s.Verify(ctx, "owner@example.com", sent["owner@example.com"], "Owner", "")
+	if err != nil || login.User.Role != user.RoleAdmin {
+		t.Fatalf("the administrator email must become the administrator: %+v %v", login, err)
+	}
+	// Once the server is claimed, the sign-up mode decides again.
+	if err := s.RequestCode(ctx, "stranger@example.com", "", ""); err != nil || sent["stranger@example.com"] == "" {
+		t.Fatalf("open mode must let others in after the first account, got %v", err)
+	}
+	login, err = s.Verify(ctx, "stranger@example.com", sent["stranger@example.com"], "", "")
+	if err != nil || login.User.Role != user.RoleUser {
+		t.Fatalf("later accounts are not administrators: %+v %v", login, err)
+	}
+}

@@ -42,7 +42,7 @@ Requires Docker, a domain name pointing at your home IP, and ports 80 and 443 fo
 
 ```bash
 git clone https://github.com/Hostworthy/SplitSpends && cd SplitSpends/deploy/docker
-cp ../.env.example .env          # set DOMAIN, BASE_URL=https://DOMAIN, POSTGRES_PASSWORD, SECRET_KEY, SMTP
+cp ../.env.example .env          # set DOMAIN, BASE_URL=https://DOMAIN, POSTGRES_PASSWORD, SECRET_KEY, ADMIN_EMAIL, SMTP
 docker compose up -d --build
 ```
 
@@ -77,7 +77,7 @@ The same as the homelab, on a small Linux VPS from any provider (1 vCPU and 1 GB
 
 ### Render (One Click)
 
-[Deploy to Render](https://render.com/deploy?repo=https://github.com/Hostworthy/SplitSpends) uses [`render.yaml`](../render.yaml): a free web service and a free database. After it deploys, set `BASE_URL` to the service URL and fill in the SMTP variables in the Render dashboard.
+[Deploy to Render](https://render.com/deploy?repo=https://github.com/Hostworthy/SplitSpends) uses [`render.yaml`](../render.yaml): a free web service and a free database. Render asks for `ADMIN_EMAIL` (your own address, so nobody else can claim the new server) while it sets up. After it deploys, set `BASE_URL` to the service URL and fill in the SMTP variables in the Render dashboard.
 
 Limits: free services sleep after 15 minutes without traffic (the first request takes about a minute), and Render's free database is deleted after 30 days. For anything beyond a trial, replace it with a Neon database: remove the database from the blueprint and set `DATABASE_URL`.
 
@@ -103,6 +103,7 @@ The server creates its push key on first start and keeps it in the database. If 
 
 - Always serve over HTTPS. Every option above does, except plain LAN setups.
 - Set a long random `SECRET_KEY` (`openssl rand -hex 32`) and keep it secret.
+- Set `ADMIN_EMAIL` to your own email address before the server is reachable. The first account to sign in becomes the administrator, and new HTTPS names are found by scanners within minutes. With `ADMIN_EMAIL` set, only you can create that first account. Without it, sign in yourself right after the first start; until then the server logs `auth.bootstrap.open`.
 - Keep `SIGNUP_MODE=invite` unless you really want strangers to sign up. `approval` lets anyone ask while you decide who gets in, and `closed` stops new accounts. You can change this later in the app (Account, Administration).
 - Behind a proxy or CDN, set `TRUST_PROXY` to the number of proxies in front of the server (`1` for a single reverse proxy; the shipped Docker, Cloud Run, Render and AWS setups already set it) so rate limits see real client addresses; leave it `false` when the server is directly exposed. See [Client Addresses](ENVIRONMENT.md#client-addresses).
 - Rate limits on sign-in and invite links are counted in each server instance's memory. Cloud Run and Lambda run several instances and start empty after idling, so there the limits apply per instance and are looser. Each sign-in code still stops working after a few wrong attempts.
