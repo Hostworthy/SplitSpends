@@ -159,7 +159,7 @@ A `percent` or `shares` default applies only while its members are exactly the g
 | Method | Path | Notes |
 | ------ | ---- | ----- |
 | GET | `/health` | **public**, outside `/api/v1`: `{ "ok": true }` |
-| GET | `/config` | **public**: `{ data: { appName, aiEnabled, signupMode: "open" \| "invite" \| "domain", currencies: [{ code, name, symbol, exponent }], categories: [{ id, name, group, icon }], pushEnabled, vapidPublicKey, gravatarEnabled } }`. `vapidPublicKey` is the base64url VAPID key to subscribe with (empty when `pushEnabled` is false) |
+| GET | `/config` | **public**: `{ data: { appName, aiEnabled, signupMode: "open" \| "invite" \| "approval" \| "closed", currencies: [{ code, name, symbol, exponent }], categories: [{ id, name, group, icon }], pushEnabled, vapidPublicKey, gravatarEnabled } }`. `vapidPublicKey` is the base64url VAPID key to subscribe with (empty when `pushEnabled` is false) |
 
 ### Auth
 

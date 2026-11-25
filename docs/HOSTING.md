@@ -20,7 +20,7 @@ Split Spends is self-hosted: there is no central Split Spends service. You (or a
 
 1. **The server URL**, for example `https://split.example.com`. The person who runs the server gives it to you.
 2. **Your email address.** You get a 6-digit sign-in code by email. There is no password to remember.
-3. **An invite, usually.** Most servers only let in people an existing member has added as a friend or to a group. If the server says nothing was sent, ask whoever runs it to add you.
+3. **An invite, usually.** Most servers only let in people an existing member has added as a friend or to a group. If no code arrives within a few minutes, ask whoever runs it to add you.
 
 ## Choosing Where to Run It
 
