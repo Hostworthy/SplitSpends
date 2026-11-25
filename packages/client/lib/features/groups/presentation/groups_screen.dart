@@ -31,10 +31,15 @@ class GroupsScreen extends ConsumerWidget {
                   title: 'Pick a group',
                   message: 'Select a group to see its expenses and balances.',
                 )
-              : GroupDetailScreen(
-                  key: ValueKey(selectedId),
-                  groupId: selectedId!,
-                  embedded: true,
+              // The list beside this pane already shows the group's badge as a
+              // hero, and two heroes with one tag break route changes.
+              : HeroMode(
+                  enabled: false,
+                  child: GroupDetailScreen(
+                    key: ValueKey(selectedId),
+                    groupId: selectedId!,
+                    embedded: true,
+                  ),
                 ),
         ),
       ],

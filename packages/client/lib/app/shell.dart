@@ -175,11 +175,14 @@ class _Brand extends StatelessWidget {
         children: [
           const AppLogo(size: 32),
           const SizedBox(width: 10),
-          Text(
-            'Split Spends',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: scheme.onSurface,
+          Flexible(
+            child: Text(
+              'Split Spends',
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurface,
+              ),
             ),
           ),
         ],
