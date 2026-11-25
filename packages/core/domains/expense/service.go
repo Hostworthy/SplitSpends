@@ -2,6 +2,7 @@ package expense
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -616,7 +617,9 @@ func (s *Service) DeleteComment(ctx context.Context, actor, id uuid.UUID) error 
 }
 
 // RunRecurring creates due copies of recurring expenses. The schedule moves
-// to the newest copy so editing the latest expense edits the series.
+// to the newest copy so editing the latest expense edits the series. A series
+// that fails is skipped, so it never holds up the others; it stays due and is
+// tried again on the next run. The error joins a *Skipped for each one.
 func (s *Service) RunRecurring(ctx context.Context) (int, error) {
 	today := clock.Today(s.clock)
 	due, err := s.repo.Due(ctx, today, 100)
@@ -624,6 +627,7 @@ func (s *Service) RunRecurring(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	created := 0
+	var skipped []error
 	for _, d := range due {
 		var n int
 		err := s.tx.Do(ctx, func(ctx context.Context) error {
@@ -632,12 +636,23 @@ func (s *Service) RunRecurring(ctx context.Context) (int, error) {
 			return err
 		})
 		if err != nil {
-			return created, err
+			skipped = append(skipped, &Skipped{ID: d.ID, Err: err})
+			continue
 		}
 		created += n
 	}
-	return created, nil
+	return created, errors.Join(skipped...)
 }
+
+// Skipped is a recurring expense RunRecurring could not repeat.
+type Skipped struct {
+	ID  uuid.UUID
+	Err error
+}
+
+func (s *Skipped) Error() string { return "expense.recurring.skipped: " + s.Err.Error() }
+
+func (s *Skipped) Unwrap() error { return s.Err }
 
 // repeat books the missed occurrences of one series inside the caller's
 // transaction and returns how many it booked. The row is claimed first, so

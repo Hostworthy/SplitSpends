@@ -360,7 +360,7 @@ Administrators and managers get an `approvals` notification (email and push) for
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
-| POST | `/internal/jobs` | Outside `/api/v1`. Runs recurring expenses and cleanup once; overlapping runs are safe, each occurrence is booked once. Requires `Authorization: Bearer <JOBS_SECRET>`; only mounted when `JOBS_SECRET` is set. For serverless schedulers |
+| POST | `/internal/jobs` | Outside `/api/v1`. Runs recurring expenses and cleanup once; overlapping runs are safe, each occurrence is booked once. Every job runs even when another fails, and a recurring expense that fails is skipped and tried again next run; any failure answers 500 after the rest has run. Requires `Authorization: Bearer <JOBS_SECRET>`; only mounted when `JOBS_SECRET` is set. For serverless schedulers |
 
 ## MCP
 

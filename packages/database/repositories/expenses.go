@@ -202,7 +202,7 @@ func (r *Expenses) List(ctx context.Context, f expense.Filter) ([]*expense.Expen
 
 func (r *Expenses) Due(ctx context.Context, day time.Time, limit int) ([]*expense.Expense, error) {
 	rows, err := r.db.Q(ctx).Query(ctx, `SELECT `+expenseColumns+` FROM expenses e
-		WHERE e.deleted_at IS NULL AND e.recurrence <> 'none' AND e.next_date <= $1 ORDER BY e.next_date LIMIT $2`, day, limit)
+		WHERE e.deleted_at IS NULL AND e.recurrence <> 'none' AND e.next_date <= $1 ORDER BY e.next_date, e.id LIMIT $2`, day, limit)
 	if err != nil {
 		return nil, err
 	}
