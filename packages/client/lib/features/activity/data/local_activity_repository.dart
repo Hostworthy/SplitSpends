@@ -48,6 +48,7 @@ class LocalActivityRepository implements ActivityRepository {
               a['kind'] as String,
               (a['data'] as JsonMap?) ?? const {},
               a['actorId'] == me.id ? 'You' : _name(people[a['actorId']]),
+              actorId: a['actorId'] as String?,
             ),
           }),
       ],
@@ -60,7 +61,7 @@ class LocalActivityRepository implements ActivityRepository {
 }
 
 /// Port of the server's `activity.Describe`.
-String describe(String kind, JsonMap data, String actor) {
+String describe(String kind, JsonMap data, String actor, {String? actorId}) {
   String str(String k) => (data[k] as String?) ?? '';
   final group = str('groupName');
   final inGroup = group.isEmpty ? '' : ' in $group';
@@ -81,7 +82,8 @@ String describe(String kind, JsonMap data, String actor) {
     'group.deleted' => '$actor deleted the group $group',
     'group.member-added' => '$actor added ${str('targetName')} to $group',
     'group.member-removed' =>
-      str('targetName') == actor
+      // Names are neither unique nor stable, so compare ids.
+      actorId != null && str('targetId') == actorId
           ? '$actor left $group'
           : '$actor removed ${str('targetName')} from $group',
     'friend.added' => '$actor added ${str('targetName')} as a friend',
