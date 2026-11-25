@@ -498,15 +498,47 @@ func TestTestHasDeadline(t *testing.T) {
 }
 
 func TestPayloadStaysSmall(t *testing.T) {
-	p := Message{Title: strings.Repeat("é", 500), Body: strings.Repeat("€", 5000), URL: "https://split.example.com"}.Payload()
-	if len(p) > 3000 {
-		t.Fatalf("payload too large: %d bytes", len(p))
+	for _, m := range []Message{
+		{Title: strings.Repeat("é", 500), Body: strings.Repeat("€", 5000)},
+		{Title: strings.Repeat("<", 500), Body: strings.Repeat("&", 5000)},
+		{Title: strings.Repeat("<", 500), Body: strings.Repeat("\u2028", 5000)},
+		{Title: strings.Repeat("\x01", 500), Body: strings.Repeat("\x02", 5000)},
+	} {
+		m.URL = "https://split.example.com"
+		p := m.Payload()
+		if len(p) > MaxPayload {
+			t.Errorf("payload of %.10q is %d bytes, more than %d", m.Body, len(p), MaxPayload)
+		}
+		var got Message
+		if err := json.Unmarshal(p, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Body != "" && !strings.HasSuffix(got.Body, "…") || got.URL != m.URL {
+			t.Errorf("clipped text should end with an ellipsis and keep the link: %+v", got)
+		}
 	}
-	var m Message
-	if err := json.Unmarshal(p, &m); err != nil {
+	if p := (Message{Title: "Tom & Jerry <3"}).Payload(); !strings.Contains(string(p), "Tom & Jerry <3") {
+		t.Errorf("the payload is not HTML, so it should not be escaped: %s", p)
+	}
+}
+
+// TestOversizePayloadIsNotTheDevice checks that a message the sender
+// cannot fit is reported but not counted against the device.
+func TestOversizePayloadIsNotTheDevice(t *testing.T) {
+	svc, repo, sender := setup()
+	ctx := context.Background()
+	me := uuid.New()
+	if _, _, err := svc.Register(ctx, me, uuid.New(), input("https://push.example.com/a")); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(m.Body, "…") {
-		t.Fatal("clipped text should end with an ellipsis")
+	sender.answers["https://push.example.com/a"] = fmt.Errorf("webpush.send.failed: %w", ErrTooLarge)
+	r, err := svc.Notify(ctx, ports.Notification{UserID: me, Subject: "x"})
+	if err != nil || r.Failed != 1 || r.Err == nil {
+		t.Fatalf("unexpected report %+v %v", r, err)
+	}
+	for _, s := range repo.subs {
+		if s.Failures != 0 {
+			t.Fatalf("failures = %d, want 0", s.Failures)
+		}
 	}
 }

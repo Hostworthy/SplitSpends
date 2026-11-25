@@ -92,8 +92,12 @@ func Check(public, private string) error {
 }
 
 // Send encrypts payload for s and posts it to the push service. A 404 or
-// 410 answer returns push.ErrGone.
+// 410 answer returns push.ErrGone, and a payload larger than
+// push.MaxPayload returns push.ErrTooLarge without contacting anyone.
 func (w *Sender) Send(ctx context.Context, s *push.Subscription, payload []byte) error {
+	if len(payload) > push.MaxPayload {
+		return fmt.Errorf("webpush.send.failed: %w", push.ErrTooLarge)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	res, err := wp.SendNotificationWithContext(ctx, payload, &wp.Subscription{

@@ -232,6 +232,25 @@ func TestSendStatuses(t *testing.T) {
 	}
 }
 
+func TestSendRefusesOversizePayload(t *testing.T) {
+	srv, got := pushService(t)
+	public, private, _ := Keys()
+	sender, err := New(Config{PublicKey: public, PrivateKey: private, Subject: "mailto:a@b.c", Client: srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := newDevice(t)
+	if err := sender.Send(context.Background(), dev.subscription(srv.URL+"/push/abc"), make([]byte, push.MaxPayload)); err != nil {
+		t.Fatalf("a payload of exactly MaxPayload bytes should be sent: %v", err)
+	}
+	if err := sender.Send(context.Background(), dev.subscription(srv.URL+"/push/abc"), make([]byte, push.MaxPayload+1)); !errors.Is(err, push.ErrTooLarge) {
+		t.Fatalf("want ErrTooLarge, got %v", err)
+	}
+	if len(got()) != 1 {
+		t.Fatalf("only the payload that fits should reach the push service, got %d requests", len(got()))
+	}
+}
+
 func TestDefaultClientRefusesLoopback(t *testing.T) {
 	srv, got := pushService(t)
 	public, private, _ := Keys()
