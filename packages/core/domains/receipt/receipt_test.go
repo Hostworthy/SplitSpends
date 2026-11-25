@@ -387,8 +387,8 @@ func TestOpenAndScanNeedAccess(t *testing.T) {
 	if len(ai.calls) != 0 {
 		t.Fatalf("nothing may reach the AI reader for someone who cannot see the receipt: %d calls", len(ai.calls))
 	}
-	if data, contentType, err := s.Image(ctx, ada, r.ID); err != nil || len(data) != 100 || contentType != "image/jpeg" {
-		t.Fatalf("the uploader reads the image: %d bytes of %q, %v", len(data), contentType, err)
+	if got, data, err := s.Image(ctx, ada, r.ID); err != nil || len(data) != 100 || got.ContentType != "image/jpeg" {
+		t.Fatalf("the uploader reads the image: %d bytes of %+v, %v", len(data), got, err)
 	}
 	scan, err := s.Scan(ctx, ada, r.ID, "")
 	if err != nil || scan.Total != 1250 || len(ai.calls) != 1 || len(ai.calls[0].Image) != 100 {

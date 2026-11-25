@@ -254,6 +254,48 @@ func TestDraftNeedsMembership(t *testing.T) {
 	}
 }
 
+// TestDraftKeepsOnlyOwnReceipt checks that a draft read from a receipt
+// someone else uploaded leaves the receipt off, since only the uploader may
+// attach it, so the draft can be saved as it is.
+func TestDraftKeepsOnlyOwnReceipt(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{Reader: &drafts{}})
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
+	name := "Flat"
+	g, err := svc.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name}, People: []uuid.UUID{ben}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := svc.Receipts.Upload(ctx, ada, append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Expenses.Create(ctx, ada, expense.Input{GroupID: &g.ID, Description: "Bread", Currency: "EUR", Total: 300,
+		Method: expense.MethodEqual, ReceiptID: &r.ID, Payers: []expense.Payer{{UserID: ada, Amount: 300}},
+		Splits: []expense.SplitInput{{UserID: ada}, {UserID: ben}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	mine, err := svc.Assist.Draft(ctx, ada, assist.Request{GroupID: &g.ID, ReceiptID: &r.ID})
+	if err != nil || mine.ReceiptID == nil || *mine.ReceiptID != r.ID {
+		t.Fatalf("Ada's draft should keep her receipt: %+v, %v", mine, err)
+	}
+	d, err := svc.Assist.Draft(ctx, ben, assist.Request{GroupID: &g.ID, ReceiptID: &r.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.ReceiptID != nil {
+		t.Fatalf("Ben's draft must not carry Ada's receipt, got %s", d.ReceiptID)
+	}
+	if _, err := svc.Expenses.Create(ctx, ben, expense.Input{GroupID: d.GroupID, ReceiptID: d.ReceiptID, Description: d.Description,
+		Currency: d.Currency, Total: d.Total, Date: d.Date, Category: d.Category, Method: d.Method, Payers: d.Payers,
+		Splits: d.Splits}); err != nil {
+		t.Fatalf("Ben's draft should save as it is: %v", err)
+	}
+}
+
 // TestDraftNeedsReadableImage checks that a draft from a HEIC receipt, which
 // is stored but which AI providers cannot read, is refused before the
 // provider is asked.

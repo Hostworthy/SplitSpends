@@ -166,9 +166,15 @@ func (s *Service) Draft(ctx context.Context, actor uuid.UUID, req Request) (*Dra
 		in.GroupID = req.GroupID.String()
 	}
 	if req.ReceiptID != nil {
-		in.Image, in.ContentType, err = s.receipts.Image(ctx, actor, *req.ReceiptID)
+		r, image, err := s.receipts.Image(ctx, actor, *req.ReceiptID)
 		if err != nil {
 			return nil, err
+		}
+		in.Image, in.ContentType = image, r.ContentType
+		// Only the uploader may attach a receipt to an expense, so a draft
+		// read from someone else's leaves it off and can be saved as it is.
+		if r.UploadedBy != actor {
+			req.ReceiptID = nil
 		}
 	}
 
