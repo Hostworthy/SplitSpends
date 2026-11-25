@@ -58,6 +58,8 @@ type RequestRepository interface {
 	// Find returns nil when email never asked to join.
 	Find(ctx context.Context, email string) (*Request, error)
 	Get(ctx context.Context, id uuid.UUID) (*Request, error)
+	// Save updates the request with r.ID, or files r as a new one. A new
+	// request for an email that already has one is ignored.
 	Save(ctx context.Context, r *Request) error
 	// List returns a page of requests with status, newest first, and how
 	// many there are in all.

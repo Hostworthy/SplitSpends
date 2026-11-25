@@ -2,6 +2,7 @@ package bootstrap_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/google/uuid"
 )
 
@@ -509,5 +511,32 @@ func TestInviteLinksOfDisabledAccount(t *testing.T) {
 	}
 	if code := env.Notifier.Code("cleo@example.com"); code != "" {
 		t.Fatal("a code was sent to a stranger holding the link of a disabled account")
+	}
+}
+
+// TestJoinRequestsConcurrent files two requests for the same address at the
+// same time, as two sign-ins with codes for one address do: one is stored
+// and neither fails.
+func TestJoinRequestsConcurrent(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	requests := repositories.NewSignupRequests(env.DB)
+	for run := range 20 {
+		email := fmt.Sprintf("dan%d@else.org", run)
+		results := concurrently(2, func(int) error {
+			return requests.Save(ctx, &admin.Request{ID: uuid.New(), Email: email, Status: admin.StatusPending, RequestedAt: env.Clock.Now()})
+		})
+		for _, err := range results {
+			if err != nil {
+				t.Fatalf("run %d: %v", run, err)
+			}
+		}
+		var stored int
+		if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM signup_requests WHERE email = $1`, email).Scan(&stored); err != nil {
+			t.Fatal(err)
+		}
+		if stored != 1 {
+			t.Fatalf("run %d: %d requests stored for one address, want 1", run, stored)
+		}
 	}
 }

@@ -81,8 +81,11 @@ func (r *SignupRequests) Get(ctx context.Context, id uuid.UUID) (*admin.Request,
 }
 
 func (r *SignupRequests) Save(ctx context.Context, req *admin.Request) error {
-	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO signup_requests (`+requestColumns+`) VALUES ($1,$2,$3,$4,$5,$6,$7)
-		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, decided_at = EXCLUDED.decided_at, decided_by = EXCLUDED.decided_by`,
+	_, err := r.db.Q(ctx).Exec(ctx, `WITH updated AS (
+			UPDATE signup_requests SET name = $3, status = $4, decided_at = $6, decided_by = $7 WHERE id = $1 RETURNING id)
+		INSERT INTO signup_requests (`+requestColumns+`) SELECT $1, $2, $3, $4, $5, $6, $7
+		WHERE NOT EXISTS (SELECT 1 FROM updated)
+		ON CONFLICT ((lower(email))) DO NOTHING`,
 		req.ID, req.Email, req.Name, req.Status, req.RequestedAt, req.DecidedAt, req.DecidedBy)
 	return err
 }
