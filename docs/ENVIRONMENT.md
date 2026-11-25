@@ -6,14 +6,14 @@ The server reads everything from the environment. Invalid or missing required va
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `DATABASE_URL` | required | PostgreSQL URL, for example `postgres://user:pass@host:5432/splitspends?sslmode=disable` |
+| `DATABASE_URL` | required | PostgreSQL URL, for example `postgres://user:pass@host:5432/splitspends?sslmode=disable`. Use a direct or session-mode connection, not a transaction-mode pooler (PgBouncer in transaction mode, Neon's `-pooler` host, Supabase's port 6543): migrations at start hold a session lock so that instances starting together apply them one at a time |
 | `SECRET_KEY` | required | At least 32 characters; hex is decoded. Signs login codes. Generate with `openssl rand -hex 32` |
 | `BASE_URL` | `http://localhost:8080` | Public URL, used in email links |
 | `ADDR` | `:8080` | Listen address |
 | `APP_NAME` | `Split Spends` | Name shown in emails and the app |
 | `WEB_DIR` | empty | Directory with the Flutter web build; the Docker image sets `/srv/web` |
 | `DATA_DIR` | `./data` | Where receipt images are stored |
-| `DATABASE_MAX_CONNS` | `10` | Connection pool size, from 1 to 2147483647 |
+| `DATABASE_MAX_CONNS` | `10` | Connection pool size, from 1 to 2147483647. Migrations at start open one more connection for their lock and close it when done |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `LOG_FORMAT` | `json` | `json` or `text` |
 | `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API from elsewhere, or `*` |

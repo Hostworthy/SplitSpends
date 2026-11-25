@@ -84,7 +84,7 @@ func Open(t testing.TB, o Options) *Env {
 	if _, err := lock.Exec(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"); err != nil {
 		t.Fatal(err)
 	}
-	if err := database.Migrate(ctx, pool); err != nil {
+	if err := database.Migrate(ctx, pool, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatal(err)
 	}
 	blobs, err := storage.NewLocal(t.TempDir())
