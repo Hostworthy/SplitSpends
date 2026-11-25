@@ -320,3 +320,59 @@ func TestRegisterCapIsAtomic(t *testing.T) {
 		t.Fatalf("refreshing a device at the cap: %v", err)
 	}
 }
+
+// TestPushSubscriptionsStore checks the repository against PostgreSQL: the
+// created flag, failure counting, success resetting it, and an endpoint
+// moving to another account with its row.
+func TestPushSubscriptionsStore(t *testing.T) {
+	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	env, _ := pushSetup(t, now)
+	ctx := context.Background()
+	ada := env.SignIn(t, "ada@example.com", "Ada")
+	ben := env.SignIn(t, "ben@example.com", "Ben")
+	p256dh, keyAuth := deviceKeys(t)
+	repo := repositories.NewPushSubscriptions(env.DB)
+	sub := func(login *auth.Login) *push.Subscription {
+		return &push.Subscription{ID: uuid.New(), UserID: login.User.ID, SessionID: login.Session.ID, Endpoint: "https://push.example.com/shared",
+			P256dh: p256dh, Auth: keyAuth, Platform: push.PlatformWeb, CreatedAt: now, UpdatedAt: now}
+	}
+
+	first := sub(ada)
+	created, err := repo.Save(ctx, first, push.MaxDevices)
+	if err != nil || !created {
+		t.Fatalf("first save: created=%v err=%v", created, err)
+	}
+	for want := 1; want <= 3; want++ {
+		if n, err := repo.Failed(ctx, first.ID); err != nil || n != want {
+			t.Fatalf("failure %d: got %d, %v", want, n, err)
+		}
+	}
+	if err := repo.Succeeded(ctx, first.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := repo.Failed(ctx, first.ID); err != nil || n != 1 {
+		t.Fatalf("a success should reset the count: got %d, %v", n, err)
+	}
+
+	moved := sub(ben)
+	created, err = repo.Save(ctx, moved, push.MaxDevices)
+	if err != nil || created {
+		t.Fatalf("saving a known endpoint should update it: created=%v err=%v", created, err)
+	}
+	if moved.ID != first.ID || moved.Failures != 1 || moved.LastSuccessAt == nil || !moved.LastSuccessAt.Equal(now) {
+		t.Fatalf("the stored row should keep its id, failures and last success: %+v", moved)
+	}
+	if mine, _ := repo.List(ctx, ada.User.ID); len(mine) != 0 {
+		t.Fatalf("the endpoint should have left its old account: %+v", mine)
+	}
+	if theirs, _ := repo.List(ctx, ben.User.ID); len(theirs) != 1 || theirs[0].SessionID != ben.Session.ID {
+		t.Fatalf("the endpoint should belong to the new account and session: %+v", theirs)
+	}
+
+	if err := repo.Remove(ctx, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := repo.Failed(ctx, first.ID); err != nil || n != 0 {
+		t.Fatalf("counting a failure for a removed device: got %d, %v", n, err)
+	}
+}

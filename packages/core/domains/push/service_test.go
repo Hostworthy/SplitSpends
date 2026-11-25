@@ -38,9 +38,12 @@ func (m *memRepo) Save(_ context.Context, s *Subscription, limit int) (bool, err
 	if others >= limit {
 		return false, ErrFull
 	}
+	// Like the SQL upsert: the stored row keeps its id, creation time and
+	// last success, and its failures survive only when the keys are the same.
 	for _, old := range m.subs {
 		if old.Endpoint == s.Endpoint {
-			s.ID, s.CreatedAt = old.ID, old.CreatedAt
+			s.ID, s.CreatedAt, s.LastSuccessAt = old.ID, old.CreatedAt, old.LastSuccessAt
+			s.Failures = 0
 			if old.P256dh == s.P256dh && old.Auth == s.Auth {
 				s.Failures = old.Failures
 			}
@@ -48,6 +51,7 @@ func (m *memRepo) Save(_ context.Context, s *Subscription, limit int) (bool, err
 			return false, nil
 		}
 	}
+	s.LastSuccessAt, s.Failures = nil, 0
 	c := *s
 	m.subs[s.ID] = &c
 	return true, nil

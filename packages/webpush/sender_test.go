@@ -267,6 +267,57 @@ func TestDefaultClientRefusesLoopback(t *testing.T) {
 	}
 }
 
+// noProxy clears the proxy environment so the guarded client dials the
+// endpoint itself.
+func noProxy(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"} {
+		t.Setenv(key, "")
+	}
+}
+
+func TestDefaultClientRefusesResolvedLoopback(t *testing.T) {
+	noProxy(t)
+	srv, got := pushService(t)
+	public, private, _ := Keys()
+	sender, err := New(Config{PublicKey: public, PrivateKey: private, Subject: "mailto:a@b.c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := "https://localhost:" + srv.URL[strings.LastIndex(srv.URL, ":")+1:] + "/push/abc"
+	err = sender.Send(context.Background(), newDevice(t).subscription(endpoint), []byte(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "webpush.endpoint.blocked") {
+		t.Fatalf("a host name that resolves to loopback must be refused, got %v", err)
+	}
+	if len(got()) != 0 {
+		t.Fatal("the request must not reach a loopback endpoint")
+	}
+}
+
+func TestSendDoesNotFollowRedirects(t *testing.T) {
+	noProxy(t)
+	target, got := pushService(t)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/push/abc", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirect.Close)
+	public, private, _ := Keys()
+	sender, err := New(Config{PublicKey: public, PrivateKey: private, Subject: "mailto:a@b.c", AllowPrivate: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The default client does not trust the test certificate, so a followed
+	// redirect would fail too; trusting it makes the request count decide.
+	sender.client.Transport.(*http.Transport).TLSClientConfig = target.Client().Transport.(*http.Transport).TLSClientConfig
+	err = sender.Send(context.Background(), newDevice(t).subscription(redirect.URL+"/push/abc"), []byte(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "status 307") {
+		t.Fatalf("a redirect should be reported as a rejection, got %v", err)
+	}
+	if len(got()) != 0 {
+		t.Fatal("the redirect target must receive no request")
+	}
+}
+
 // TestProxyRefusesBlockedEndpoints checks that behind HTTPS_PROXY, where
 // the proxy and not this server connects to the endpoint, an endpoint at a
 // blocked address never reaches the proxy, while others go through it.
