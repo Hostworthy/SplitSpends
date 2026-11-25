@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/app/shell.dart';
+import 'package:splitspends/features/auth/presentation/waiting_changes.dart';
 
 final hostingGuide = Uri.parse(
   'https://github.com/Hostworthy/SplitSpends/blob/main/docs/HOSTING.md',
@@ -79,6 +80,7 @@ class WelcomeScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 28),
+                  const WaitingChanges(),
                   if (wide)
                     IntrinsicHeight(
                       child: Row(

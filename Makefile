@@ -1,10 +1,23 @@
-.PHONY: help setup dev api web check test test-integration lint fmt hooks brand build docker web-build apk lambda
+.PHONY: help setup dev api web check test test-integration lint vuln fmt hooks brand build docker web-build apk lambda
 
 .DEFAULT_GOAL := help
 TEST_DATABASE_URL ?= postgres://splitspends:splitspends@localhost:5432/splitspends_test?sslmode=disable
 DART_MEMBERS := packages/ledger packages/client apps/apk apps/ios apps/web
-# Built with the project's Go toolchain, so it understands this Go version.
-GOLANGCI ?= go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+# `go run pkg@version` picks the toolchain from the tool's own go.mod, and a
+# tool built with an older Go refuses this module, so pin go.mod's version.
+# CI builds the same golangci-lint version (.github/workflows/ci.yml).
+GO_VERSION := $(shell sed -n 's/^go //p' go.mod)
+# Stamped into the binaries (`splitspends version`, the MCP server info).
+# The release workflow passes the tag; the Dockerfile uses the same flags.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS = -s -w -X main.version=$(VERSION)
+# Output directory and executable suffix (.exe when GOOS=windows).
+BIN ?= bin
+EXE ?= $(shell go env GOEXE)
+GOLANGCI ?= GOTOOLCHAIN=go$(GO_VERSION) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+GOVULNCHECK ?= GOTOOLCHAIN=go$(GO_VERSION) go run golang.org/x/vuln/cmd/govulncheck@v1.10.0
+# Shell scripts that shellcheck covers in `make lint` and CI.
+SHELL_SCRIPTS := $(wildcard scripts/*/*.sh) scripts/hooks/pre-commit
 
 help:
 	@echo "Targets:"
@@ -12,8 +25,9 @@ help:
 	@echo "  dev               Run the API (:8080) and the web app (:5173)"
 	@echo "  api               Run only the API (apps/api)"
 	@echo "  web               Run only the web app (apps/web) against the local API"
-	@echo "  check             lint and test"
-	@echo "  lint              gofmt, go vet, golangci-lint, dart format, flutter analyze, fonts"
+	@echo "  check             lint, vuln and test"
+	@echo "  lint              gofmt, go vet, golangci-lint, dart format, flutter analyze, fonts, shellcheck"
+	@echo "  vuln              Known vulnerabilities in Go code and the standard library"
 	@echo "  fmt               Format Go and Dart and apply Dart fixes"
 	@echo "  hooks             Run quick format checks before every commit"
 	@echo "  brand             Render icons, splash images and banners"
@@ -60,6 +74,10 @@ lint:
 	dart format --output=none --set-exit-if-changed $(DART_MEMBERS)
 	for d in $(DART_MEMBERS); do (cd $$d && flutter analyze) || exit 1; done
 	scripts/fonts/fallback.sh check
+	shellcheck $(SHELL_SCRIPTS)
+
+vuln:
+	$(GOVULNCHECK) ./...
 
 test:
 	go test -count=1 ./...
@@ -67,13 +85,13 @@ test:
 	cd packages/client && flutter test
 
 test-integration:
-	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -count=1 ./packages/bootstrap/...
+	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -count=1 ./...
 
-check: lint test
+check: lint vuln test
 
 build:
-	CGO_ENABLED=0 go build -trimpath -o bin/splitspends ./apps/api
-	CGO_ENABLED=0 go build -trimpath -o bin/splitspends-mcp ./apps/mcp
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN)/splitspends$(EXE)" ./apps/api
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN)/splitspends-mcp$(EXE)" ./apps/mcp
 
 web-build:
 	cd apps/web && flutter build web --release --no-web-resources-cdn
@@ -82,10 +100,10 @@ apk:
 	cd apps/apk && flutter build apk --release
 
 docker:
-	docker build -t splitspends:latest .
+	docker build --build-arg VERSION="$(VERSION)" -t splitspends:latest .
 
 lambda:
 	mkdir -p deploy/aws/build/lambda
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o deploy/aws/build/lambda/splitspends ./apps/api
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o deploy/aws/build/lambda/splitspends ./apps/api
 	printf '#!/bin/sh\nexec ./splitspends\n' > deploy/aws/build/lambda/run.sh
 	chmod +x deploy/aws/build/lambda/run.sh

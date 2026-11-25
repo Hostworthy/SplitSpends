@@ -13,13 +13,29 @@ The server reads everything from the environment. Invalid or missing required va
 | `APP_NAME` | `Split Spends` | Name shown in emails and the app |
 | `WEB_DIR` | empty | Directory with the Flutter web build; the Docker image sets `/srv/web` |
 | `DATA_DIR` | `./data` | Where receipt images are stored |
-| `DATABASE_MAX_CONNS` | `10` | Connection pool size |
+| `DATABASE_MAX_CONNS` | `10` | Connection pool size, from 1 to 2147483647 |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `LOG_FORMAT` | `json` | `json` or `text` |
 | `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API from elsewhere, or `*` |
-| `TRUST_PROXY` | `false` | Use `X-Forwarded-For` for client IPs (rate limits) behind a reverse proxy |
+| `TRUST_PROXY` | `false` | How many reverse proxies sit in front of the server, each appending the address it was connected from to `X-Forwarded-For`. Rate limits use the entry that many places from the right; entries further left are written by the client and ignored. `true` means `1`, `false` means `0` (use the connecting address). See [Client Addresses](#client-addresses) |
 | `MCP_ENABLED` | `true` | Serve the MCP endpoint at `/mcp` |
 | `GRAVATAR` | `on` | `off` hides the "Use my Gravatar picture" option and stops sending picture links. People opt in one by one; their app then loads the picture from gravatar.com, which sees a hash of their email and who views it |
+
+### Client Addresses
+
+Sign-in codes and invite previews are rate limited per client address. IPv6 clients are counted per /64 network, the block one home or mobile connection is usually given. Behind a reverse proxy the connecting address is the proxy's, so the server reads `X-Forwarded-For` instead. Each proxy appends the address it was connected from to the right of whatever the client sent, so only the right-most entries can be trusted: set `TRUST_PROXY` to the number of proxies in front of the server, and the server uses the entry that many places from the right. If the header has fewer entries, the connecting address is used. `X-Real-Ip` is never read.
+
+| Setup | `TRUST_PROXY` |
+| ----- | ------------- |
+| Server reached directly | `false` |
+| Docker Compose with the bundled Caddy | `1` |
+| One nginx, Traefik or similar proxy that appends to `X-Forwarded-For` | `1` |
+| Google Cloud Run (`deploy/gcp`) | `1` |
+| Render (`render.yaml`) | `1` |
+| AWS: CloudFront then API Gateway (`deploy/aws`) | `2` |
+| A CDN in front of any of the above | add one per extra proxy |
+
+A value that is too high lets clients choose the address that is rate limited; one that is too low puts everyone behind the same proxy into one shared limit. To check a setup, log the `X-Forwarded-For` header of one request from a known address and count the entries to the right of it, plus one.
 
 ## Serverless and Storage
 
@@ -44,7 +60,7 @@ Buckets stay private: the API checks access and streams receipts itself.
 | `SIGNUP_ALLOWED_DOMAINS` | empty | Comma-separated domains that start out on the allowed list |
 | `SESSION_TTL_DAYS` | `90` | How long app sessions last. API tokens do not expire until revoked |
 
-Login codes are 6 digits, valid for 10 minutes, allow 5 attempts, and at most 5 codes per email per hour. Requests for unknown emails in `invite` mode get the same response as real ones and send nothing.
+Login codes are 6 digits, valid for 10 minutes, allow 5 attempts, and at most 5 codes per email per hour from one network and 10 per email per hour in total. Requests for unknown emails in `invite` mode get the same response as real ones and send nothing.
 
 ## Email
 
@@ -121,3 +137,11 @@ Examples:
 | `RATES_URL` | `https://open.er-api.com/v6/latest/USD` | Exchange rates for converting a receipt in another currency into the group's currency. Fetched only when AI is on, at most about twice a day, and cached in the database. Any URL returning the [open ExchangeRate-API](https://www.exchangerate-api.com/docs/free) or [Frankfurter](https://frankfurter.dev) format works, including a self-hosted Frankfurter (`https://<host>/v1/latest?base=USD`). `none` turns conversion off. Only the rate list is downloaded; no user data is sent |
 
 The OpenAI-compatible provider must support JSON-schema response formats and, for receipts, image input. Receipt photos and instructions are sent to the configured provider, so pick one whose data handling you are comfortable with, or run a local model.
+
+## Homelab Backups
+
+Read by the backup service in `deploy/docker/docker-compose.yml`, not by the server. See [Homelab with Docker](HOSTING.md#homelab-with-docker).
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `BACKUP_KEEP_DAYS` | `14` | Days to keep the nightly database dumps and receipt archives in `deploy/docker/backups/`. Older ones are deleted after each successful dump |

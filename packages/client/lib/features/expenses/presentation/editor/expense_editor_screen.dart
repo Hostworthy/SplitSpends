@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:splitspends/app/refresh.dart';
 import 'package:splitspends/app/routes.dart';
@@ -117,6 +118,10 @@ class _EditorBodyState extends ConsumerState<_EditorBody> {
   late final ExpenseForm form;
   bool _saving = false;
 
+  /// The new expense's id, chosen once: saving again after an error whose
+  /// request may have reached the server cannot add it twice.
+  final String _id = const Uuid().v4();
+
   /// Group members (when in a group) are always resolvable by id.
   final Map<String, User> _extraPeople = {};
 
@@ -167,7 +172,7 @@ class _EditorBodyState extends ConsumerState<_EditorBody> {
       final repo = ref.read(expensesRepositoryProvider);
       final input = form.toInput();
       final saved = widget.existing == null
-          ? await repo.create(input)
+          ? await repo.create(input.withId(_id))
           : await repo.update(widget.existing!.id, input);
       unawaited(HapticFeedback.mediumImpact());
       ref.refreshLedger();

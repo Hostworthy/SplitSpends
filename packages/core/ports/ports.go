@@ -17,6 +17,14 @@ type Tx interface {
 	Do(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
+// Locker takes named locks that last until the transaction in ctx ends, so
+// work that must not run twice at once can refuse instead of queueing.
+type Locker interface {
+	// TryLock takes the lock named key without waiting and reports whether
+	// it got it. It must be called inside Tx.Do.
+	TryLock(ctx context.Context, key string) (bool, error)
+}
+
 // Notifier delivers user-facing messages by email and push. Implementations
 // should not block the caller on slow delivery for non-critical messages.
 type Notifier interface {

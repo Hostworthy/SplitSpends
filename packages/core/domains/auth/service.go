@@ -14,9 +14,15 @@ import (
 	"github.com/google/uuid"
 )
 
-// Invites checks group invite links, which let new people sign up.
+// Invites checks group invite links, which let new people sign up. A login
+// code remembers the link it was requested with by the link's storage hash,
+// never its token, and checks it again when the code is verified.
 type Invites interface {
-	Valid(ctx context.Context, token string) (bool, error)
+	// Lookup returns the storage hash of token when it is a usable link,
+	// or "" when it is not.
+	Lookup(ctx context.Context, token string) (string, error)
+	// Live reports whether the link stored under hash is still usable.
+	Live(ctx context.Context, hash string) (bool, error)
 }
 
 // Gate is the sign-up configuration administrators change at runtime, and
@@ -79,10 +85,10 @@ const (
 	approval          // prove the email, then wait for an administrator
 )
 
-// decide applies the sign-up rules to email. Active accounts always sign
-// in and disabled ones never do; the very first account bootstraps the
-// server whatever the mode.
-func (s *Service) decide(ctx context.Context, email, invite string) (decision, error) {
+// decide applies the sign-up rules to email, which may hold the invite link
+// stored under link. Active accounts always sign in and disabled ones never
+// do; the very first account bootstraps the server whatever the mode.
+func (s *Service) decide(ctx context.Context, email, link string) (decision, error) {
 	existing, err := s.users.FindByEmail(ctx, email)
 	if err != nil {
 		return deny, err
@@ -131,8 +137,8 @@ func (s *Service) decide(ctx context.Context, email, invite string) (decision, e
 	if cfg.Allows(email) || existing != nil {
 		return allow, nil
 	}
-	if invite != "" && s.invites != nil {
-		ok, err := s.invites.Valid(ctx, invite)
+	if link != "" && s.invites != nil {
+		ok, err := s.invites.Live(ctx, link)
 		if err != nil || ok {
 			return allow, err
 		}
@@ -142,31 +148,46 @@ func (s *Service) decide(ctx context.Context, email, invite string) (decision, e
 
 // RequestCode emails a login code. It returns nil for disallowed emails too,
 // so callers cannot probe which addresses have accounts. invite is an
-// optional group invite token that lets a new person sign up.
-func (s *Service) RequestCode(ctx context.Context, rawEmail, invite string) error {
+// optional group invite token that lets a new person sign up. client is the
+// caller's network address; the hourly limit counts per network as well as
+// per email, so requests from elsewhere do not use up the owner's share.
+func (s *Service) RequestCode(ctx context.Context, rawEmail, invite, client string) error {
 	email, err := user.NormalizeEmail(rawEmail)
 	if err != nil {
 		return err
 	}
 	now := s.clock.Now()
-	recent, err := s.challenges.CountSince(ctx, email, now.Add(-time.Hour))
-	if err != nil {
-		return err
-	}
-	if recent >= s.policy.MaxCodesHour {
-		return errs.RateLimited("Too many codes requested. Try again in an hour.")
-	}
-	d, err := s.decide(ctx, email, invite)
-	if err != nil || d == deny {
-		return err
-	}
-	code, err := newCode()
-	if err != nil {
-		return err
-	}
-	c := &Challenge{ID: uuid.New(), Email: email, ExpiresAt: now.Add(s.policy.CodeTTL), CreatedAt: now, Pending: d == approval}
-	c.CodeHash = hashCode(s.policy.Secret, c.ID, email, code)
-	if err := s.challenges.Create(ctx, c); err != nil {
+	client = hashClient(s.policy.Secret, client)
+	var code string
+	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.challenges.Lock(ctx, email); err != nil {
+			return err
+		}
+		total, own, err := s.challenges.CountSince(ctx, email, client, now.Add(-time.Hour))
+		if err != nil {
+			return err
+		}
+		if own >= s.policy.MaxCodesHour || total >= s.policy.MaxCodesEmail {
+			return errs.RateLimited("Too many codes requested. Try again in an hour.")
+		}
+		var link string
+		if invite != "" && s.invites != nil {
+			if link, err = s.invites.Lookup(ctx, invite); err != nil {
+				return err
+			}
+		}
+		d, err := s.decide(ctx, email, link)
+		if err != nil || d == deny {
+			return err
+		}
+		if code, err = newCode(); err != nil {
+			return err
+		}
+		c := &Challenge{ID: uuid.New(), Email: email, ExpiresAt: now.Add(s.policy.CodeTTL), CreatedAt: now, Client: client, Invite: link}
+		c.CodeHash = hashCode(s.policy.Secret, c.ID, email, code)
+		return s.challenges.Create(ctx, c)
+	})
+	if err != nil || code == "" {
 		return err
 	}
 	return s.notifier.LoginCode(ctx, email, code, s.policy.CodeTTL)
@@ -190,53 +211,39 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code, name, userAgent st
 	invalid := errs.Unauthorized("That code is invalid or expired. Request a new one.")
 	now := s.clock.Now()
 
-	c, err := s.challenges.Latest(ctx, email)
+	// Every live code of the address counts this attempt before it is
+	// compared, so codes requested by someone else do not hide the one the
+	// owner holds, and no code is compared more than MaxAttempts times.
+	live, err := s.challenges.Attempt(ctx, email, now, s.policy.MaxAttempts)
 	if err != nil {
 		return nil, err
 	}
-	if c == nil || !c.Usable(now, s.policy.MaxAttempts) {
-		return nil, invalid
-	}
-	expected := hashCode(s.policy.Secret, c.ID, email, code)
-	if subtle.ConstantTimeCompare([]byte(expected), []byte(c.CodeHash)) != 1 {
-		c.Attempts++
-		if err := s.challenges.Update(ctx, c); err != nil {
-			return nil, err
+	var c *Challenge
+	for _, x := range live {
+		expected := hashCode(s.policy.Secret, x.ID, email, code)
+		if subtle.ConstantTimeCompare([]byte(expected), []byte(x.CodeHash)) == 1 {
+			c = x
 		}
+	}
+	if c == nil {
 		return nil, invalid
 	}
 
-	// The code was only sent because the rules allowed it (an invite link,
-	// say); a code for someone waiting for approval is checked again, in
-	// case they were approved in the meantime.
-	d := allow
-	if c.Pending {
-		if d, err = s.decide(ctx, email, ""); err != nil {
-			return nil, err
-		}
-	}
-	if d != allow {
-		c.ConsumedAt = &now
-		if err := s.challenges.Update(ctx, c); err != nil {
-			return nil, err
-		}
-		if d == deny || s.gate == nil {
-			return nil, errs.Forbidden("New accounts are not being created on this server right now.")
-		}
-		declined, err := s.gate.Request(ctx, email, name)
-		if err != nil {
-			return nil, err
-		}
-		if declined {
-			return nil, errs.Declined("Your request to join was declined. Ask an administrator of this server if you think that is a mistake.")
-		}
-		return nil, errs.Pending("Thanks! Your account is waiting for approval. You can sign in once an administrator or manager approves it.")
-	}
-
+	// The rules are applied again: the account may have been disabled, the
+	// mode changed, the invite link revoked or the request approved since
+	// the code was sent.
 	var login *Login
+	d := deny
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
-		c.ConsumedAt = &now
-		if err := s.challenges.Update(ctx, c); err != nil {
+		// A code opens one session, however many requests carry it.
+		ok, err := s.challenges.Consume(ctx, c.ID, now)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return invalid
+		}
+		if d, err = s.decide(ctx, email, c.Invite); err != nil || d != allow {
 			return err
 		}
 		u, isNew, err := s.activate(ctx, email, name, now)
@@ -255,7 +262,20 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code, name, userAgent st
 		login = &Login{Token: token, Session: sess, User: u, IsNew: isNew}
 		return nil
 	})
-	return login, err
+	if err != nil || d == allow {
+		return login, err
+	}
+	if d == deny || s.gate == nil {
+		return nil, errs.Forbidden("New accounts are not being created on this server right now.")
+	}
+	declined, err := s.gate.Request(ctx, email, name)
+	if err != nil {
+		return nil, err
+	}
+	if declined {
+		return nil, errs.Declined("Your request to join was declined. Ask an administrator of this server if you think that is a mistake.")
+	}
+	return nil, errs.Pending("Thanks! Your account is waiting for approval. You can sign in once an administrator or manager approves it.")
 }
 
 func (s *Service) activate(ctx context.Context, email, name string, now time.Time) (*user.User, bool, error) {

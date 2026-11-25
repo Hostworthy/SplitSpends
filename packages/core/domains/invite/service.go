@@ -100,14 +100,36 @@ func (s *Service) find(ctx context.Context, token string) (*Invite, error) {
 	return inv, nil
 }
 
-// Valid reports whether token is a usable invite. Login uses it to let
-// people sign up through a link.
+// Valid reports whether token is a usable invite.
 func (s *Service) Valid(ctx context.Context, token string) (bool, error) {
-	_, err := s.find(ctx, token)
+	hash, err := s.Lookup(ctx, token)
+	return hash != "", err
+}
+
+// Lookup returns the storage hash of token when it is a usable invite, or
+// "" when it is not. Login uses it to let people sign up through a link, and
+// keeps the hash to check the link again with Live.
+func (s *Service) Lookup(ctx context.Context, token string) (string, error) {
+	inv, err := s.find(ctx, token)
 	if errs.Is(err, errs.KindNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return inv.TokenHash, nil
+}
+
+// Live reports whether the invite stored under hash is still usable.
+func (s *Service) Live(ctx context.Context, hash string) (bool, error) {
+	if hash == "" {
 		return false, nil
 	}
-	return err == nil, err
+	inv, err := s.repo.FindByHash(ctx, hash)
+	if err != nil || inv == nil {
+		return false, err
+	}
+	return !inv.Expired(s.clock.Now()), nil
 }
 
 // Preview is the little that a link shows before joining.

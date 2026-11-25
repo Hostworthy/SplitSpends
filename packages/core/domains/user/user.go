@@ -177,8 +177,12 @@ func (u *User) Apply(p Patch, now time.Time) error {
 	return nil
 }
 
-// Activate marks an invited user as active after their first login.
+// Activate marks an invited user as active after their first login. A
+// disabled account comes back only through Enable.
 func (u *User) Activate(name string, now time.Time) error {
+	if u.Status == StatusDisabled {
+		return errs.Forbidden("This account is disabled. Ask an administrator of this server to enable it.")
+	}
 	if name != "" {
 		n, err := NormalizeName(name, u.Email)
 		if err != nil {

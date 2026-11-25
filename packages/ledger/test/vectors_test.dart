@@ -39,17 +39,21 @@ void main() {
           ],
           tax: (i['tax'] as int?) ?? 0,
           tip: (i['tip'] as int?) ?? 0,
+          date: i['date'] as String?,
         );
+        final today = c['today'] == null
+            ? DateTime.utc(2026)
+            : parseDay(c['today'] as String)!;
         if (c['error'] != null) {
           expect(
-            () => normalize(request, today: DateTime.utc(2026)),
+            () => normalize(request, today: today),
             throwsA(
               isA<LedgerError>().having((e) => e.field, 'field', c['error']),
             ),
           );
           return;
         }
-        final n = normalize(request, today: DateTime.utc(2026));
+        final n = normalize(request, today: today);
         final got = {for (final s in n.shares) s.userId: s.owed};
         (c['owed'] as Map<String, dynamic>).forEach((id, want) {
           expect(got[id] ?? 0, want, reason: '$id owes');

@@ -95,14 +95,17 @@ func (r *SignupRequests) List(ctx context.Context, status admin.Status) ([]*admi
 }
 
 // Credentials implements admin.Credentials: it deletes a person's sessions,
-// API tokens and push devices.
+// API tokens, push devices and login codes.
 type Credentials struct{ db *database.DB }
 
 // NewCredentials builds Credentials.
 func NewCredentials(db *database.DB) *Credentials { return &Credentials{db: db} }
 
-func (r *Credentials) Revoke(ctx context.Context, userID uuid.UUID) error {
+func (r *Credentials) Revoke(ctx context.Context, userID uuid.UUID, email string) error {
 	if _, err := r.db.Q(ctx).Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID); err != nil {
+		return err
+	}
+	if _, err := r.db.Q(ctx).Exec(ctx, `DELETE FROM login_challenges WHERE email = lower($1)`, email); err != nil {
 		return err
 	}
 	_, err := r.db.Q(ctx).Exec(ctx, `DELETE FROM push_subscriptions WHERE user_id = $1`, userID)

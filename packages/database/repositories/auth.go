@@ -17,31 +17,49 @@ type Challenges struct{ db *database.DB }
 // NewChallenges builds Challenges.
 func NewChallenges(db *database.DB) *Challenges { return &Challenges{db: db} }
 
+const challengeColumns = `id, expires_at, consumed_at, created_at, attempts, email, code_hash, client_hash, invite_hash`
+
 func (r *Challenges) Create(ctx context.Context, c *auth.Challenge) error {
-	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO login_challenges (id, expires_at, consumed_at, created_at, attempts, email, code_hash, pending) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		c.ID, c.ExpiresAt, c.ConsumedAt, c.CreatedAt, c.Attempts, c.Email, c.CodeHash, c.Pending)
+	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO login_challenges (`+challengeColumns+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		c.ID, c.ExpiresAt, c.ConsumedAt, c.CreatedAt, c.Attempts, c.Email, c.CodeHash, c.Client, c.Invite)
 	return err
 }
 
-func (r *Challenges) Latest(ctx context.Context, email string) (*auth.Challenge, error) {
-	var c auth.Challenge
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT id, expires_at, consumed_at, created_at, attempts, email, code_hash, pending FROM login_challenges WHERE email = $1 ORDER BY created_at DESC, consumed_at IS NOT NULL LIMIT 1`, email).
-		Scan(&c.ID, &c.ExpiresAt, &c.ConsumedAt, &c.CreatedAt, &c.Attempts, &c.Email, &c.CodeHash, &c.Pending)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+// challengeLocks is the first key of the transaction advisory locks taken
+// per email, so they never collide with other advisory locks.
+const challengeLocks = 1_384_201
+
+func (r *Challenges) Lock(ctx context.Context, email string) error {
+	_, err := r.db.Q(ctx).Exec(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, challengeLocks, email)
+	return err
+}
+
+func (r *Challenges) CountSince(ctx context.Context, email, client string, since time.Time) (int, int, error) {
+	var total, own int
+	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE client_hash = $3)
+		FROM login_challenges WHERE email = $1 AND created_at >= $2`, email, since, client).Scan(&total, &own)
+	return total, own, err
+}
+
+func (r *Challenges) Attempt(ctx context.Context, email string, now time.Time, limit int) ([]*auth.Challenge, error) {
+	rows, err := r.db.Q(ctx).Query(ctx, `UPDATE login_challenges SET attempts = attempts + 1
+		WHERE email = $1 AND consumed_at IS NULL AND expires_at > $2 AND attempts < $3
+		RETURNING `+challengeColumns, email, now, limit)
+	if err != nil {
+		return nil, err
 	}
+	return collect(rows, scanChallenge)
+}
+
+func scanChallenge(row pgx.Row) (*auth.Challenge, error) {
+	var c auth.Challenge
+	err := row.Scan(&c.ID, &c.ExpiresAt, &c.ConsumedAt, &c.CreatedAt, &c.Attempts, &c.Email, &c.CodeHash, &c.Client, &c.Invite)
 	return &c, err
 }
 
-func (r *Challenges) Update(ctx context.Context, c *auth.Challenge) error {
-	_, err := r.db.Q(ctx).Exec(ctx, `UPDATE login_challenges SET attempts=$2, consumed_at=$3 WHERE id=$1`, c.ID, c.Attempts, c.ConsumedAt)
-	return err
-}
-
-func (r *Challenges) CountSince(ctx context.Context, email string, since time.Time) (int, error) {
-	var n int
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM login_challenges WHERE email=$1 AND created_at >= $2`, email, since).Scan(&n)
-	return n, err
+func (r *Challenges) Consume(ctx context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	tag, err := r.db.Q(ctx).Exec(ctx, `UPDATE login_challenges SET consumed_at = $2 WHERE id = $1 AND consumed_at IS NULL`, id, at)
+	return tag.RowsAffected() > 0, err
 }
 
 func (r *Challenges) DeleteBefore(ctx context.Context, before time.Time) error {

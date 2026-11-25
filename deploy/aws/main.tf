@@ -197,7 +197,7 @@ resource "aws_lambda_function" "app" {
       SECRET_KEY                   = random_password.secret_key.result
       JOBS_SECRET                  = random_password.jobs_secret.result
       BASE_URL                     = local.base_url
-      TRUST_PROXY                  = "true"
+      TRUST_PROXY                  = "2"
       SIGNUP_MODE                  = var.signup_mode
       SIGNUP_ALLOWED_DOMAINS       = var.signup_allowed_domains
       BLOB_STORE                   = "s3"
@@ -213,6 +213,7 @@ resource "aws_lambda_function" "app" {
       AI_API_KEY                   = var.ai.api_key
       AI_MODEL                     = var.ai.model
       AI_BASE_URL                  = var.ai.base_url
+      AI_EFFORT                    = var.ai.effort
     }
   }
 

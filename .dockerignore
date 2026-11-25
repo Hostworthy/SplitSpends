@@ -4,7 +4,14 @@
 apps/ios/ios/Pods
 apps/apk/android/.gradle
 apps/api/data
-deploy/.env
 deploy/aws/.terraform
 deploy/gcp/.terraform
 *.log
+# Secrets and local data, mirroring .gitignore.
+**/.env
+!**/.env.example
+deploy/docker/backups
+.claude/worktrees
+**/coverage
+**/__pycache__
+**/*.pyc

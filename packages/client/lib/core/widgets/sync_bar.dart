@@ -2,11 +2,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/core/auth/session.dart';
+import 'package:splitspends/core/sync/outbox.dart';
 import 'package:splitspends/core/sync/outbox_sync.dart';
 import 'package:splitspends/core/sync/reachability.dart';
 
 /// Slim status line in connected mode: offline, changes waiting to sync,
-/// or changes the server refused.
+/// changes the server keeps failing on, or changes the server refused.
 class SyncBar extends ConsumerWidget {
   const SyncBar({super.key});
 
@@ -16,6 +17,7 @@ class SyncBar extends ConsumerWidget {
       return const SizedBox.shrink();
     }
     final waiting = ref.watch(outboxCountProvider).value ?? 0;
+    final stuck = ref.watch(outboxStuckProvider).value ?? const [];
     final online = ref.watch(reachabilityProvider);
     final sync = ref.watch(outboxSyncProvider);
     final scheme = Theme.of(context).colorScheme;
@@ -65,12 +67,20 @@ class SyncBar extends ConsumerWidget {
         color: scheme.errorContainer,
         onTap: () => _showRejected(context, ref, sync.rejected),
       );
+    } else if (stuck.isNotEmpty) {
+      child = bar(
+        Icons.sync_problem_rounded,
+        '${stuck.length} change${stuck.length == 1 ? '' : 's'} '
+        'could not be sent. Tap for details.',
+        color: scheme.errorContainer,
+        onTap: () => _showStuck(context),
+      );
     } else if (waiting > 0) {
       child = bar(
         online ? Icons.cloud_upload_rounded : Icons.cloud_off_rounded,
         '$waiting change${waiting == 1 ? '' : 's'} waiting to sync'
         '${online ? '' : ' · offline'}',
-        onTap: () => ref.read(outboxSyncProvider.notifier).flush(),
+        onTap: () => ref.read(outboxSyncProvider.notifier).retry(),
       );
     } else if (!online) {
       child = bar(Icons.cloud_off_rounded, 'Offline · showing saved data');
@@ -82,6 +92,11 @@ class SyncBar extends ConsumerWidget {
       child: child,
     );
   }
+
+  Future<void> _showStuck(BuildContext context) => showDialog<void>(
+    context: context,
+    builder: (context) => const _StuckDialog(),
+  );
 
   Future<void> _showRejected(
     BuildContext context,
@@ -113,5 +128,61 @@ class SyncBar extends ConsumerWidget {
       ),
     );
     ref.read(outboxSyncProvider.notifier).dismissRejected();
+  }
+}
+
+/// Changes the server keeps failing on, each with Discard, and Retry for
+/// all of them.
+class _StuckDialog extends ConsumerWidget {
+  const _StuckDialog();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final stuck = ref.watch(outboxStuckProvider).value ?? const <OutboxOp>[];
+    final sync = ref.read(outboxSyncProvider.notifier);
+    ref.listen(outboxStuckProvider, (_, next) {
+      // Retry closes the dialog itself before the list empties; popping
+      // again then would close the page underneath.
+      final open = ModalRoute.of(context)?.isCurrent ?? false;
+      if (open && (next.value ?? const []).isEmpty) Navigator.pop(context);
+    });
+    return AlertDialog(
+      title: const Text('Not sent yet'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'The server ran into a problem with these changes. They are '
+            'kept on this device; other changes still sync.',
+          ),
+          const SizedBox(height: 8),
+          for (final op in stuck)
+            ListTile(
+              key: Key('stuck-${op.key}'),
+              contentPadding: EdgeInsets.zero,
+              title: Text(op.label),
+              subtitle: op.error == null ? null : Text(op.error!),
+              trailing: TextButton(
+                onPressed: () => sync.discard(op.key),
+                child: const Text('Discard'),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.pop(context);
+            sync.retry();
+          },
+          child: const Text('Retry'),
+        ),
+      ],
+    );
   }
 }

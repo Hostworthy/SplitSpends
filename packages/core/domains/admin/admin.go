@@ -67,9 +67,9 @@ type Accounts interface {
 }
 
 // Credentials removes everything that lets a person in: sessions, API
-// tokens and push devices.
+// tokens, push devices and the login codes sent to their email.
 type Credentials interface {
-	Revoke(ctx context.Context, userID uuid.UUID) error
+	Revoke(ctx context.Context, userID uuid.UUID, email string) error
 }
 
 // Normalize checks the mode and cleans the allowed list: addresses are

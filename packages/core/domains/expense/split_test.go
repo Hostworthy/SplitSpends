@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/google/uuid"
 )
 
@@ -136,6 +137,33 @@ func TestMultiplePayers(t *testing.T) {
 	in.Payers = []Payer{{ada, 4000}}
 	if _, err := Normalize(in, day); err == nil {
 		t.Fatal("payer total mismatch must fail")
+	}
+}
+
+func TestDateRange(t *testing.T) {
+	cases := []struct {
+		date string
+		ok   bool
+	}{
+		{"0001-01-01", false},
+		{"1999-12-31", false},
+		{"2000-01-01", true},
+		{"2027-11-24", true},
+		{"2027-11-25", false},
+		{"9999-12-31", false},
+	}
+	for _, c := range cases {
+		in := base(MethodEqual, SplitInput{UserID: ada})
+		in.Date = c.date
+		_, err := Normalize(in, day)
+		if c.ok && err != nil {
+			t.Errorf("%s: %v", c.date, err)
+		}
+		if !c.ok {
+			if de, ok := errs.As(err); !ok || de.Field != "date" {
+				t.Errorf("%s: want an error on date, got %v", c.date, err)
+			}
+		}
 	}
 }
 

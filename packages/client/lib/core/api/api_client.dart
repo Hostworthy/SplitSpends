@@ -151,8 +151,9 @@ class ApiClient {
           contentType: _mediaType(contentType),
         ),
       );
-    final streamed = await _guard(() => _http.send(request));
-    final response = await http.Response.fromStream(streamed);
+    final response = await _guard(
+      () async => http.Response.fromStream(await _http.send(request)),
+    );
     _check(response);
     return parse((jsonDecode(response.body) as JsonMap)['data']);
   }
@@ -170,8 +171,11 @@ class ApiClient {
     if (payload != null) request.body = jsonEncode(payload);
     http.Response response;
     try {
-      final streamed = await _guard(() => _http.send(request));
-      response = await http.Response.fromStream(streamed);
+      // The body is read inside the guard too: a connection that drops or
+      // stalls mid-body is a network failure like any other.
+      response = await _guard(
+        () async => http.Response.fromStream(await _http.send(request)),
+      );
     } on ApiError catch (error) {
       if (error.isNetwork) {
         onReachability?.call(false);
@@ -209,14 +213,20 @@ class ApiClient {
 
   void _check(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) return;
+    final retryAfter = _retryAfter(response.headers['retry-after']);
     ApiError error;
     try {
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      error = ApiError.fromJson(response.statusCode, decoded as JsonMap);
+      error = ApiError.fromJson(
+        response.statusCode,
+        decoded as JsonMap,
+        retryAfter: retryAfter,
+      );
     } catch (_) {
       error = ApiError(
         status: response.statusCode,
         message: 'Request failed (${response.statusCode}).',
+        retryAfter: retryAfter,
       );
     }
     if (error.isUnauthorized) onUnauthorized?.call();
@@ -235,6 +245,19 @@ String normalizeServerUrl(String url) {
   }
   if (value.isNotEmpty && !value.contains('://')) value = 'https://$value';
   return value;
+}
+
+/// Reads a Retry-After header: delay seconds or an HTTP date.
+Duration? _retryAfter(String? value) {
+  if (value == null) return null;
+  final seconds = int.tryParse(value.trim());
+  if (seconds != null) return seconds < 0 ? null : Duration(seconds: seconds);
+  try {
+    final wait = parseHttpDate(value).difference(DateTime.now().toUtc());
+    return wait.isNegative ? Duration.zero : wait;
+  } on FormatException {
+    return null;
+  }
 }
 
 MediaType? _mediaType(String contentType) {

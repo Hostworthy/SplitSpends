@@ -169,7 +169,7 @@ resource "google_cloud_run_v2_service" "app" {
         for_each = {
           SERVERLESS    = "true"
           BASE_URL      = local.base_url
-          TRUST_PROXY   = "true"
+          TRUST_PROXY   = "1"
           SIGNUP_MODE   = var.signup_mode
           BLOB_STORE    = "postgres"
           SMTP_HOST     = var.smtp.host
@@ -180,6 +180,7 @@ resource "google_cloud_run_v2_service" "app" {
           AI_PROVIDER   = var.ai.provider
           AI_MODEL      = var.ai.model
           AI_BASE_URL   = var.ai.base_url
+          AI_EFFORT     = var.ai.effort
         }
         content {
           name  = env.key

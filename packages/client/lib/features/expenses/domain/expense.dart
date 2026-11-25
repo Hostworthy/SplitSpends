@@ -119,6 +119,7 @@ class Expense {
     this.deleted = false,
     this.commentCount = 0,
     this.myBalance = 0,
+    this.pending = false,
   });
 
   factory Expense.fromJson(JsonMap json) => Expense(
@@ -177,6 +178,9 @@ class Expense {
   final int commentCount;
   final int myBalance;
 
+  /// Shown from a change still waiting in the outbox, not from the server.
+  final bool pending;
+
   bool get isPayment => kind == 'payment';
 
   DateTime get day => DateTime.tryParse(date) ?? DateTime.now();
@@ -189,6 +193,33 @@ class Expense {
     }
     return null;
   }
+
+  Expense copyWith({bool? deleted, bool? pending}) => Expense(
+    id: id,
+    groupId: groupId,
+    kind: kind,
+    description: description,
+    category: category,
+    currency: currency,
+    total: total,
+    date: date,
+    notes: notes,
+    splitMethod: splitMethod,
+    shares: shares,
+    items: items,
+    tax: tax,
+    tip: tip,
+    receiptId: receiptId,
+    recurrence: recurrence,
+    createdBy: createdBy,
+    updatedBy: updatedBy,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    deleted: deleted ?? this.deleted,
+    commentCount: commentCount,
+    myBalance: myBalance,
+    pending: pending ?? this.pending,
+  );
 }
 
 class Payer {

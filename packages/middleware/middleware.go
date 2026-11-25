@@ -4,6 +4,7 @@
 package middleware
 
 import (
+	"container/list"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -172,49 +174,127 @@ func RequireAuth(a Authenticator, log *slog.Logger, next http.Handler) http.Hand
 	})
 }
 
-// Limiter is a fixed-window rate limiter keyed by client IP.
+// maxKeys bounds the memory a Limiter uses. When it is full the least
+// recently seen key is dropped, which only resets that key's budget.
+const maxKeys = 100_000
+
+// Limiter allows a number of requests per sliding window per key. It
+// counts the current and the previous window and weights the previous one
+// by how much of it still overlaps, so a burst across a window boundary
+// cannot double the limit. Its state is in memory, so every server
+// instance keeps its own counts.
 type Limiter struct {
 	mu     sync.Mutex
 	limit  int
 	window time.Duration
-	hits   map[string]*window
+	now    func() time.Time
+	keys   map[string]*list.Element
+	// recent orders buckets by last use, most recent first, so idle and
+	// overflowing buckets are dropped from the back in constant time.
+	recent *list.List
 }
 
-type window struct {
-	start time.Time
-	count int
+type bucket struct {
+	key      string
+	start    time.Time
+	previous int
+	current  int
+	seen     time.Time
 }
 
-// NewLimiter allows limit requests per window per client.
+// NewLimiter allows limit requests per window per key.
 func NewLimiter(limit int, per time.Duration) *Limiter {
-	return &Limiter{limit: limit, window: per, hits: map[string]*window{}}
+	return &Limiter{limit: limit, window: per, now: time.Now,
+		keys: map[string]*list.Element{}, recent: list.New()}
 }
 
-// Allow records a hit for key and reports whether it is within the limit.
+// Allow records a request for key and reports whether it is within the
+// limit. Refused requests are not counted.
 func (l *Limiter) Allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	now := time.Now()
-	if len(l.hits) > 10000 {
-		for k, v := range l.hits {
-			if now.Sub(v.start) > l.window {
-				delete(l.hits, k)
-			}
+	now := l.now()
+	l.sweep(now)
+	e, ok := l.keys[key]
+	if !ok {
+		if len(l.keys) >= maxKeys {
+			l.drop(l.recent.Back())
 		}
+		e = l.recent.PushFront(&bucket{key: key, start: now})
+		l.keys[key] = e
 	}
-	w, ok := l.hits[key]
-	if !ok || now.Sub(w.start) > l.window {
-		l.hits[key] = &window{start: now, count: 1}
-		return true
+	l.recent.MoveToFront(e)
+	b := e.Value.(*bucket)
+	b.seen = now
+	elapsed := now.Sub(b.start)
+	switch {
+	case elapsed >= 2*l.window:
+		b.start, b.previous, b.current, elapsed = now, 0, 0, 0
+	case elapsed >= l.window:
+		b.start, b.previous, b.current = b.start.Add(l.window), b.current, 0
+		elapsed -= l.window
 	}
-	w.count++
-	return w.count <= l.limit
+	// The integer division rounds the overlapping share of the previous
+	// window down, never refusing a request the limit allows.
+	used := int64(b.previous)*int64(l.window-elapsed)/int64(l.window) + int64(b.current)
+	if used >= int64(l.limit) {
+		return false
+	}
+	b.current++
+	return true
 }
 
-// Limit applies l to next.
-func Limit(l *Limiter, log *slog.Logger, trustProxy bool, next http.Handler) http.Handler {
+// sweep drops buckets idle for two windows; they no longer count anything.
+// Each bucket is dropped at most once, so the cost per call is constant on
+// average.
+func (l *Limiter) sweep(now time.Time) {
+	for e := l.recent.Back(); e != nil && now.Sub(e.Value.(*bucket).seen) >= 2*l.window; e = l.recent.Back() {
+		l.drop(e)
+	}
+}
+
+func (l *Limiter) drop(e *list.Element) {
+	delete(l.keys, e.Value.(*bucket).key)
+	l.recent.Remove(e)
+}
+
+// Key picks the budget a request counts against.
+type Key func(r *http.Request) string
+
+// ByAddress counts requests per client address, with hops trusted proxies
+// in front of the server (see ClientIP). An IPv6 client usually holds a
+// whole /64, so its addresses share one budget.
+func ByAddress(hops int) Key {
+	return func(r *http.Request) string {
+		address := ClientIP(r, hops)
+		ip, err := netip.ParseAddr(address)
+		if err != nil {
+			return address
+		}
+		if ip = ip.Unmap(); ip.Is4() {
+			return ip.String()
+		}
+		return netip.PrefixFrom(ip.WithZone(""), 64).Masked().String()
+	}
+}
+
+// ByUser counts requests per signed-in user, and per client address (see
+// ByAddress) when nobody is signed in. Use it in a Limit placed inside
+// RequireAuth, which sets the user.
+func ByUser(hops int) Key {
+	address := ByAddress(hops)
+	return func(r *http.Request) string {
+		if p := Principal(r.Context()); p != nil {
+			return "user:" + p.UserID.String()
+		}
+		return address(r)
+	}
+}
+
+// Limit applies l to next, counting each request against key.
+func Limit(l *Limiter, log *slog.Logger, key Key, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !l.Allow(ClientIP(r, trustProxy)) {
+		if !l.Allow(key(r)) {
 			WriteError(w, r, log, errs.RateLimited("Too many requests. Slow down and try again shortly."))
 			return
 		}
@@ -222,14 +302,23 @@ func Limit(l *Limiter, log *slog.Logger, trustProxy bool, next http.Handler) htt
 	})
 }
 
-// ClientIP returns the caller IP, honouring X-Forwarded-For when trusted.
-func ClientIP(r *http.Request, trustProxy bool) string {
-	if trustProxy {
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			return strings.TrimSpace(strings.Split(fwd, ",")[0])
+// ClientIP returns the caller's address. hops is the number of trusted
+// proxies in front of the server, each of which appends the address it was
+// connected from to X-Forwarded-For. Entries further left were written by
+// the client and prove nothing, so the address is the hops-th entry from the
+// right. When the header is shorter than that, or the entry is not an
+// address, the request did not come through the proxies as configured and
+// the peer address is used instead.
+func ClientIP(r *http.Request, hops int) string {
+	if hops > 0 {
+		var entries []string
+		for _, v := range r.Header.Values("X-Forwarded-For") {
+			entries = append(entries, strings.Split(v, ",")...)
 		}
-		if real := r.Header.Get("X-Real-Ip"); real != "" {
-			return real
+		if len(entries) >= hops {
+			if ip := address(entries[len(entries)-hops]); ip != "" {
+				return ip
+			}
 		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -237,6 +326,20 @@ func ClientIP(r *http.Request, trustProxy bool) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// address parses one X-Forwarded-For entry, which some proxies write with a
+// port or in brackets, and returns "" when it is not an IP address.
+func address(entry string) string {
+	entry = strings.TrimSpace(entry)
+	if host, _, err := net.SplitHostPort(entry); err == nil {
+		entry = host
+	}
+	ip, err := netip.ParseAddr(strings.Trim(entry, "[]"))
+	if err != nil {
+		return ""
+	}
+	return ip.Unmap().String()
 }
 
 var statusByKind = map[errs.Kind]int{
@@ -258,8 +361,13 @@ func WriteError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err er
 	body := platform.Error{RequestID: RequestID(r.Context())}
 	status := http.StatusInternalServerError
 	if de, ok := errs.As(err); ok {
-		status = statusByKind[de.Kind]
 		body.Error, body.Code, body.Field = de.Message, string(de.Kind), de.Field
+		if mapped, known := statusByKind[de.Kind]; known {
+			status = mapped
+		} else {
+			// A kind added to errs without a status still answers, as a 500.
+			log.Error("middleware.error.unmapped", "requestId", body.RequestID, "path", r.URL.Path, "kind", de.Kind)
+		}
 	} else {
 		body.Error, body.Code = "Something went wrong. Please try again.", "INTERNAL"
 		log.Error("middleware.error.internal", "requestId", body.RequestID, "path", r.URL.Path, "error", err)

@@ -1,17 +1,15 @@
-package bootstrap
+package bootstrap_test
 
 import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/rates"
-	"github.com/Hostworthy/SplitSpends/packages/core/shared/clock"
-	"github.com/Hostworthy/SplitSpends/packages/database"
 	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/Hostworthy/SplitSpends/packages/exchange"
 )
@@ -19,22 +17,9 @@ import (
 // TestRatesCache stores a fetched table in PostgreSQL, serves it without
 // refetching while fresh, and keeps serving it when the provider fails.
 func TestRatesCache(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
+	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+	env := bootstraptest.Open(t, bootstraptest.Options{Now: now})
 	ctx := context.Background()
-	pool, err := database.Connect(ctx, url, 4)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
 
 	var calls, failing atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -47,9 +32,7 @@ func TestRatesCache(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
-	c := &clock.Fixed{At: now}
-	svc := rates.NewService(repositories.NewRates(&database.DB{Pool: pool}), exchange.New(srv.URL), c)
+	svc := rates.NewService(repositories.NewRates(env.DB), exchange.New(srv.URL), env.Clock)
 
 	if err := svc.Refresh(ctx); err != nil {
 		t.Fatal(err)
@@ -65,7 +48,7 @@ func TestRatesCache(t *testing.T) {
 		t.Fatalf("convert = %d %v", v, ok)
 	}
 
-	c.At = now.Add(rates.Fresh + time.Hour)
+	env.Clock.Add(rates.Fresh + time.Hour)
 	failing.Store(1)
 	stale, err := svc.Latest(ctx)
 	if err != nil || stale == nil || calls.Load() != 2 || !stale.Fetched.Equal(now) {
@@ -74,11 +57,11 @@ func TestRatesCache(t *testing.T) {
 
 	failing.Store(0)
 	fresh, err := svc.Latest(ctx)
-	if err != nil || fresh == nil || !fresh.Fetched.Equal(c.At) {
+	if err != nil || fresh == nil || !fresh.Fetched.Equal(env.Clock.Now()) {
 		t.Fatalf("refetch: %+v %v", fresh, err)
 	}
 	var rows int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM exchange_rates`).Scan(&rows); err != nil || rows != 1 {
+	if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM exchange_rates`).Scan(&rows); err != nil || rows != 1 {
 		t.Fatalf("rows = %d, %v", rows, err)
 	}
 }

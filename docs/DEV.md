@@ -5,6 +5,7 @@
 - Go 1.26+
 - Flutter 3.50+ (Dart 3.14+)
 - Docker (for the local PostgreSQL), or any PostgreSQL 14+
+- [ShellCheck](https://www.shellcheck.net) for `make lint`
 - Xcode for iOS builds, Android Studio for Android builds
 
 ## First Run
@@ -25,8 +26,9 @@ Migrations are embedded in the binary and applied on start.
 | `make setup` | Env file, Postgres, dependencies |
 | `make dev` | API plus Flutter web |
 | `make api` / `make web` | One side only |
-| `make check` | `make lint` and `make test` |
-| `make lint` | gofmt, go vet, golangci-lint, `dart format`, `flutter analyze` on every Dart member, web fallback fonts |
+| `make check` | `make lint`, `make vuln` and `make test` |
+| `make lint` | gofmt, go vet, golangci-lint, `dart format`, `flutter analyze` on every Dart member, web fallback fonts, shellcheck |
+| `make vuln` | [govulncheck](https://go.dev/doc/security/vuln/) (pinned) on the Go code: fails when code calls a function with a known vulnerability, in a module or the standard library |
 | `make test` | Go tests (including the architecture test), `dart test` for the ledger, `flutter test` for the client |
 | `make fmt` | gofmt, `dart fix --apply` and `dart format` |
 | `make hooks` | Quick gofmt and dart format checks before every commit (`scripts/hooks/pre-commit`) |
@@ -38,10 +40,14 @@ Migrations are embedded in the binary and applied on start.
 
 ## Linting and Formatting
 
-- Go: `gofmt`, `go vet` and [golangci-lint](https://golangci-lint.run) with `.golangci.yml` (the standard set plus checks for closed bodies and rows, error wrapping, contexts on requests, misspellings and wasted assignments). `make lint` runs a pinned release through `go run`, so it is built with this repository's Go version; the first run takes a minute.
+- Go: `gofmt`, `go vet` and [golangci-lint](https://golangci-lint.run) with `.golangci.yml` (the standard set plus checks for closed bodies and rows, error wrapping, contexts on requests, misspellings, wasted assignments and gosec's security checks outside tests). `make lint` runs a pinned release through `go run`, so it is built with this repository's Go version; the first run takes a minute.
 - Dart: every workspace member includes `analysis_options.yaml` at the root on top of its base set: strict casts and raw types, unawaited futures and unclosed streams as errors, final locals, single quotes and more. `dart format` uses the default style.
+- Shell scripts (`scripts/*/*.sh` and the pre-commit hook): [ShellCheck](https://www.shellcheck.net).
 - `.editorconfig` sets UTF-8, LF, final newlines and indentation for every editor.
-- CI runs the same checks: the `backend` job runs gofmt, vet and golangci-lint; the `app` job runs dart format and flutter analyze.
+- CI runs the same checks: the `backend` job runs gofmt, vet, golangci-lint and shellcheck; the `app` job runs dart format and flutter analyze; the `vuln` job runs govulncheck, also weekly so new advisories show up without a push; the `deployment files` job runs `terraform fmt -check` and `terraform validate` on `deploy/aws` and `deploy/gcp`, `docker compose config` on the three Compose files, and parses `render.yaml`.
+- CI, the release workflow and the Docker image run `flutter pub get --enforce-lockfile`, which fails when `pubspec.lock` does not match the pubspec files or a package archive does not match its recorded hash. Commit the updated `pubspec.lock` with every dependency change.
+- Dependabot (`.github/dependabot.yml`) proposes weekly update pull requests for Go modules, pub packages, workflow actions and the Dockerfile base images.
+- The Dockerfile pins its base images by digest and checks the Flutter archive against `FLUTTER_SHA256`. When you change `.flutter-version`, set `FLUTTER_SHA256` to that release's `sha256` from [releases_linux.json](https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json); the image build fails until the two match.
 
 ## Repository Layout
 
@@ -98,7 +104,9 @@ Follow [ADR-001](adr/001-domain-driven-design.md):
 
 - Pure domain logic (splits, balances, receipt reconciliation) has table-style unit tests in `packages/core`.
 - `packages/archtest` fails when a package imports across a forbidden boundary.
-- `packages/bootstrap/integration_test.go` runs services against a real database.
+- Database tests skip unless `TEST_DATABASE_URL` is set. Each one calls `bootstraptest.Open(t, bootstraptest.Options{})` (`packages/bootstrap/bootstraptest`), which wipes and migrates the schema, wires every service with a recorded notifier (`env.Notifier.Code(email)`, `Sent()`) and a clock that moves only on `env.Clock.Add`, and holds a database lock so packages never run database tests at the same time. `env.SignIn(t, email, name)` returns a session. `packages/bootstrap` tests services this way.
+- `apps/api/routes` tests the HTTP API: `s := newServer(t, bootstraptest.Options{})` serves the wired routes behind the middleware chain of `apps/api/main.go`; `s.signIn(t, email, name).Token` signs in over HTTP, and `s.call(t, method, path, token, body).want(t, status)` sends JSON, with `data[T]`, `items[T]` and `failure` decoding the envelopes. The test server trusts one proxy hop and `signIn` gives each person a client address of their own, so a test can sign in as many people as it needs; calls without `X-Forwarded-For` share one address, as the rate limits expect. For who-may-not tests, `s.group(t, token, name, emails...)` and `s.expense(t, token, groupID, total, payer, split...)` set up the data and `s.refused(t, token, status, code, []request{...})` checks that every call in the table is refused with that status and error code. `TestRoutesRequireAuth` reads `router.go` and expects 401 without a token from every route that is not in its `anonymous` list; add a route there only when it must work signed out.
+- `packages/middleware` has plain `httptest` unit tests.
 - `packages/ledger/test` runs `spec/vectors.json` against the Dart rules; `packages/client/test` has unit and widget tests.
 - `apps/apk/integration_test` runs the real app on an Android device or emulator: on-device mode, then signing in to a server and uploading. CI runs it on an Android 13 emulator against a development server when started by hand (Actions, CI, Run workflow), checks the upload through the API, and publishes the release APK as the `splitspends-apk` artifact. To run it yourself, start the API with `SIGNUP_MODE=open` and no SMTP, then:
 
