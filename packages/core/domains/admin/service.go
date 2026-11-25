@@ -251,6 +251,11 @@ func (s *Service) Disable(ctx context.Context, actor, id uuid.UUID) (*user.User,
 			return err
 		}
 		out = u
+		// The request to join holds the address in the clear; a re-enabled
+		// account is recognised by the hash, so the request is not needed.
+		if err := s.d.Requests.Delete(ctx, email); err != nil {
+			return err
+		}
 		return s.d.Credentials.Revoke(ctx, u.ID, email)
 	})
 	return out, err

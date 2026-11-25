@@ -146,6 +146,30 @@ func TestAdministration(t *testing.T) {
 	if _, _, err := login("ben@example.com", ""); err == nil {
 		t.Fatal("a disabled account must not sign in")
 	}
+
+	// Disabling removes the address from requests to join and login codes.
+	if err := svc.Auth.RequestCode(ctx, "dan@else.org", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Admin.Disable(ctx, ada.ID, dan.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"signup_requests", "login_challenges"} {
+		var left int
+		if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE lower(email) = 'dan@else.org'`).Scan(&left); err != nil {
+			t.Fatal(err)
+		}
+		if left != 0 {
+			t.Fatalf("%s still holds a disabled account's address %d times", table, left)
+		}
+	}
+	approved, err := svc.Admin.Requests(ctx, ada.ID, "approved")
+	must(err)
+	for _, r := range approved {
+		if r.Email == "dan@else.org" {
+			t.Fatalf("approved requests still list a disabled account: %+v", r)
+		}
+	}
 	if _, err := svc.Admin.Enable(ctx, ada.ID, ben.ID); err != nil {
 		t.Fatal(err)
 	}
