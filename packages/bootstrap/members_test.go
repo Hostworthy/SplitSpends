@@ -96,3 +96,20 @@ func TestFormerMemberCannotComment(t *testing.T) {
 		t.Fatalf("the refused comment was saved: %+v", list)
 	}
 }
+
+func TestCannotDeleteExpenseOfDepartedMember(t *testing.T) {
+	ctx := context.Background()
+	env, ada, _, g, rent := departed(t)
+	svc := env.Services.Expenses
+	if err := svc.Delete(ctx, ada, rent.ID); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("deleting an expense of someone who left must be refused, got %v", err)
+	}
+	got, err := svc.Get(ctx, ada, rent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DeletedAt != nil {
+		t.Fatal("the refused delete was saved")
+	}
+	settled(t, env, ada, g.ID)
+}

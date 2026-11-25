@@ -152,7 +152,7 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 }
 
 // members reports whether everyone in shares still belongs to g. Booking,
-// restoring and repeating an expense all require it.
+// deleting, restoring and repeating an expense all require it.
 func members(g *group.Group, shares []Share) bool {
 	for _, sh := range shares {
 		if !g.HasMember(sh.UserID) {
@@ -392,7 +392,13 @@ func (s *Service) setDeleted(ctx context.Context, actor, id uuid.UUID, deleted b
 		if (e.DeletedAt != nil) == deleted {
 			return nil
 		}
-		if !deleted && g != nil && !members(g, e.Shares) {
+		// Leaving requires a settled balance, so deleting or restoring an
+		// expense of someone who has left would give them a balance in a
+		// group they can no longer act in.
+		if g != nil && !members(g, e.Shares) {
+			if deleted {
+				return errs.Conflict("Someone in this expense has left the group, so it cannot be deleted.")
+			}
 			return errs.Conflict("Someone in this expense has left the group, so it cannot be restored.")
 		}
 		now := s.clock.Now()
