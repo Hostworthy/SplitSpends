@@ -105,13 +105,13 @@ type ScanItem struct {
 type Service struct {
 	repo   Repository
 	blobs  ports.BlobStore
-	reader ports.ReceiptReader
+	reader ports.Assistant
 	tx     ports.Tx
 	clock  clock.Clock
 }
 
 // NewService builds a Service. reader may be nil when AI is disabled.
-func NewService(repo Repository, blobs ports.BlobStore, reader ports.ReceiptReader, tx ports.Tx, c clock.Clock) *Service {
+func NewService(repo Repository, blobs ports.BlobStore, reader ports.Assistant, tx ports.Tx, c clock.Clock) *Service {
 	return &Service{repo: repo, blobs: blobs, reader: reader, tx: tx, clock: c}
 }
 
@@ -155,7 +155,7 @@ func (s *Service) Upload(ctx context.Context, actor uuid.UUID, data []byte) (*Re
 	if err := s.repo.Create(ctx, r); err != nil {
 		return nil, err
 	}
-	if err := s.blobs.Put(ctx, r.StorageKey, bytes.NewReader(data)); err != nil {
+	if err := s.blobs.Put(ctx, r.StorageKey, data, r.ContentType); err != nil {
 		// When part of the image may remain, the row stays so that Cleanup
 		// removes both later.
 		if undo := s.blobs.Delete(ctx, r.StorageKey); undo != nil {
@@ -238,6 +238,25 @@ func (s *Service) Open(ctx context.Context, actor, id uuid.UUID) (*Receipt, io.R
 	return r, body, nil
 }
 
+// Image returns the bytes and content type of a receipt the actor may see,
+// for sending to the AI provider. It fails with a validation error when the
+// provider cannot read the image's type.
+func (s *Service) Image(ctx context.Context, actor, id uuid.UUID) ([]byte, string, error) {
+	r, body, err := s.Open(ctx, actor, id)
+	if err != nil {
+		return nil, "", err
+	}
+	defer body.Close()
+	if err := r.Readable(); err != nil {
+		return nil, "", err
+	}
+	data, err := io.ReadAll(io.LimitReader(body, MaxSize+1))
+	if err != nil {
+		return nil, "", err
+	}
+	return data, r.ContentType, nil
+}
+
 // Scan extracts line items with the AI reader.
 func (s *Service) Scan(ctx context.Context, actor, id uuid.UUID, currency string) (*Scan, error) {
 	if s.reader == nil {
@@ -252,19 +271,11 @@ func (s *Service) Scan(ctx context.Context, actor, id uuid.UUID, currency string
 		}
 		currency = cur.Code
 	}
-	r, body, err := s.Open(ctx, actor, id)
+	data, contentType, err := s.Image(ctx, actor, id)
 	if err != nil {
 		return nil, err
 	}
-	defer body.Close()
-	if err := r.Readable(); err != nil {
-		return nil, err
-	}
-	data, err := io.ReadAll(io.LimitReader(body, MaxSize+1))
-	if err != nil {
-		return nil, err
-	}
-	ext, err := s.reader.ReadReceipt(ctx, ports.ReceiptInput{Image: data, ContentType: r.ContentType, Currency: currency, Categories: expense.CategoryIDs()})
+	ext, err := s.reader.ReadReceipt(ctx, ports.ReceiptInput{Image: data, ContentType: contentType, Currency: currency, Categories: expense.CategoryIDs()})
 	if err != nil {
 		return nil, err
 	}

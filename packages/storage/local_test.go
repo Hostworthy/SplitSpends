@@ -5,7 +5,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/Hostworthy/SplitSpends/packages/storage/storagetest"
@@ -34,7 +33,7 @@ func TestLocalKeepsKeysInsideRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{"", ".", "../secret", "a/../../secret", "..", "../blobs-other/x"} {
-		if err := l.Put(ctx, key, strings.NewReader("x")); err == nil {
+		if err := l.Put(ctx, key, []byte("x"), "image/png"); err == nil {
 			t.Errorf("Put %q: want the key refused", key)
 		}
 		if body, err := l.Open(ctx, key); err == nil {
@@ -49,7 +48,7 @@ func TestLocalKeepsKeysInsideRoot(t *testing.T) {
 		t.Fatalf("the file outside the root changed: %q, %v", got, err)
 	}
 
-	if err := l.Put(ctx, "/absolute", strings.NewReader("x")); err != nil {
+	if err := l.Put(ctx, "/absolute", []byte("x"), "image/png"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "absolute")); err != nil {

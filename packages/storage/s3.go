@@ -68,13 +68,9 @@ func NewS3(cfg S3Config) (*S3, error) {
 // Secure reports whether the store talks to its endpoint over TLS.
 func (s *S3) Secure() bool { return s.client.EndpointURL().Scheme == "https" }
 
-func (s *S3) Put(ctx context.Context, key string, r io.Reader) error {
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return err
-	}
-	_, err = s.client.PutObject(ctx, s.bucket, s.prefix+key, bytes.NewReader(data), int64(len(data)),
-		minio.PutObjectOptions{ContentType: "application/octet-stream"})
+func (s *S3) Put(ctx context.Context, key string, data []byte, contentType string) error {
+	_, err := s.client.PutObject(ctx, s.bucket, s.prefix+key, bytes.NewReader(data), int64(len(data)),
+		minio.PutObjectOptions{ContentType: contentType})
 	if err != nil {
 		return fmt.Errorf("storage.s3.put.failed: %w", err)
 	}

@@ -34,7 +34,7 @@ func (l *Local) path(key string) (string, error) {
 	return p, nil
 }
 
-func (l *Local) Put(_ context.Context, key string, r io.Reader) error {
+func (l *Local) Put(_ context.Context, key string, data []byte, _ string) error {
 	p, err := l.path(key)
 	if err != nil {
 		return err
@@ -47,7 +47,7 @@ func (l *Local) Put(_ context.Context, key string, r io.Reader) error {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := io.Copy(tmp, r); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return err
 	}
