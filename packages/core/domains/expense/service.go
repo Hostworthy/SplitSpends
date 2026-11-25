@@ -276,7 +276,10 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 	if in.Currency == "" {
 		in.Currency = e.Currency
 	}
-	n, err := Normalize(in, e.Date)
+	if in.Date == "" {
+		in.Date = e.Date.Format(time.DateOnly)
+	}
+	n, err := Normalize(in, clock.Today(s.clock))
 	if err != nil {
 		return nil, err
 	}

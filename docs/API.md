@@ -112,6 +112,8 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
 `payers` is a list of `{ "userId", "amount" }` whose amounts sum to `total`. Every user in `payers`, `splits` or `items` must be a group member (group expense) or the caller's friend (non-group expense), and the caller must be involved.
 
+`date` runs from `2000-01-01` up to one year after today (422 on `date` otherwise); an update that leaves it out keeps the expense's date.
+
 `category` is a built-in id or a custom category id (`custom.<uuid>`). A custom id must be one of the caller's own live categories; an update may also keep the category the expense already has, even when it belongs to another member or was deleted.
 
 ### Default Split

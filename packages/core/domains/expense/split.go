@@ -49,6 +49,10 @@ type Input struct {
 	Recurrence  Recurrence
 }
 
+// FirstDay is the earliest date an expense can have. Dates also stop a year
+// after today, so a typo cannot start a series that runs for centuries.
+var FirstDay = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
 // Normalized is a validated Input with computed shares.
 type Normalized struct {
 	Input
@@ -56,7 +60,8 @@ type Normalized struct {
 	Shares []Share
 }
 
-// Normalize validates in and computes every participant's owed amount.
+// Normalize validates in and computes every participant's owed amount. An
+// empty date means today.
 func Normalize(in Input, today time.Time) (*Normalized, error) {
 	in.Description = strings.Join(strings.Fields(in.Description), " ")
 	if in.Description == "" {
@@ -98,6 +103,9 @@ func Normalize(in Input, today time.Time) (*Normalized, error) {
 			return nil, errs.Validation("date", "Use a YYYY-MM-DD date.")
 		}
 		date = d
+	}
+	if date.Before(FirstDay) || date.After(today.AddDate(1, 0, 0)) {
+		return nil, errs.Validation("date", "Choose a date from 2000 up to a year from today.")
 	}
 
 	paid, err := payers(in.Payers, in.Total)

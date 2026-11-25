@@ -1,5 +1,5 @@
 {
- "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. Debts are sorted by currency, then amount descending, then from, then to. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members (error names the failing field); when current is given, effective says whether the saved split still applies to those members.",
+ "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A split may give date (YYYY-MM-DD) and today; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members (error names the failing field); when current is given, effective says whether the saved split still applies to those members.",
  "splits": [
   {
    "name": "equal three ways",
@@ -473,6 +473,108 @@
     "00000000-0000-0000-0000-00000000000a": 334,
     "00000000-0000-0000-0000-00000000000c": 333
    }
+  },
+  {
+   "name": "date on the first allowed day",
+   "today": "2026-11-24",
+   "input": {
+    "total": 1000,
+    "method": "equal",
+    "date": "2000-01-01",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "owed": {
+    "00000000-0000-0000-0000-00000000000a": 500,
+    "00000000-0000-0000-0000-00000000000b": 500
+   }
+  },
+  {
+   "name": "date before 2000 is refused",
+   "today": "2026-11-24",
+   "input": {
+    "total": 1000,
+    "method": "equal",
+    "date": "1999-12-31",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "date"
+  },
+  {
+   "name": "date a year ahead is allowed",
+   "today": "2026-11-24",
+   "input": {
+    "total": 1000,
+    "method": "equal",
+    "date": "2027-11-24",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "owed": {
+    "00000000-0000-0000-0000-00000000000a": 500,
+    "00000000-0000-0000-0000-00000000000b": 500
+   }
+  },
+  {
+   "name": "date more than a year ahead is refused",
+   "today": "2026-11-24",
+   "input": {
+    "total": 1000,
+    "method": "equal",
+    "date": "2027-11-25",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "date"
   }
  ],
  "balances": {
