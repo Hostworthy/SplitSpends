@@ -2,6 +2,8 @@ package group
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/balance"
@@ -20,14 +22,23 @@ type Service struct {
 	balances *balance.Service
 	activity *activity.Service
 	notifier ports.Notifier
+	quota    ports.Quota
 	tx       ports.Tx
 	clock    clock.Clock
 	baseURL  string
 }
 
+// Someone added to groups by the same person is emailed about it at most
+// MaxAddedEmails times per AddedWindow; later additions only reach their
+// devices.
+const (
+	MaxAddedEmails = 3
+	AddedWindow    = 24 * time.Hour
+)
+
 // NewService builds a Service.
-func NewService(repo Repository, users *user.Service, balances *balance.Service, act *activity.Service, notifier ports.Notifier, tx ports.Tx, c clock.Clock, baseURL string) *Service {
-	return &Service{repo: repo, users: users, balances: balances, activity: act, notifier: notifier, tx: tx, clock: c, baseURL: baseURL}
+func NewService(repo Repository, users *user.Service, balances *balance.Service, act *activity.Service, notifier ports.Notifier, quota ports.Quota, tx ports.Tx, c clock.Clock, baseURL string) *Service {
+	return &Service{repo: repo, users: users, balances: balances, activity: act, notifier: notifier, quota: quota, tx: tx, clock: c, baseURL: baseURL}
 }
 
 // View is a group with members and the caller's balance.
@@ -80,6 +91,9 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 			return nil, err
 		}
 	}
+	if 1+len(in.Members)+len(in.People) > MaxMembers {
+		return nil, full()
+	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
 		return nil, err
@@ -103,7 +117,7 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	if err := g.Apply(in.Patch, now); err != nil {
 		return nil, err
 	}
-	var added []*user.User
+	var added, invited []*user.User
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
 		if err := s.repo.Create(ctx, g); err != nil {
 			return err
@@ -113,9 +127,12 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		}
 		g.Members = []uuid.UUID{actor}
 		for _, inv := range in.Members {
-			u, _, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
+			u, created, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
 			if err != nil {
 				return err
+			}
+			if created {
+				invited = append(invited, u)
 			}
 			if g.HasMember(u.ID) {
 				continue
@@ -149,6 +166,9 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	if err != nil {
 		return nil, err
 	}
+	for _, u := range invited {
+		s.users.SendInvite(ctx, u, me)
+	}
 	for _, u := range added {
 		if !ports.IsQuiet(ctx) {
 			s.notifyAdded(ctx, u, me, g)
@@ -157,12 +177,23 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	return s.View(ctx, actor, g.ID)
 }
 
+func full() error {
+	return errs.Validation("members", fmt.Sprintf("A group can have at most %d members.", MaxMembers))
+}
+
 func (s *Service) notifyAdded(ctx context.Context, u, by *user.User, g *Group) {
 	n, ok := u.Notice(user.AddedToGroup, by.Name+" added you to "+g.Name,
 		[]string{by.Name + " added you to the group “" + g.Name + "”."}, s.baseURL)
-	if ok {
-		s.notifier.Notify(ctx, n)
+	if !ok {
+		return
 	}
+	if n.To != "" {
+		emailed, err := s.quota.Take(ctx, "added:"+by.ID.String()+":"+u.ID.String(), MaxAddedEmails, AddedWindow, s.clock.Now())
+		if err != nil || !emailed {
+			n.To = ""
+		}
+	}
+	s.notifier.Notify(ctx, n)
 }
 
 // Mine returns the actor's active groups with their members, without
@@ -274,16 +305,21 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 	if err != nil {
 		return nil, err
 	}
+	if len(g.Members) >= MaxMembers {
+		return nil, full()
+	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
 		return nil, err
 	}
 	var added *user.User
+	var invited bool
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
-		u, _, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
+		u, created, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
 		if err != nil {
 			return err
 		}
+		invited = created
 		if g.HasMember(u.ID) {
 			return errs.Conflict(u.Name + " is already in this group.")
 		}
@@ -298,6 +334,9 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 	if err != nil {
 		return nil, err
 	}
+	if invited {
+		s.users.SendInvite(ctx, added, me)
+	}
 	s.notifyAdded(ctx, added, me, g)
 	return s.view(ctx, actor, g)
 }
@@ -311,6 +350,9 @@ func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) 
 	}
 	if g.HasMember(actor) {
 		return s.view(ctx, actor, g)
+	}
+	if len(g.Members) >= MaxMembers {
+		return nil, errs.Conflict(fmt.Sprintf("This group already has %d members, the most a group can have.", MaxMembers))
 	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {

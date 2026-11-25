@@ -68,7 +68,9 @@ func TestImportsRunOneAtATime(t *testing.T) {
 	}
 }
 
-// waiting returns once n other sessions wait for a row lock.
+// waiting returns once n other sessions wait for a row lock. Advisory lock
+// waits are left out: tests in other packages queue on the shared test
+// database lock and would otherwise be counted.
 func waiting(t *testing.T, db *pgxpool.Pool, n int) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -76,7 +78,7 @@ func waiting(t *testing.T, db *pgxpool.Pool, n int) {
 	for {
 		var got int
 		err := db.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
-			WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&got)
+			WHERE datname = current_database() AND wait_event_type = 'Lock' AND wait_event <> 'advisory'`).Scan(&got)
 		if err != nil {
 			t.Fatalf("waiting for %d blocked sessions: %v", n, err)
 		}

@@ -93,6 +93,12 @@ func (r *Users) Count(ctx context.Context) (int, error) {
 	return n, err
 }
 
+func (r *Users) Placeholders(ctx context.Context, createdBy uuid.UUID) (int, error) {
+	var n int
+	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM users WHERE created_by = $1 AND status = 'placeholder'`, createdBy).Scan(&n)
+	return n, err
+}
+
 // collect scans every row with scan.
 func collect[T any](rows pgx.Rows, scan func(pgx.Row) (T, error)) ([]T, error) {
 	defer rows.Close()

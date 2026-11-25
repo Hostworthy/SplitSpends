@@ -105,7 +105,7 @@ func (n *Notifier) LoginCode(ctx context.Context, to, code string, ttl time.Dura
 func (n *Notifier) Invite(ctx context.Context, to, inviter string) error {
 	lines := []string{inviter + " invited you to split expenses on " + n.cfg.AppName + ".",
 		"Sign in with this email address to see what you share."}
-	n.Notify(ctx, ports.Notification{To: to, Subject: inviter + " invited you to " + n.cfg.AppName, Lines: lines, Link: n.cfg.BaseURL})
+	n.Notify(ctx, ports.Notification{To: to, Subject: "You are invited to " + n.cfg.AppName, Lines: lines, Link: n.cfg.BaseURL})
 	return nil
 }
 
