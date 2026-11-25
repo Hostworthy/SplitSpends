@@ -42,4 +42,7 @@ func TestAddFriendDoesNotRevealAccount(t *testing.T) {
 	if strings.Contains(e.Error, "Cy") || strings.Contains(e.Error, "Secret") {
 		t.Fatalf("the conflict names the account holder: %q", e.Error)
 	}
+	if !strings.Contains(e.Error, "cannot be moved") {
+		t.Fatalf("the conflict must say the history stays with the person added by name: %q", e.Error)
+	}
 }

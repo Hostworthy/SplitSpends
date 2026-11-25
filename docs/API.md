@@ -184,7 +184,7 @@ Delivery: the server encrypts each message (RFC 8291, `aes128gcm`) and signs it 
 | ------ | ---- | ---- | -------- |
 | GET | `/friends` | | List of `{ user: User, balances: [Balance] }` (positive: friend owes you) |
 | POST | `/friends` | `{ email?, name? }` | 201 `{ data: { user, balances } }`; with an email, creates an invited user when new and emails an invite; with only a name, creates a `placeholder` person |
-| PATCH | `/friends/{userId}` | `{ email }` | `{ data: { user, balances } }`; gives a placeholder you created an email and invites them. 404 for anyone you did not add by name; 409 when the email already has an account or the person already has an email |
+| PATCH | `/friends/{userId}` | `{ email }` | `{ data: { user, balances } }`; gives a placeholder you created an email and invites them. 404 for anyone you did not add by name; 409 when the email already has an account (what was recorded for the placeholder cannot be moved to an existing account) or the person already has an email |
 | GET | `/friends/{userId}` | | `{ data: { user, balances, groups: [{ groupId, groupName, balances }], nonGroup: [Balance] } }` |
 | DELETE | `/friends/{userId}` | | 204; 409 when balances are not settled, or when you are connected only through a group you share (leave the group instead) |
 
