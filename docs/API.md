@@ -96,7 +96,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
   "description": "Dinner", "category": "food.dining", "currency": "EUR",
   "total": 9000, "date": "2026-11-20", "notes": "",
   "splitMethod": "equal" | "exact" | "percent" | "shares" | "adjustment" | "itemized",
-  "shares": [{ "userId": "uuid", "paid": 9000, "owed": 3000, "value": null | number }],
+  "shares": [{ "userId": "uuid", "paid": 9000, "owed": 3000, "value": null | "33.33" }],
   "items": [{ "name": "Pizza", "amount": 2400, "userIds": ["uuid"] }],   // itemized only
   "tax": 0, "tip": 0,                                                    // itemized only
   "receiptId": "uuid" | null, "recurrence": "none" | "weekly" | "biweekly" | "monthly" | "yearly",
@@ -126,7 +126,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | `adjustment` | minor units (may be negative) | Each user owes the adjustment, the rest is split evenly |
 | `itemized` | omitted | `items[].userIds` share each item evenly; `tax` and `tip` are spread proportionally to each user's item subtotal; `total` must equal items + tax + tip |
 
-Split values are plain decimals such as `60`, `-3.5`, `1.` or `.25`: at most 20 characters and four decimal places, without exponents, fractions, base prefixes or digit separators. Surrounding whitespace is trimmed, and the trimmed value is what the expense stores.
+Split values are plain decimals such as `60`, `-3.5`, `1.` or `.25`: at most 20 characters and four decimal places, without exponents, fractions, base prefixes or digit separators. Surrounding whitespace is trimmed, and the trimmed value is what the expense stores. `splits[].value` may be sent as a JSON number or a string; responses (`shares[].value`, draft `splits[].value`) always give it as a string in plain form, `.5` as `"0.5"` and `1.` as `"1"`, so clients never need to read it as a float.
 
 `payers` is a list of `{ "userId", "amount" }` whose amounts sum to `total`. Every user in `payers`, `splits` or `items` must be a group member (group expense) or the caller's friend (non-group expense). Any current member may book a group expense, even one they are not part of; outside groups the caller must be one of the people in it. Outside groups, everyone who ends up owing money must also be connected (friends, or members of a common group) with everyone who ends up getting money back, since the expense leaves those pairs owing each other; otherwise 422 on `splits`. A recurring expense outside groups stops repeating once that no longer holds.
 
@@ -318,9 +318,9 @@ Every AI request is billed to the host, so `POST /receipts/{receiptId}/scan` and
 // ExpenseDraft: a ready-to-review POST /expenses body (never saved automatically)
 { "groupId": "uuid" | null, "receiptId": "uuid" | null, "description": "Dinner", "currency": "EUR",
   "total": 5000, "date": "2026-11-24", "category": "food.dining",
-  "splitMethod": "equal" | "itemized",
+  "splitMethod": "equal" | "percent" | "shares" | "itemized",
   "payers": [{ "userId": "uuid", "amount": 5000 }],
-  "splits": [{ "userId": "uuid" }],                                    // equal drafts
+  "splits": [{ "userId": "uuid", "value"?: "60" }],                    // value only for a percent or shares default
   "items": [{ "name": "Pasta", "amount": 2000, "userIds": ["uuid"] }],  // itemized drafts
   "tax": 400, "tip": 0,
   "warnings": ["Could not match “Sam” to anyone you know."] }

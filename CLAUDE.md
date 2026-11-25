@@ -33,7 +33,7 @@ Run the relevant checks before considering work done. If a check needs infrastru
 - Domain rules live in `packages/core`; it imports no infrastructure. Repositories in `packages/database` hold no business rules.
 - `apps/` contains only runnable apps; never put shared code there. Packages never import apps (`packages/archtest` enforces it).
 - Split and balance rules exist twice, in `packages/core` (Go) and `packages/ledger` (Dart); change both and extend `spec/vectors.json`.
-- Money is `int64` minor units. Never use floats for amounts, in Go or Dart. Split inputs are decimal strings parsed exactly.
+- Money is `int64` minor units. Never use floats for amounts, in Go or Dart. Split inputs are decimal strings parsed exactly, and responses send them back as strings.
 - Services return `errs.Error` with human-readable messages; `packages/middleware` maps kinds to HTTP status.
 - Wire services only in `packages/bootstrap`. Handlers call services; they never touch repositories.
 - `packages/mcp` calls the HTTP API, never core or the database.

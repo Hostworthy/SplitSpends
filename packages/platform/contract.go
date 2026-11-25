@@ -372,12 +372,14 @@ type GroupBalances struct {
 	Debts   []Debt          `json:"debts"`
 }
 
-// Share is a participant's position in an expense.
+// Share is a participant's position in an expense. Value is the split
+// input as decimal text, like DefaultSplit.Values, so clients never read
+// it as a float.
 type Share struct {
-	UserID string       `json:"userId"`
-	Paid   int64        `json:"paid"`
-	Owed   int64        `json:"owed"`
-	Value  *json.Number `json:"value"`
+	UserID string  `json:"userId"`
+	Paid   int64   `json:"paid"`
+	Owed   int64   `json:"owed"`
+	Value  *string `json:"value"`
 }
 
 // Item is a line of an itemized expense.
@@ -562,20 +564,27 @@ type DraftRequest struct {
 // ExpenseDraft is a reviewable expense body (a POST /expenses body plus
 // warnings). It is never saved automatically.
 type ExpenseDraft struct {
-	GroupID     *string  `json:"groupId"`
-	ReceiptID   *string  `json:"receiptId"`
-	Description string   `json:"description"`
-	Currency    string   `json:"currency"`
-	Total       int64    `json:"total"`
-	Date        string   `json:"date"`
-	Category    string   `json:"category"`
-	SplitMethod string   `json:"splitMethod"`
-	Payers      []Payer  `json:"payers"`
-	Splits      []Split  `json:"splits"`
-	Items       []Item   `json:"items"`
-	Tax         int64    `json:"tax"`
-	Tip         int64    `json:"tip"`
-	Warnings    []string `json:"warnings"`
+	GroupID     *string      `json:"groupId"`
+	ReceiptID   *string      `json:"receiptId"`
+	Description string       `json:"description"`
+	Currency    string       `json:"currency"`
+	Total       int64        `json:"total"`
+	Date        string       `json:"date"`
+	Category    string       `json:"category"`
+	SplitMethod string       `json:"splitMethod"`
+	Payers      []Payer      `json:"payers"`
+	Splits      []DraftSplit `json:"splits"`
+	Items       []Item       `json:"items"`
+	Tax         int64        `json:"tax"`
+	Tip         int64        `json:"tip"`
+	Warnings    []string     `json:"warnings"`
+}
+
+// DraftSplit is a Split as a draft sends it: Value is decimal text, which
+// a POST /expenses body accepts as well as a number.
+type DraftSplit struct {
+	UserID string  `json:"userId"`
+	Value  *string `json:"value,omitempty"`
 }
 
 // ReminderInput asks someone who owes the caller to settle up, in one group

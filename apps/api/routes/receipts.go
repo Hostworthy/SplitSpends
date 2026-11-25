@@ -106,7 +106,7 @@ func (a *API) draftExpense(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := platform.ExpenseDraft{GroupID: optionalString(d.GroupID), ReceiptID: optionalString(d.ReceiptID), Description: d.Description,
 		Currency: d.Currency, Total: d.Total, Date: d.Date, Category: d.Category, SplitMethod: string(d.Method),
-		Payers: []platform.Payer{}, Splits: []platform.Split{}, Items: []platform.Item{}, Tax: d.Tax, Tip: d.Tip, Warnings: d.Warnings}
+		Payers: []platform.Payer{}, Splits: []platform.DraftSplit{}, Items: []platform.Item{}, Tax: d.Tax, Tip: d.Tip, Warnings: d.Warnings}
 	if out.Warnings == nil {
 		out.Warnings = []string{}
 	}
@@ -114,7 +114,7 @@ func (a *API) draftExpense(w http.ResponseWriter, r *http.Request) error {
 		out.Payers = append(out.Payers, platform.Payer{UserID: p.UserID.String(), Amount: p.Amount})
 	}
 	for _, s := range d.Splits {
-		out.Splits = append(out.Splits, platform.Split{UserID: s.UserID.String(), Value: number(s.Value)})
+		out.Splits = append(out.Splits, platform.DraftSplit{UserID: s.UserID.String(), Value: decimal(s.Value)})
 	}
 	for _, it := range d.Items {
 		ids := make([]string, len(it.UserIDs))

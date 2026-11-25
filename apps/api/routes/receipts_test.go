@@ -31,7 +31,7 @@ func (rent) DraftExpense(context.Context, ports.DraftInput) (ports.DraftExtract,
 
 // TestDraftUsesGroupDefaultSplit checks that a draft in a group with a
 // percent or shares default split starts with that split and its values,
-// written as JSON numbers however they were entered.
+// written as plain decimal text however they were entered.
 func TestDraftUsesGroupDefaultSplit(t *testing.T) {
 	s := newServer(t, bootstraptest.Options{Reader: rent{}})
 	ada := s.signIn(t, "ada@example.com", "Ada")
@@ -56,7 +56,7 @@ func TestDraftUsesGroupDefaultSplit(t *testing.T) {
 		}
 		want := map[string]string{ada.User.ID: c.wantAda, ben.User.ID: c.wantBen}
 		for _, sp := range d.Splits {
-			if sp.Value == nil || sp.Value.String() != want[sp.UserID] {
+			if sp.Value == nil || *sp.Value != want[sp.UserID] {
 				t.Fatalf("want the default's values %v, got %+v", want, d.Splits)
 			}
 		}

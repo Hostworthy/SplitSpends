@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -18,10 +17,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// number returns a split value as a JSON number. Values are stored as
-// written, and plain decimals such as ".5", "1.", "+2" or "05" are not valid
-// JSON, so the value is written out again with the same decimal places.
-func number(value string) *json.Number {
+// decimal returns a split value as decimal text. Values are stored as
+// written, and plain decimals such as ".5", "1.", "+2" or "05" are not
+// numbers every client can parse, so the value is written out again in
+// plain form with the same decimal places.
+func decimal(value string) *string {
 	if value == "" {
 		return nil
 	}
@@ -32,8 +32,7 @@ func number(value string) *json.Number {
 		}
 		value = r.FloatString(places)
 	}
-	n := json.Number(value)
-	return &n
+	return &value
 }
 
 func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339) }
@@ -130,7 +129,7 @@ func (a *API) toFriend(f friend.Summary) platform.Friend {
 func toExpense(e *expense.Expense, viewer uuid.UUID) platform.Expense {
 	shares := make([]platform.Share, 0, len(e.Shares))
 	for _, s := range e.Shares {
-		shares = append(shares, platform.Share{UserID: s.UserID.String(), Paid: s.Paid, Owed: s.Owed, Value: number(s.Value)})
+		shares = append(shares, platform.Share{UserID: s.UserID.String(), Paid: s.Paid, Owed: s.Owed, Value: decimal(s.Value)})
 	}
 	items := make([]platform.Item, 0, len(e.Items))
 	for _, it := range e.Items {

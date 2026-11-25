@@ -62,7 +62,7 @@ func TestSafeCell(t *testing.T) {
 	}
 }
 
-func TestNumber(t *testing.T) {
+func TestDecimal(t *testing.T) {
 	for _, c := range []struct {
 		value string
 		want  string
@@ -76,17 +76,31 @@ func TestNumber(t *testing.T) {
 		{"05", "5"},
 		{"-0", "0"},
 	} {
-		got := number(c.value)
-		if got == nil || got.String() != c.want {
-			t.Errorf("number(%q) = %v, want %q", c.value, got, c.want)
-			continue
-		}
-		if _, err := json.Marshal(got); err != nil {
-			t.Errorf("number(%q) is not valid JSON: %v", c.value, err)
+		if got := decimal(c.value); got == nil || *got != c.want {
+			t.Errorf("decimal(%q) = %v, want %q", c.value, got, c.want)
 		}
 	}
-	if got := number(""); got != nil {
-		t.Errorf("number(\"\") = %v, want nil", *got)
+	if got := decimal(""); got != nil {
+		t.Errorf("decimal(\"\") = %q, want nil", *got)
+	}
+}
+
+// TestShareValuesAreStrings checks that split values go out as decimal
+// strings, as they come in, so clients never read them as floats.
+func TestShareValuesAreStrings(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	ben := s.signIn(t, "ben@example.com", "Ben")
+	g := s.group(t, ada.Token, "Flat", "ben@example.com")
+	third, rest := json.Number("33.33"), json.Number("66.67")
+	in := platform.ExpenseInput{GroupID: &g.ID, Description: "Rent", Currency: "EUR", Total: 9000, SplitMethod: "percent",
+		Payers: []platform.Payer{{UserID: ada.User.ID, Amount: 9000}},
+		Splits: []platform.Split{{UserID: ada.User.ID, Value: &third}, {UserID: ben.User.ID, Value: &rest}}}
+	res := s.call(t, http.MethodPost, platform.Prefix+"/expenses", ada.Token, in).want(t, http.StatusCreated)
+	for _, want := range []string{`"value":"33.33"`, `"value":"66.67"`} {
+		if !strings.Contains(string(res.body), want) {
+			t.Errorf("want %s in %s", want, res.body)
+		}
 	}
 }
 
