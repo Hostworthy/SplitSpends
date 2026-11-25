@@ -10,14 +10,16 @@ import (
 // parsing cheap and stored values human-sized.
 const DecimalLength = 20
 
-var plain = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)$`)
+// DecimalPattern matches a plain decimal number: digits with an optional
+// sign and point, and no exponent, fraction, base prefix or separator.
+var DecimalPattern = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)$`)
 
 // Decimal parses a split value: a plain decimal such as "60", "-3.5", "1."
 // or ".25" with at most DecimalLength characters and four decimal places.
 // Exponents, fractions, base prefixes and digit separators are rejected, as
 // they are by the Dart ledger. The caller trims s first.
 func Decimal(s string) (*big.Rat, bool) {
-	if len(s) > DecimalLength || !plain.MatchString(s) {
+	if len(s) > DecimalLength || !DecimalPattern.MatchString(s) {
 		return nil, false
 	}
 	r, ok := new(big.Rat).SetString(s)
