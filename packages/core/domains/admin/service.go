@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ type Deps struct {
 	Notifier    ports.Notifier
 	Tx          ports.Tx
 	Clock       clock.Clock
+	Log         *slog.Logger
 	// Defaults are the environment's sign-up settings, used until an
 	// administrator saves their own.
 	Defaults auth.Signup
@@ -44,8 +46,11 @@ var _ auth.Gate = (*Service)(nil)
 // Signup returns the sign-up rules in force.
 func (s *Service) Signup(ctx context.Context) (auth.Signup, error) {
 	stored, err := s.d.Settings.Get(ctx)
-	if err != nil || stored == nil {
-		return s.d.Defaults, err
+	if err != nil {
+		return auth.Signup{}, err
+	}
+	if stored == nil {
+		return s.d.Defaults, nil
 	}
 	return stored.Signup, nil
 }
@@ -96,9 +101,15 @@ func (s *Service) Request(ctx context.Context, email, name string) (bool, error)
 	return false, nil
 }
 
+// announce tells staff about r. The request is filed already, so a failed
+// lookup is logged rather than returned.
 func (s *Service) announce(ctx context.Context, r *Request) {
+	if ports.IsQuiet(ctx) {
+		return
+	}
 	staff, err := s.d.Accounts.Staff(ctx)
-	if err != nil || ports.IsQuiet(ctx) {
+	if err != nil {
+		s.d.Log.ErrorContext(ctx, "admin.announce.failed", "request", r.ID, "error", err)
 		return
 	}
 	who := r.Email

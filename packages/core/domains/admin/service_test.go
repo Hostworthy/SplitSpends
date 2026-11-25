@@ -1,7 +1,10 @@
 package admin
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +17,11 @@ import (
 	"github.com/google/uuid"
 )
 
-type memUsers struct{ byID map[uuid.UUID]*user.User }
+type memUsers struct {
+	byID map[uuid.UUID]*user.User
+	// fail makes Staff fail.
+	fail error
+}
 
 func (m *memUsers) Get(_ context.Context, id uuid.UUID) (*user.User, error) {
 	u, ok := m.byID[id]
@@ -31,7 +38,18 @@ func (m *memUsers) Update(_ context.Context, u *user.User) error            { m.
 func (m *memUsers) Count(context.Context) (int, error)                      { return len(m.byID), nil }
 func (m *memUsers) Lock(context.Context) error                              { return nil }
 func (m *memUsers) Placeholders(context.Context, uuid.UUID) (int, error)    { return 0, nil }
-func (m *memUsers) Staff(context.Context) ([]*user.User, error)             { return nil, nil }
+func (m *memUsers) Staff(context.Context) ([]*user.User, error) {
+	if m.fail != nil {
+		return nil, m.fail
+	}
+	var staff []*user.User
+	for _, u := range m.byID {
+		if u.CanApprove() {
+			staff = append(staff, u)
+		}
+	}
+	return staff, nil
+}
 func (m *memUsers) Accounts(context.Context, string, string, int, int) ([]*user.User, int, error) {
 	return nil, 0, nil
 }
@@ -86,20 +104,24 @@ func (m *memRequests) List(_ context.Context, status Status, _, _ int) ([]*Reque
 func (m *memRequests) Expire(context.Context, time.Time) error { return nil }
 func (m *memRequests) Delete(context.Context, string) error    { return nil }
 
-type memSettings struct{ stored *Settings }
+type memSettings struct {
+	stored *Settings
+	fail   error
+}
 
-func (m *memSettings) Get(context.Context) (*Settings, error)    { return m.stored, nil }
+func (m *memSettings) Get(context.Context) (*Settings, error)    { return m.stored, m.fail }
 func (m *memSettings) Save(_ context.Context, s *Settings) error { m.stored = s; return nil }
 
 type revoker struct{}
 
 func (revoker) Revoke(context.Context, uuid.UUID, string) error { return nil }
 
-type silent struct{}
+// outbox records notifications instead of sending them.
+type outbox struct{ sent []ports.Notification }
 
-func (silent) LoginCode(context.Context, string, string, time.Duration) error { return nil }
-func (silent) Invite(context.Context, string, string) error                   { return nil }
-func (silent) Notify(context.Context, ports.Notification)                     {}
+func (*outbox) LoginCode(context.Context, string, string, time.Duration) error { return nil }
+func (*outbox) Invite(context.Context, string, string) error                   { return nil }
+func (o *outbox) Notify(_ context.Context, n ports.Notification)               { o.sent = append(o.sent, n) }
 
 type direct struct{}
 
@@ -111,6 +133,8 @@ type world struct {
 	svc                    *Service
 	actor, other, disabled uuid.UUID
 	request                uuid.UUID
+	sent                   *outbox
+	logs                   *bytes.Buffer
 }
 
 func newWorld(role user.Role, status user.Status) world {
@@ -130,8 +154,10 @@ func newWorld(role user.Role, status user.Status) world {
 	requests := &memRequests{}
 	w.request = uuid.New()
 	requests.list = append(requests.list, &Request{ID: w.request, Email: "dan@else.org", Status: StatusPending, RequestedAt: now})
+	w.sent, w.logs = &outbox{}, &bytes.Buffer{}
 	w.svc = NewService(Deps{Settings: &memSettings{}, Requests: requests, Users: users, Accounts: users,
-		Credentials: revoker{}, Notifier: silent{}, Tx: direct{}, Clock: clock.Fixed{At: now},
+		Credentials: revoker{}, Notifier: w.sent, Tx: direct{}, Clock: clock.Fixed{At: now},
+		Log:      slog.New(slog.NewJSONHandler(w.logs, nil)),
 		Defaults: auth.Signup{Mode: auth.SignupApproval}})
 	return w
 }
@@ -296,5 +322,45 @@ func TestRequest(t *testing.T) {
 				t.Fatalf("stored %+v, want one request named %q", requests.list[before:], tc.stored)
 			}
 		})
+	}
+}
+
+func TestAnnounce(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name   string
+		ctx    context.Context
+		fail   error
+		notes  int
+		logged bool
+	}{
+		{"staff hear about it", ctx, nil, 2, false},
+		{"lookup fails", ctx, errors.New("database is down"), 0, true},
+		{"quiet", ports.Quiet(ctx), errors.New("database is down"), 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(user.RoleManager, user.StatusActive)
+			w.svc.d.Accounts.(*memUsers).fail = tc.fail
+			w.svc.d.Requests.(*memRequests).list = nil
+			if declined, err := w.svc.Request(tc.ctx, "fay@else.org", "Fay"); declined || err != nil {
+				t.Fatalf("the request must be filed whatever happens to the notice: %v, %v", declined, err)
+			}
+			if len(w.sent.sent) != tc.notes {
+				t.Fatalf("%d notices sent, want %d (the manager and ada)", len(w.sent.sent), tc.notes)
+			}
+			if got := strings.Contains(w.logs.String(), `"msg":"admin.announce.failed"`); got != tc.logged {
+				t.Fatalf("admin.announce.failed logged = %v, want %v: %s", got, tc.logged, w.logs)
+			}
+		})
+	}
+}
+
+func TestSignupFails(t *testing.T) {
+	w := newWorld(user.RoleAdmin, user.StatusActive)
+	down := errors.New("database is down")
+	w.svc.d.Settings.(*memSettings).fail = down
+	got, err := w.svc.Signup(context.Background())
+	if !errors.Is(err, down) || got.Mode != "" || got.Allowed != nil {
+		t.Fatalf("Signup = %+v, %v; want nothing and the error", got, err)
 	}
 }
