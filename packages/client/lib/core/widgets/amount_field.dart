@@ -67,6 +67,13 @@ class _AmountFieldState extends ConsumerState<AmountField> {
       if (current != widget.initial) {
         _controller.text = Money.toPlain(widget.initial!, exponent);
       }
+    } else if (oldWidget.currency != widget.currency) {
+      // The same text means a different amount (or none) in a currency with
+      // another exponent; report it after this build so the parent can
+      // update its state.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _changed(_controller.text);
+      });
     }
   }
 
