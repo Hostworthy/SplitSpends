@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -29,7 +30,7 @@ func admin(ts *toolset) {
 func (t *tools) getSignup(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
 	s, err := get[platform.SignupSettings](ctx, t.c, "/admin/signup", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	return text(signupText(s)), nil, nil
 }
@@ -52,13 +53,13 @@ func (t *tools) setSignup(ctx context.Context, _ *sdk.CallToolRequest, in signup
 	if allowed == nil {
 		current, err := get[platform.SignupSettings](ctx, t.c, "/admin/signup", nil)
 		if err != nil {
-			return fail(err)
+			return t.fail(ctx, err)
 		}
 		allowed = current.Allowed
 	}
 	s, err := send[platform.SignupSettings](ctx, t.c, http.MethodPut, "/admin/signup", platform.SignupSettingsInput{Mode: in.Mode, Allowed: allowed})
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	return text("Saved.\n" + signupText(s)), nil, nil
 }
@@ -74,7 +75,7 @@ func (t *tools) listRequests(ctx context.Context, _ *sdk.CallToolRequest, in req
 	}
 	list, err := getList[platform.SignupRequest](ctx, t.c, "/admin/requests", q)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	if len(list.Items) == 0 {
 		return text("No requests."), nil, nil
@@ -101,11 +102,11 @@ type decideArgs struct {
 func (t *tools) decideRequest(ctx context.Context, _ *sdk.CallToolRequest, in decideArgs) (*sdk.CallToolResult, any, error) {
 	action := strings.ToLower(strings.TrimSpace(in.Decision))
 	if action != "approve" && action != "decline" {
-		return text("decision must be approve or decline"), nil, nil
+		return t.fail(ctx, errors.New("decision must be approve or decline"))
 	}
 	r, err := send[platform.SignupRequest](ctx, t.c, http.MethodPost, "/admin/requests/"+url.PathEscape(in.RequestID)+"/"+action, nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	return text(fmt.Sprintf("%q <%s> is now %s.", r.Name, r.Email, r.Status)), nil, nil
 }
@@ -125,7 +126,7 @@ func (t *tools) listAccounts(ctx context.Context, _ *sdk.CallToolRequest, in acc
 	}
 	list, err := getList[platform.Account](ctx, t.c, "/admin/accounts", q)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d accounts\n", list.Total)
@@ -143,7 +144,7 @@ type roleArgs struct {
 func (t *tools) setRole(ctx context.Context, _ *sdk.CallToolRequest, in roleArgs) (*sdk.CallToolResult, any, error) {
 	a, err := send[platform.Account](ctx, t.c, http.MethodPatch, "/admin/accounts/"+url.PathEscape(in.UserID), platform.RoleInput{Role: in.Role})
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	return text(fmt.Sprintf("%q is now %s.", a.Name, a.Role)), nil, nil
 }
@@ -155,7 +156,7 @@ type accountArgs struct {
 func (t *tools) disableAccount(ctx context.Context, _ *sdk.CallToolRequest, in accountArgs) (*sdk.CallToolResult, any, error) {
 	a, err := send[platform.Account](ctx, t.c, http.MethodPost, "/admin/accounts/"+url.PathEscape(in.UserID)+"/disable", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	return text(strconv.Quote(a.Name) + " is disabled and signed out everywhere."), nil, nil
 }
@@ -163,7 +164,7 @@ func (t *tools) disableAccount(ctx context.Context, _ *sdk.CallToolRequest, in a
 func (t *tools) enableAccount(ctx context.Context, _ *sdk.CallToolRequest, in accountArgs) (*sdk.CallToolResult, any, error) {
 	a, err := send[platform.Account](ctx, t.c, http.MethodPost, "/admin/accounts/"+url.PathEscape(in.UserID)+"/enable", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	return text(strconv.Quote(a.Name) + " can sign in again with their old email."), nil, nil
 }

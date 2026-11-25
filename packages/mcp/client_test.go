@@ -1,8 +1,10 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -287,6 +289,8 @@ func TestDoErrors(t *testing.T) {
 		{"not found", http.StatusNotFound, `{"error":"Expense not found.","code":"NOT_FOUND"}`, "Expense not found."},
 		{"not JSON", http.StatusBadGateway, `<html>bad gateway</html>`, "request failed with status 502"},
 		{"empty", http.StatusInternalServerError, ``, "request failed with status 500"},
+		{"request id", http.StatusInternalServerError, `{"error":"Something went wrong.","code":"INTERNAL","requestId":"req-42"}`, "Something went wrong. (request id req-42)"},
+		{"field and request id", http.StatusBadRequest, `{"error":"Pick a currency.","code":"VALIDATION","field":"currency","requestId":"req-7"}`, "Pick a currency. (field currency) (request id req-7)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -358,5 +362,41 @@ func TestOrigin(t *testing.T) {
 		if (err == nil) != tc.ok || got != tc.want || insecure != tc.insecure {
 			t.Errorf("Origin(%q) = %q, %v, %v; want %q, %v, ok %v", tc.raw, got, insecure, err, tc.want, tc.insecure, tc.ok)
 		}
+	}
+}
+
+func TestDoUnreachableHidesAddress(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	addr := srv.Listener.Addr().String()
+	srv.Close()
+	_, err := NewClient("http://"+addr, "ss_test", nil).do(context.Background(), http.MethodGet, "/me", nil, nil)
+	if err == nil || strings.Contains(err.Error(), addr) || strings.Contains(err.Error(), "127.0.0.1") {
+		t.Fatalf("want an error without the address, got %v", err)
+	}
+	if !strings.Contains(fmt.Sprint(errors.Unwrap(err)), addr) {
+		t.Fatalf("the detail should stay available for the log, got %v", errors.Unwrap(err))
+	}
+}
+
+func TestDoResponseTooLarge(t *testing.T) {
+	_, c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":["`))
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 9<<20))
+		_, _ = w.Write([]byte(`"],"total":1}`))
+	})
+	_, err := getList[string](context.Background(), c, "/expenses", nil)
+	if err == nil || !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestDoUnreadableAnswer(t *testing.T) {
+	_, c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, `{"data":`)
+	})
+	_, err := get[platform.Me](context.Background(), c, "/me", nil)
+	if err == nil || err.Error() != unexpected {
+		t.Fatalf("got %v", err)
 	}
 }
