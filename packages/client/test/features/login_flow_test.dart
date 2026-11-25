@@ -26,6 +26,10 @@ const _me = Me(
 );
 
 class FakeAuthRepository implements AuthRepository {
+  FakeAuthRepository({this.delay = Duration.zero});
+
+  /// How long the server takes to send a code.
+  final Duration delay;
   final requested = <String>[];
   String? named;
 
@@ -35,6 +39,7 @@ class FakeAuthRepository implements AuthRepository {
     String email, {
     String? inviteToken,
   }) async {
+    if (delay > Duration.zero) await Future<void>.delayed(delay);
     requested.add(
       inviteToken == null
           ? '$serverUrl|$email'
@@ -400,5 +405,38 @@ void main() {
       find.byKey(const Key('local-start')),
     );
     expect(start.onPressed, isNotNull);
+  });
+
+  testWidgets('resending sends one code however often it is tapped', (
+    tester,
+  ) async {
+    final auth = FakeAuthRepository(delay: const Duration(seconds: 1));
+    await _openLogin(tester, auth);
+    await tester.enterText(
+      find.byKey(const Key('login-server')),
+      'http://splitspends.test',
+    );
+    await tester.enterText(
+      find.byKey(const Key('login-email')),
+      'ada@example.com',
+    );
+    await tester.tap(find.byKey(const Key('login-continue')));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(auth.requested, hasLength(1));
+
+    await tester.pump(const Duration(seconds: 30));
+    expect(find.text('Resend code'), findsOneWidget);
+    final resend = tester.getCenter(find.text('Resend code'));
+    for (var i = 0; i < 3; i++) {
+      await tester.tapAt(resend);
+      await tester.pump(const Duration(milliseconds: 30));
+    }
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+
+    expect(auth.requested, hasLength(2));
+    expect(find.text('New code sent'), findsOneWidget);
+    expect(find.textContaining('Resend in'), findsOneWidget);
   });
 }
