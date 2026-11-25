@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -25,6 +26,27 @@ type server struct {
 	*bootstraptest.Env
 	url     string
 	clients atomic.Uint32 // client addresses handed out by signIn
+	logs    *logs
+}
+
+// logs keeps what the API logged, for tests that check a failure was
+// reported.
+type logs struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *logs) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+// has reports whether a line with message key was logged.
+func (l *logs) has(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Contains(l.buf.String(), `"msg":"`+key+`"`)
 }
 
 // jobsSecret is the bearer token POST /internal/jobs accepts in tests.
@@ -44,7 +66,8 @@ func newServer(t *testing.T, o bootstraptest.Options) *server {
 		env.Config.JobsSecret = jobsSecret
 	}
 	env.Config.ProxyHops = 1
-	log := slog.New(slog.DiscardHandler)
+	logged := &logs{}
+	log := slog.New(slog.NewJSONHandler(logged, nil))
 	api := New(Deps{Services: env.Services, Config: env.Config, Log: log,
 		Ping: func(ctx context.Context) error { return env.DB.Pool.Ping(ctx) },
 		Jobs: func(context.Context) error { return nil }}).Routes()
@@ -54,7 +77,7 @@ func newServer(t *testing.T, o bootstraptest.Options) *server {
 	mux.Handle("/internal/", api)
 	srv := httptest.NewServer(middleware.Observe(log, middleware.Security(false, middleware.CORS(env.Config.CORSOrigins, mux))))
 	t.Cleanup(srv.Close)
-	return &server{Env: env, url: srv.URL}
+	return &server{Env: env, url: srv.URL, logs: logged}
 }
 
 // signIn requests a login code over HTTP, verifies it and returns the
