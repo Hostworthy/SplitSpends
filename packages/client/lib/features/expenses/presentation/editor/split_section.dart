@@ -122,6 +122,9 @@ class _PersonRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = userId == form.meId ? 'You' : (user?.displayName ?? 'Someone');
+    // The fields sit beside the name, not under it, so screen readers need
+    // the person in the field's own label.
+    final whose = userId == form.meId ? 'you' : name;
     final avatar = user == null
         ? const CircleAvatar(child: Icon(Icons.person))
         : UserAvatar(user: user!);
@@ -157,6 +160,9 @@ class _PersonRow extends StatelessWidget {
               allowNegative: form.method == SplitMethod.adjustment,
               initial: int.tryParse(form.values[userId] ?? ''),
               label: form.method == SplitMethod.adjustment ? '±' : null,
+              semanticLabel: form.method == SplitMethod.adjustment
+                  ? 'Adjustment for $whose'
+                  : 'Amount for $whose',
               onChanged: (v) => form.update(() {
                 if (v == null) {
                   form.values.remove(userId);
@@ -177,6 +183,9 @@ class _PersonRow extends StatelessWidget {
             width: 110,
             child: DecimalField(
               initial: form.values[userId],
+              semanticLabel: form.method == SplitMethod.percent
+                  ? 'Percent for $whose'
+                  : 'Shares for $whose',
               suffix: form.method == SplitMethod.percent
                   ? '%'
                   : _sharesLabel(form.values[userId]),
@@ -202,11 +211,15 @@ class DecimalField extends StatefulWidget {
   const DecimalField({
     super.key,
     this.initial,
+    this.semanticLabel,
     required this.suffix,
     required this.onChanged,
   });
 
   final String? initial;
+
+  /// What screen readers announce for the field, such as whose value it is.
+  final String? semanticLabel;
   final String suffix;
 
   /// Decimal text (dot separator), or null when empty or invalid.
@@ -226,14 +239,18 @@ class _DecimalFieldState extends State<DecimalField> {
   }
 
   @override
-  Widget build(BuildContext context) => TextField(
-    controller: _controller,
-    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-    textAlign: TextAlign.end,
-    onChanged: (v) => widget.onChanged(_decimal(v)),
-    decoration: InputDecoration(isDense: true, suffixText: widget.suffix),
-  );
+  Widget build(BuildContext context) {
+    final field = TextField(
+      controller: _controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+      textAlign: TextAlign.end,
+      onChanged: (v) => widget.onChanged(_decimal(v)),
+      decoration: InputDecoration(isDense: true, suffixText: widget.suffix),
+    );
+    final label = widget.semanticLabel;
+    return label == null ? field : Semantics(label: label, child: field);
+  }
 }
 
 /// Normalizes user text to dot-decimal; null when it is not a number.
