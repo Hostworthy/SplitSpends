@@ -4,6 +4,7 @@ package push
 
 import (
 	"encoding/base64"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -90,6 +91,18 @@ func New(userID uuid.UUID, in Input, now time.Time) (*Subscription, error) {
 		Platform: platform, Label: label, CreatedAt: now, UpdatedAt: now}, nil
 }
 
+// Reachable reports whether the endpoint may be contacted under the
+// address policy. Only addresses written into the URL are checked here;
+// the sender checks every address a host name resolves to.
+func (s *Subscription) Reachable(allowPrivate bool) bool {
+	u, err := url.Parse(s.Endpoint)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(u.Hostname())
+	return ip == nil || !Blocked(ip, allowPrivate)
+}
+
 // decode accepts base64url (what browsers and UnifiedPush send) and, to be
 // lenient, standard base64.
 func decode(s string) ([]byte, error) {
@@ -98,3 +111,18 @@ func decode(s string) ([]byte, error) {
 	}
 	return base64.RawStdEncoding.DecodeString(s)
 }
+
+// Blocked reports whether a push endpoint may not reach ip: cloud metadata
+// and other link-local addresses always, and unless allowPrivate (for a
+// UnifiedPush server on the local network), loopback and private networks.
+func Blocked(ip net.IP, allowPrivate bool) bool {
+	if ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() {
+		return true
+	}
+	if allowPrivate {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || cgnat.Contains(ip)
+}
+
+var cgnat = &net.IPNet{IP: net.IP{100, 64, 0, 0}, Mask: net.CIDRMask(10, 32)}

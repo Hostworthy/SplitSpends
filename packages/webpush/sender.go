@@ -146,7 +146,7 @@ func guarded(allowPrivate bool) *http.Client {
 		if err != nil {
 			return err
 		}
-		if ip := net.ParseIP(host); ip == nil || Blocked(ip, allowPrivate) {
+		if ip := net.ParseIP(host); ip == nil || push.Blocked(ip, allowPrivate) {
 			return fmt.Errorf("webpush.endpoint.blocked: %s", host)
 		}
 		return nil
@@ -162,19 +162,6 @@ func guarded(allowPrivate bool) *http.Client {
 	return &http.Client{Transport: transport, Timeout: 15 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
-
-// Blocked reports whether a push endpoint may not resolve to ip.
-func Blocked(ip net.IP, allowPrivate bool) bool {
-	if ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() {
-		return true
-	}
-	if allowPrivate {
-		return false
-	}
-	return ip.IsLoopback() || ip.IsPrivate() || cgnat.Contains(ip)
-}
-
-var cgnat = &net.IPNet{IP: net.IP{100, 64, 0, 0}, Mask: net.CIDRMask(10, 32)}
 
 // proxyAddrs lists host:port of the proxies in the environment, which the
 // transport dials instead of the endpoint.
