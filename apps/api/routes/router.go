@@ -61,6 +61,16 @@ func (a *API) Routes() *http.ServeMux {
 	social := func(h handler) http.Handler {
 		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(socialLimit, a.log, byUser, a.wrap(h)))
 	}
+	// Registering a device and testing push make the server contact
+	// addresses people choose, so both are limited per signed-in person.
+	deviceLimit := middleware.NewLimiter(20, time.Minute)
+	devices := func(h handler) http.Handler {
+		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(deviceLimit, a.log, byUser, a.wrap(h)))
+	}
+	pushTestLimit := middleware.NewLimiter(5, time.Minute)
+	pushTests := func(h handler) http.Handler {
+		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(pushTestLimit, a.log, byUser, a.wrap(h)))
+	}
 	p := platform.Prefix
 
 	mux.Handle("GET /health", public(a.health))
@@ -80,8 +90,8 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("POST "+p+"/me/tokens", authed(a.createToken))
 	mux.Handle("DELETE "+p+"/me/tokens/{tokenId}", authed(a.deleteToken))
 	mux.Handle("GET "+p+"/me/push-subscriptions", authed(a.listPushSubscriptions))
-	mux.Handle("POST "+p+"/me/push-subscriptions", authed(a.createPushSubscription))
-	mux.Handle("POST "+p+"/me/push-subscriptions/test", authed(a.testPush))
+	mux.Handle("POST "+p+"/me/push-subscriptions", devices(a.createPushSubscription))
+	mux.Handle("POST "+p+"/me/push-subscriptions/test", pushTests(a.testPush))
 	mux.Handle("DELETE "+p+"/me/push-subscriptions/{subscriptionId}", authed(a.deletePushSubscription))
 
 	mux.Handle("GET "+p+"/friends", authed(a.listFriends))

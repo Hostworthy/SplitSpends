@@ -56,7 +56,7 @@ func (r *Expenses) Create(ctx context.Context, e *expense.Expense) error {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return errs.Conflict("That expense id is already in use.")
+		return errs.Taken()
 	}
 	return r.writeShares(ctx, e)
 }

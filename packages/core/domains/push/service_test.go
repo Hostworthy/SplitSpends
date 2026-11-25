@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -21,11 +22,22 @@ import (
 type memRepo struct {
 	mu   sync.Mutex
 	subs map[uuid.UUID]*Subscription
+	// removeErr, when set, is what Remove fails with.
+	removeErr error
 }
 
-func (m *memRepo) Save(_ context.Context, s *Subscription) (bool, error) {
+func (m *memRepo) Save(_ context.Context, s *Subscription, limit int) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	others := 0
+	for _, old := range m.subs {
+		if old.UserID == s.UserID && old.Endpoint != s.Endpoint {
+			others++
+		}
+	}
+	if others >= limit {
+		return false, ErrFull
+	}
 	for _, old := range m.subs {
 		if old.Endpoint == s.Endpoint {
 			s.ID, s.CreatedAt = old.ID, old.CreatedAt
@@ -54,22 +66,6 @@ func (m *memRepo) List(_ context.Context, userID uuid.UUID) ([]*Subscription, er
 	return out, nil
 }
 
-func (m *memRepo) Count(ctx context.Context, userID uuid.UUID) (int, error) {
-	l, _ := m.List(ctx, userID)
-	return len(l), nil
-}
-
-func (m *memRepo) Exists(_ context.Context, endpoint string) (bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, s := range m.subs {
-		if s.Endpoint == endpoint {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 func (m *memRepo) Delete(_ context.Context, userID, id uuid.UUID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -80,25 +76,37 @@ func (m *memRepo) Delete(_ context.Context, userID, id uuid.UUID) error {
 	return nil
 }
 
-func (m *memRepo) Remove(_ context.Context, id uuid.UUID) error {
+func (m *memRepo) Remove(ctx context.Context, id uuid.UUID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.removeErr != nil {
+		return m.removeErr
+	}
 	delete(m.subs, id)
 	return nil
 }
 
-func (m *memRepo) Succeeded(_ context.Context, id uuid.UUID, at time.Time) error {
+func (m *memRepo) Succeeded(ctx context.Context, id uuid.UUID, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if s := m.subs[id]; s != nil {
 		s.LastSuccessAt, s.Failures = &at, 0
 	}
 	return nil
 }
 
-func (m *memRepo) Failed(_ context.Context, id uuid.UUID) (int, error) {
+func (m *memRepo) Failed(ctx context.Context, id uuid.UUID) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	s := m.subs[id]
 	if s == nil {
 		return 0, nil
@@ -169,6 +177,58 @@ func TestNewValidates(t *testing.T) {
 	}
 }
 
+func TestBlocked(t *testing.T) {
+	cases := []struct {
+		ip           string
+		allowPrivate bool
+		blocked      bool
+	}{
+		{"142.250.74.106", false, false},
+		{"2a00:1450:4001:80b::200a", false, false},
+		{"127.0.0.1", false, true},
+		{"::1", false, true},
+		{"10.0.0.8", false, true},
+		{"192.168.1.20", false, true},
+		{"100.101.102.103", false, true},
+		{"fd00::1", false, true},
+		{"169.254.169.254", false, true},
+		{"0.0.0.0", false, true},
+		{"192.168.1.20", true, false},
+		{"127.0.0.1", true, false},
+		{"169.254.169.254", true, true},
+		{"fe80::1", true, true},
+	}
+	for _, tc := range cases {
+		if got := Blocked(net.ParseIP(tc.ip), tc.allowPrivate); got != tc.blocked {
+			t.Errorf("Blocked(%s, %v) = %v, want %v", tc.ip, tc.allowPrivate, got, tc.blocked)
+		}
+	}
+}
+
+func TestRegisterRefusesBlockedAddresses(t *testing.T) {
+	svc, _, _ := setup()
+	ctx := context.Background()
+	me := uuid.New()
+	for _, endpoint := range []string{"https://127.0.0.1/x", "https://169.254.169.254/x", "https://[::1]:8443/x", "https://10.0.0.8/x"} {
+		if _, _, err := svc.Register(ctx, me, input(endpoint)); !errs.Is(err, errs.KindValidation) {
+			t.Errorf("%s: want a validation error, got %v", endpoint, err)
+		}
+	}
+	for _, endpoint := range []string{"https://push.example.com:8443/x", "https://142.250.74.106/x"} {
+		if _, _, err := svc.Register(ctx, me, input(endpoint)); err != nil {
+			t.Errorf("%s: %v", endpoint, err)
+		}
+	}
+
+	svc.settings.AllowPrivate = true
+	if _, _, err := svc.Register(ctx, me, input("https://192.168.1.20:2586/up")); err != nil {
+		t.Errorf("a LAN distributor should be allowed when private endpoints are: %v", err)
+	}
+	if _, _, err := svc.Register(ctx, me, input("https://169.254.169.254/x")); !errs.Is(err, errs.KindValidation) {
+		t.Errorf("metadata addresses stay refused, got %v", err)
+	}
+}
+
 func TestRegisterIsIdempotent(t *testing.T) {
 	svc, repo, _ := setup()
 	ctx := context.Background()
@@ -202,6 +262,19 @@ func TestRegisterCapsDevices(t *testing.T) {
 	}
 	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/one-more")); !errs.Is(err, errs.KindConflict) {
 		t.Fatalf("want conflict over the cap, got %v", err)
+	}
+	// Taking over someone else's device counts too.
+	other := uuid.New()
+	if _, _, err := svc.Register(ctx, other, input("https://push.example.com/theirs")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/theirs")); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("want conflict when moving a device over the cap, got %v", err)
+	}
+	// Refreshing a device already counted is fine.
+	mine, _ := svc.List(ctx, me)
+	if _, _, err := svc.Register(ctx, me, input(mine[0].Endpoint)); err != nil {
+		t.Fatalf("refreshing a device at the cap: %v", err)
 	}
 }
 
@@ -311,6 +384,49 @@ func TestSlowDevicesDoNotHoldUpOthers(t *testing.T) {
 	}
 }
 
+func TestNotifyReportsStoreErrors(t *testing.T) {
+	svc, repo, sender := setup()
+	ctx := context.Background()
+	me := uuid.New()
+	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/gone")); err != nil {
+		t.Fatal(err)
+	}
+	sender.answers["https://push.example.com/gone"] = ErrGone
+	repo.removeErr = errors.New("database.unavailable")
+	r, err := svc.Notify(ctx, ports.Notification{UserID: me, Subject: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(r.Store, repo.removeErr) {
+		t.Fatalf("the failed removal should be reported, got %+v", r)
+	}
+}
+
+// TestNotifyRecordsAfterDeadline checks that outcomes are recorded even
+// when slow devices used up the delivery's time.
+func TestNotifyRecordsAfterDeadline(t *testing.T) {
+	svc, repo, sender := setup()
+	me := uuid.New()
+	if _, _, err := svc.Register(context.Background(), me, input("https://push.example.com/slow")); err != nil {
+		t.Fatal(err)
+	}
+	sender.hang["https://push.example.com/slow"] = true
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	r, err := svc.Notify(ctx, ports.Notification{UserID: me, Subject: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Failed != 1 || r.Store != nil {
+		t.Fatalf("unexpected report %+v", r)
+	}
+	for _, s := range repo.subs {
+		if s.Failures != 1 {
+			t.Fatalf("the timed-out delivery should be counted, failures = %d", s.Failures)
+		}
+	}
+}
+
 func TestNotifySkipsWithoutRecipient(t *testing.T) {
 	svc, _, sender := setup()
 	if _, err := svc.Notify(context.Background(), ports.Notification{To: "ada@example.com", Subject: "x"}); err != nil {
@@ -337,6 +453,33 @@ func TestTest(t *testing.T) {
 	}
 	if !strings.Contains(string(sender.payloads[0]), "Test notification") {
 		t.Fatalf("unexpected payload %s", sender.payloads[0])
+	}
+}
+
+// TestTestHasDeadline checks that a test push waits for at most a few send
+// timeouts, however many devices never answer.
+func TestTestHasDeadline(t *testing.T) {
+	svc, _, sender := setup()
+	svc.timeout = 100 * time.Millisecond
+	ctx := context.Background()
+	me := uuid.New()
+	for i := range MaxDevices {
+		endpoint := fmt.Sprintf("https://slow.example.com/%d", i)
+		sender.hang[endpoint] = true
+		if _, _, err := svc.Register(ctx, me, input(endpoint)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := time.Now()
+	r, err := svc.Test(ctx, me)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 3*svc.timeout+time.Second {
+		t.Fatalf("test push took %v", took)
+	}
+	if r.Failed != MaxDevices {
+		t.Fatalf("unexpected report %+v", r)
 	}
 }
 

@@ -53,6 +53,14 @@ class ActivityScreen extends ConsumerWidget {
                 }
                 rows.add(ActivityTile(activity: a));
               }
+              if (page.error case final error?) {
+                rows.add(
+                  PageError(
+                    error: error,
+                    onRetry: () => ref.read(provider.notifier).retry(),
+                  ),
+                );
+              }
               if (page.loadingMore) {
                 rows.add(
                   const Padding(

@@ -1,3 +1,4 @@
+import 'package:splitspends/core/config/local_config.dart';
 import 'package:splitspends/core/models/json.dart';
 
 class CurrencyInfo {
@@ -117,22 +118,6 @@ class AppConfig {
       : currencies.map((c) => c.code).toList();
 }
 
-/// Exponents for common currencies that do not use 2 decimals; used when the
-/// server config is not loaded yet.
-const _exponents = {
-  'JPY': 0,
-  'KRW': 0,
-  'VND': 0,
-  'CLP': 0,
-  'ISK': 0,
-  'HUF': 2,
-  'BHD': 3,
-  'KWD': 3,
-  'OMR': 3,
-  'JOD': 3,
-  'TND': 3,
-};
-
 const fallbackCodes = [
   'USD',
   'EUR',
@@ -146,9 +131,11 @@ const fallbackCodes = [
   'SGD',
 ];
 
-CurrencyInfo fallbackCurrency(String code) => CurrencyInfo(
-  code: code,
-  name: code,
-  symbol: code,
-  exponent: _exponents[code] ?? 2,
-);
+/// [code] as the bundled catalog describes it; used when the server config
+/// is not loaded yet.
+CurrencyInfo fallbackCurrency(String code) {
+  for (final c in localConfig.currencies) {
+    if (c.code == code) return c;
+  }
+  return CurrencyInfo(code: code, name: code, symbol: code, exponent: 2);
+}

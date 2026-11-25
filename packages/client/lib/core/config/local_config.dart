@@ -1,5 +1,6 @@
 // Bundled server-equivalent config for on-device mode. Mirrors the
-// backend catalog so local data imports cleanly into a server later.
+// backend catalog so local data imports cleanly into a server later;
+// test/core/catalog_test.dart holds it to spec/vectors.json.
 
 import 'package:splitspends/core/config/app_config.dart';
 

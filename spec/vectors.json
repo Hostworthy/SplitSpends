@@ -1,5 +1,5 @@
 {
- "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A split may give date (YYYY-MM-DD) and today, and values, the split values stored for each user after trimming; input description defaults to the name, and description, notes and method give the normalized result; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. recurrence: each series starts on start and books dates in order; monthly and yearly series keep the start day, or use the last day of a shorter month. Pairwise debts within one entry add up to each debtor's and each creditor's net exactly, whatever order the shares are listed in. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members (error names the failing field); when current is given, effective says whether the saved split still applies to those members.",
+ "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A split may give date (YYYY-MM-DD) and today, and values, the split values stored for each user after trimming; input description defaults to the name, and description, notes and method give the normalized result; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. recurrence: each series starts on start and books dates in order; monthly and yearly series keep the start day, or use the last day of a shorter month. Pairwise debts within one entry add up to each debtor's and each creditor's net exactly, whatever order the shares are listed in. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members (error names the failing field); when current is given, effective says whether the saved split still applies to those members. currencies and categories: the built-in catalogs, currencies sorted by code and categories in display order; the client bundles the same lists for on-device mode.",
  "splits": [
   {
    "name": "equal three ways",
@@ -2362,6 +2362,532 @@
     "00000000-0000-0000-0000-00000000000b"
    ],
    "error": "defaultSplit"
+  }
+ ],
+ "currencies": [
+  {
+   "code": "AED",
+   "name": "UAE Dirham",
+   "symbol": "AED",
+   "exponent": 2
+  },
+  {
+   "code": "ARS",
+   "name": "Argentine Peso",
+   "symbol": "$",
+   "exponent": 2
+  },
+  {
+   "code": "AUD",
+   "name": "Australian Dollar",
+   "symbol": "A$",
+   "exponent": 2
+  },
+  {
+   "code": "BDT",
+   "name": "Bangladeshi Taka",
+   "symbol": "\u09f3",
+   "exponent": 2
+  },
+  {
+   "code": "BGN",
+   "name": "Bulgarian Lev",
+   "symbol": "BGN",
+   "exponent": 2
+  },
+  {
+   "code": "BHD",
+   "name": "Bahraini Dinar",
+   "symbol": "BD",
+   "exponent": 3
+  },
+  {
+   "code": "BRL",
+   "name": "Brazilian Real",
+   "symbol": "R$",
+   "exponent": 2
+  },
+  {
+   "code": "CAD",
+   "name": "Canadian Dollar",
+   "symbol": "C$",
+   "exponent": 2
+  },
+  {
+   "code": "CHF",
+   "name": "Swiss Franc",
+   "symbol": "CHF",
+   "exponent": 2
+  },
+  {
+   "code": "CLP",
+   "name": "Chilean Peso",
+   "symbol": "$",
+   "exponent": 0
+  },
+  {
+   "code": "CNY",
+   "name": "Chinese Yuan",
+   "symbol": "\u00a5",
+   "exponent": 2
+  },
+  {
+   "code": "COP",
+   "name": "Colombian Peso",
+   "symbol": "$",
+   "exponent": 2
+  },
+  {
+   "code": "CZK",
+   "name": "Czech Koruna",
+   "symbol": "CZK",
+   "exponent": 2
+  },
+  {
+   "code": "DKK",
+   "name": "Danish Krone",
+   "symbol": "kr",
+   "exponent": 2
+  },
+  {
+   "code": "EGP",
+   "name": "Egyptian Pound",
+   "symbol": "E\u00a3",
+   "exponent": 2
+  },
+  {
+   "code": "EUR",
+   "name": "Euro",
+   "symbol": "\u20ac",
+   "exponent": 2
+  },
+  {
+   "code": "GBP",
+   "name": "British Pound",
+   "symbol": "\u00a3",
+   "exponent": 2
+  },
+  {
+   "code": "HKD",
+   "name": "Hong Kong Dollar",
+   "symbol": "HK$",
+   "exponent": 2
+  },
+  {
+   "code": "HUF",
+   "name": "Hungarian Forint",
+   "symbol": "Ft",
+   "exponent": 2
+  },
+  {
+   "code": "IDR",
+   "name": "Indonesian Rupiah",
+   "symbol": "Rp",
+   "exponent": 2
+  },
+  {
+   "code": "ILS",
+   "name": "Israeli New Shekel",
+   "symbol": "\u20aa",
+   "exponent": 2
+  },
+  {
+   "code": "INR",
+   "name": "Indian Rupee",
+   "symbol": "\u20b9",
+   "exponent": 2
+  },
+  {
+   "code": "ISK",
+   "name": "Icelandic Krona",
+   "symbol": "kr",
+   "exponent": 0
+  },
+  {
+   "code": "JOD",
+   "name": "Jordanian Dinar",
+   "symbol": "JD",
+   "exponent": 3
+  },
+  {
+   "code": "JPY",
+   "name": "Japanese Yen",
+   "symbol": "\u00a5",
+   "exponent": 0
+  },
+  {
+   "code": "KES",
+   "name": "Kenyan Shilling",
+   "symbol": "KSh",
+   "exponent": 2
+  },
+  {
+   "code": "KRW",
+   "name": "South Korean Won",
+   "symbol": "\u20a9",
+   "exponent": 0
+  },
+  {
+   "code": "KWD",
+   "name": "Kuwaiti Dinar",
+   "symbol": "KD",
+   "exponent": 3
+  },
+  {
+   "code": "LKR",
+   "name": "Sri Lankan Rupee",
+   "symbol": "Rs",
+   "exponent": 2
+  },
+  {
+   "code": "MAD",
+   "name": "Moroccan Dirham",
+   "symbol": "MAD",
+   "exponent": 2
+  },
+  {
+   "code": "MXN",
+   "name": "Mexican Peso",
+   "symbol": "MX$",
+   "exponent": 2
+  },
+  {
+   "code": "MYR",
+   "name": "Malaysian Ringgit",
+   "symbol": "RM",
+   "exponent": 2
+  },
+  {
+   "code": "NGN",
+   "name": "Nigerian Naira",
+   "symbol": "\u20a6",
+   "exponent": 2
+  },
+  {
+   "code": "NOK",
+   "name": "Norwegian Krone",
+   "symbol": "kr",
+   "exponent": 2
+  },
+  {
+   "code": "NPR",
+   "name": "Nepalese Rupee",
+   "symbol": "Rs",
+   "exponent": 2
+  },
+  {
+   "code": "NZD",
+   "name": "New Zealand Dollar",
+   "symbol": "NZ$",
+   "exponent": 2
+  },
+  {
+   "code": "OMR",
+   "name": "Omani Rial",
+   "symbol": "OMR",
+   "exponent": 3
+  },
+  {
+   "code": "PEN",
+   "name": "Peruvian Sol",
+   "symbol": "S/",
+   "exponent": 2
+  },
+  {
+   "code": "PHP",
+   "name": "Philippine Peso",
+   "symbol": "\u20b1",
+   "exponent": 2
+  },
+  {
+   "code": "PKR",
+   "name": "Pakistani Rupee",
+   "symbol": "Rs",
+   "exponent": 2
+  },
+  {
+   "code": "PLN",
+   "name": "Polish Zloty",
+   "symbol": "PLN",
+   "exponent": 2
+  },
+  {
+   "code": "QAR",
+   "name": "Qatari Riyal",
+   "symbol": "QR",
+   "exponent": 2
+  },
+  {
+   "code": "RON",
+   "name": "Romanian Leu",
+   "symbol": "lei",
+   "exponent": 2
+  },
+  {
+   "code": "SAR",
+   "name": "Saudi Riyal",
+   "symbol": "SR",
+   "exponent": 2
+  },
+  {
+   "code": "SEK",
+   "name": "Swedish Krona",
+   "symbol": "kr",
+   "exponent": 2
+  },
+  {
+   "code": "SGD",
+   "name": "Singapore Dollar",
+   "symbol": "S$",
+   "exponent": 2
+  },
+  {
+   "code": "THB",
+   "name": "Thai Baht",
+   "symbol": "\u0e3f",
+   "exponent": 2
+  },
+  {
+   "code": "TRY",
+   "name": "Turkish Lira",
+   "symbol": "\u20ba",
+   "exponent": 2
+  },
+  {
+   "code": "TWD",
+   "name": "New Taiwan Dollar",
+   "symbol": "NT$",
+   "exponent": 2
+  },
+  {
+   "code": "UAH",
+   "name": "Ukrainian Hryvnia",
+   "symbol": "\u20b4",
+   "exponent": 2
+  },
+  {
+   "code": "USD",
+   "name": "US Dollar",
+   "symbol": "$",
+   "exponent": 2
+  },
+  {
+   "code": "VND",
+   "name": "Vietnamese Dong",
+   "symbol": "\u20ab",
+   "exponent": 0
+  },
+  {
+   "code": "ZAR",
+   "name": "South African Rand",
+   "symbol": "R",
+   "exponent": 2
+  }
+ ],
+ "categories": [
+  {
+   "id": "food.dining",
+   "name": "Dining out",
+   "group": "Food and drink",
+   "icon": "restaurant"
+  },
+  {
+   "id": "food.groceries",
+   "name": "Groceries",
+   "group": "Food and drink",
+   "icon": "local_grocery_store"
+  },
+  {
+   "id": "food.drinks",
+   "name": "Drinks and nightlife",
+   "group": "Food and drink",
+   "icon": "local_bar"
+  },
+  {
+   "id": "food.coffee",
+   "name": "Coffee",
+   "group": "Food and drink",
+   "icon": "local_cafe"
+  },
+  {
+   "id": "home.rent",
+   "name": "Rent",
+   "group": "Home",
+   "icon": "home"
+  },
+  {
+   "id": "home.utilities",
+   "name": "Utilities",
+   "group": "Home",
+   "icon": "bolt"
+  },
+  {
+   "id": "home.internet",
+   "name": "Internet and phone",
+   "group": "Home",
+   "icon": "wifi"
+  },
+  {
+   "id": "home.supplies",
+   "name": "Household supplies",
+   "group": "Home",
+   "icon": "cleaning_services"
+  },
+  {
+   "id": "home.furniture",
+   "name": "Furniture",
+   "group": "Home",
+   "icon": "chair"
+  },
+  {
+   "id": "home.maintenance",
+   "name": "Maintenance",
+   "group": "Home",
+   "icon": "build"
+  },
+  {
+   "id": "home.pets",
+   "name": "Pets",
+   "group": "Home",
+   "icon": "pets"
+  },
+  {
+   "id": "transport.fuel",
+   "name": "Fuel",
+   "group": "Transportation",
+   "icon": "local_gas_station"
+  },
+  {
+   "id": "transport.parking",
+   "name": "Parking",
+   "group": "Transportation",
+   "icon": "local_parking"
+  },
+  {
+   "id": "transport.taxi",
+   "name": "Taxi and rideshare",
+   "group": "Transportation",
+   "icon": "local_taxi"
+  },
+  {
+   "id": "transport.transit",
+   "name": "Public transit",
+   "group": "Transportation",
+   "icon": "directions_bus"
+  },
+  {
+   "id": "transport.car",
+   "name": "Car",
+   "group": "Transportation",
+   "icon": "directions_car"
+  },
+  {
+   "id": "travel.flights",
+   "name": "Flights",
+   "group": "Travel",
+   "icon": "flight"
+  },
+  {
+   "id": "travel.lodging",
+   "name": "Lodging",
+   "group": "Travel",
+   "icon": "hotel"
+  },
+  {
+   "id": "travel.activities",
+   "name": "Activities",
+   "group": "Travel",
+   "icon": "attractions"
+  },
+  {
+   "id": "entertainment.movies",
+   "name": "Movies",
+   "group": "Entertainment",
+   "icon": "movie"
+  },
+  {
+   "id": "entertainment.games",
+   "name": "Games",
+   "group": "Entertainment",
+   "icon": "sports_esports"
+  },
+  {
+   "id": "entertainment.music",
+   "name": "Music",
+   "group": "Entertainment",
+   "icon": "music_note"
+  },
+  {
+   "id": "entertainment.sports",
+   "name": "Sports",
+   "group": "Entertainment",
+   "icon": "sports_soccer"
+  },
+  {
+   "id": "entertainment.subscriptions",
+   "name": "Subscriptions",
+   "group": "Entertainment",
+   "icon": "subscriptions"
+  },
+  {
+   "id": "life.clothing",
+   "name": "Clothing",
+   "group": "Life",
+   "icon": "checkroom"
+  },
+  {
+   "id": "life.gifts",
+   "name": "Gifts",
+   "group": "Life",
+   "icon": "redeem"
+  },
+  {
+   "id": "life.medical",
+   "name": "Medical",
+   "group": "Life",
+   "icon": "medical_services"
+  },
+  {
+   "id": "life.education",
+   "name": "Education",
+   "group": "Life",
+   "icon": "school"
+  },
+  {
+   "id": "life.childcare",
+   "name": "Childcare",
+   "group": "Life",
+   "icon": "child_care"
+  },
+  {
+   "id": "life.insurance",
+   "name": "Insurance",
+   "group": "Life",
+   "icon": "shield"
+  },
+  {
+   "id": "life.taxes",
+   "name": "Taxes",
+   "group": "Life",
+   "icon": "account_balance"
+  },
+  {
+   "id": "shopping",
+   "name": "Shopping",
+   "group": "Other",
+   "icon": "shopping_bag"
+  },
+  {
+   "id": "general",
+   "name": "General",
+   "group": "Other",
+   "icon": "receipt_long"
+  },
+  {
+   "id": "payment",
+   "name": "Payment",
+   "group": "Other",
+   "icon": "payments"
   }
  ]
 }

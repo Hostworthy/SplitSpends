@@ -8,6 +8,7 @@ package transfer
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -107,6 +108,10 @@ func (s *Service) Import(ctx context.Context, actor uuid.UUID, b Bundle) (*Resul
 		return nil, err
 	}
 	res := &Result{People: map[uuid.UUID]uuid.UUID{b.Me: actor}}
+	names := map[uuid.UUID]string{b.Me: me.Name}
+	for _, p := range b.People {
+		names[p.ID] = p.Name
+	}
 	ctx = ports.Quiet(ctx)
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
 		if err := s.claim(ctx, actor); err != nil {
@@ -126,7 +131,7 @@ func (s *Service) Import(ctx context.Context, actor uuid.UUID, b Bundle) (*Resul
 			res.Categories++
 		}
 		for i, g := range b.Groups {
-			patch, members, err := remapGroup(res.People, g)
+			patch, members, err := remapGroup(res.People, names, g)
 			if err != nil {
 				return wrap(err, fmt.Sprintf("groups[%d]", i), name(g.Patch.Name))
 			}
@@ -137,7 +142,7 @@ func (s *Service) Import(ctx context.Context, actor uuid.UUID, b Bundle) (*Resul
 			res.Groups++
 		}
 		for i, e := range b.Expenses {
-			if err := s.expense(ctx, actor, res.People, e); err != nil {
+			if err := s.expense(ctx, actor, res.People, names, e); err != nil {
 				return wrap(err, fmt.Sprintf("expenses[%d]", i), e.Input.Description)
 			}
 			res.Expenses++
@@ -202,31 +207,11 @@ func (s *Service) person(ctx context.Context, me *user.User, p Person) (uuid.UUI
 	return u.ID, s.friends.Add(ctx, me.ID, u.ID)
 }
 
-func (s *Service) expense(ctx context.Context, actor uuid.UUID, people map[uuid.UUID]uuid.UUID, e Expense) error {
-	in := e.Input
-	// Copy before remapping so the bundle stays intact (retries, shared slices).
-	in.Payers, in.Splits = slices.Clone(in.Payers), slices.Clone(in.Splits)
-	var err error
-	for i := range in.Payers {
-		if in.Payers[i].UserID, err = remap(people, in.Payers[i].UserID); err != nil {
-			return err
-		}
+func (s *Service) expense(ctx context.Context, actor uuid.UUID, people map[uuid.UUID]uuid.UUID, names map[uuid.UUID]string, e Expense) error {
+	in, err := remapExpense(people, names, e.Input)
+	if err != nil {
+		return err
 	}
-	for i := range in.Splits {
-		if in.Splits[i].UserID, err = remap(people, in.Splits[i].UserID); err != nil {
-			return err
-		}
-	}
-	items := make([]expense.Item, len(in.Items))
-	for i, it := range in.Items {
-		ids, err := remapAll(people, it.UserIDs)
-		if err != nil {
-			return err
-		}
-		items[i] = expense.Item{Name: it.Name, Amount: it.Amount, UserIDs: ids}
-	}
-	in.Items = items
-
 	if e.Kind == expense.KindPayment {
 		if len(in.Payers) != 1 || len(in.Splits) != 1 {
 			return errs.Validation("splits", "A payment needs exactly one payer and one recipient.")
@@ -244,15 +229,63 @@ func (s *Service) expense(ctx context.Context, actor uuid.UUID, people map[uuid.
 	return err
 }
 
+// remapExpense rewrites local person ids in an expense's payers, splits and
+// items.
+func remapExpense(people map[uuid.UUID]uuid.UUID, names map[uuid.UUID]string, in expense.Input) (expense.Input, error) {
+	payers, splits := make([]uuid.UUID, len(in.Payers)), make([]uuid.UUID, len(in.Splits))
+	for i, p := range in.Payers {
+		payers[i] = p.UserID
+	}
+	for i, sp := range in.Splits {
+		splits[i] = sp.UserID
+	}
+	if err := distinct(people, names, "payers", payers); err != nil {
+		return in, err
+	}
+	if err := distinct(people, names, "splits", splits); err != nil {
+		return in, err
+	}
+	// Copy before remapping so the bundle stays intact (retries, shared slices).
+	in.Payers, in.Splits = slices.Clone(in.Payers), slices.Clone(in.Splits)
+	var err error
+	for i := range in.Payers {
+		if in.Payers[i].UserID, err = remap(people, in.Payers[i].UserID); err != nil {
+			return in, err
+		}
+	}
+	for i := range in.Splits {
+		if in.Splits[i].UserID, err = remap(people, in.Splits[i].UserID); err != nil {
+			return in, err
+		}
+	}
+	items := make([]expense.Item, len(in.Items))
+	for i, it := range in.Items {
+		if err := distinct(people, names, "items", it.UserIDs); err != nil {
+			return in, err
+		}
+		ids, err := remapAll(people, it.UserIDs)
+		if err != nil {
+			return in, err
+		}
+		items[i] = expense.Item{Name: it.Name, Amount: it.Amount, UserIDs: ids}
+	}
+	in.Items = items
+	return in, nil
+}
+
 // remapGroup rewrites local person ids in a group's members and default
-// split.
-func remapGroup(people map[uuid.UUID]uuid.UUID, g Group) (group.Patch, []uuid.UUID, error) {
+// split. Members who turn out to be one person simply join once; their
+// default split values cannot be merged, so that is refused.
+func remapGroup(people map[uuid.UUID]uuid.UUID, names map[uuid.UUID]string, g Group) (group.Patch, []uuid.UUID, error) {
 	members, err := remapAll(people, g.Members)
 	if err != nil {
 		return group.Patch{}, nil, err
 	}
 	patch := g.Patch
 	if d := patch.DefaultSplit; d != nil && d.Method != "" {
+		if err := distinct(people, names, "defaultSplit", slices.Collect(maps.Keys(d.Values))); err != nil {
+			return group.Patch{}, nil, err
+		}
 		values := make(map[uuid.UUID]string, len(d.Values))
 		for local, v := range d.Values {
 			id, err := remap(people, local)
@@ -271,6 +304,28 @@ func remap(people map[uuid.UUID]uuid.UUID, local uuid.UUID) (uuid.UUID, error) {
 		return id, nil
 	}
 	return uuid.Nil, errs.Validation("people", "Refers to a person who is not in the import.")
+}
+
+// distinct refuses two different people from the device who are one person
+// on the server: they have the same email, or one of them has the caller's.
+// Their amounts would otherwise be merged or one would silently win.
+func distinct(people map[uuid.UUID]uuid.UUID, names map[uuid.UUID]string, field string, locals []uuid.UUID) error {
+	// Sorted so the same bundle always names the same pair.
+	locals = slices.Clone(locals)
+	slices.SortFunc(locals, func(a, b uuid.UUID) int { return strings.Compare(a.String(), b.String()) })
+	seen := make(map[uuid.UUID]uuid.UUID, len(locals))
+	for _, local := range locals {
+		id, ok := people[local]
+		if !ok {
+			continue
+		}
+		if other, dup := seen[id]; dup && other != local {
+			return errs.Validation(field, fmt.Sprintf("“%s” and “%s” are the same person here, because they have the same email or one has yours. Merge them on this device first.",
+				names[other], names[local]))
+		}
+		seen[id] = local
+	}
+	return nil
 }
 
 func remapAll(people map[uuid.UUID]uuid.UUID, locals []uuid.UUID) ([]uuid.UUID, error) {
