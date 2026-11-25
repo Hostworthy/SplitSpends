@@ -202,6 +202,11 @@ func LoadConfig() (*Config, error) {
 	if c.JobsSecret != "" && len(c.JobsSecret) < 32 {
 		return nil, fmt.Errorf("bootstrap.config.env.invalid.JOBS_SECRET: use at least 32 random characters")
 	}
+	// Without in-process jobs, a scheduler calling /internal/jobs is the only
+	// thing that books recurring expenses and removes expired sign-ins.
+	if c.Serverless && c.JobsSecret == "" {
+		return nil, fmt.Errorf("bootstrap.config.env.required.not-found.JOBS_SECRET: SERVERLESS=true needs a scheduler that calls POST /internal/jobs with it")
+	}
 	c.RatesURL = env("RATES_URL", exchange.DefaultURL)
 	if strings.EqualFold(c.RatesURL, "none") {
 		c.RatesURL = ""
