@@ -18,12 +18,7 @@ func Handler(dir string) http.Handler {
 		clean := path.Clean("/" + r.URL.Path)
 		full := filepath.Join(dir, filepath.FromSlash(clean))
 		if info, err := os.Stat(full); err == nil && !info.IsDir() {
-			switch {
-			case strings.HasSuffix(clean, ".html"), clean == "/flutter_service_worker.js", clean == "/push_sw.js", clean == "/version.json", clean == "/manifest.json":
-				w.Header().Set("Cache-Control", "no-cache")
-			case strings.HasPrefix(clean, "/assets/"), strings.HasPrefix(clean, "/canvaskit/"), strings.HasPrefix(clean, "/icons/"), strings.HasPrefix(clean, "/fonts/"):
-				w.Header().Set("Cache-Control", "public, max-age=604800")
-			}
+			w.Header().Set("Cache-Control", cacheControl(clean))
 			files.ServeHTTP(w, r)
 			return
 		}
@@ -34,4 +29,17 @@ func Handler(dir string) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFile(w, r, index)
 	})
+}
+
+// cacheControl keeps browsers from running an old build after an upgrade.
+// Flutter names its output without a content hash, so every file the app
+// loads with its code (the scripts, assets and canvaskit) is revalidated on
+// each load. Only fonts and icons are cached for a week: they rarely change
+// and a stale copy does not break the app. deploy/aws/main.tf applies the
+// same rule to the files it uploads; change both together.
+func cacheControl(clean string) string {
+	if strings.HasPrefix(clean, "/fonts/") || strings.HasPrefix(clean, "/icons/") {
+		return "public, max-age=604800"
+	}
+	return "no-cache"
 }
