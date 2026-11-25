@@ -48,6 +48,8 @@ type Config struct {
 	AIEffort   string
 
 	MCPEnabled bool
+	// MCPAdminTools offers the admin_ tools on /mcp.
+	MCPAdminTools bool
 
 	// Gravatar lets people show their Gravatar picture (opt-in per person).
 	Gravatar bool
@@ -195,6 +197,9 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 	c.MCPEnabled, _ = strconv.ParseBool(env("MCP_ENABLED", "true"))
+	if c.MCPAdminTools, err = strconv.ParseBool(env("MCP_ADMIN_TOOLS", "false")); err != nil {
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.MCP_ADMIN_TOOLS: use true or false")
+	}
 	switch strings.ToLower(env("GRAVATAR", "on")) {
 	case "on", "true", "1":
 		c.Gravatar = true

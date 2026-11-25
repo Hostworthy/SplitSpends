@@ -139,3 +139,25 @@ func TestAllowedDomains(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPAdminTools(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
+	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{{"", false}, {"false", false}, {"true", true}} {
+		t.Setenv("MCP_ADMIN_TOOLS", tc.value)
+		c, err := bootstrap.LoadConfig()
+		if err != nil {
+			t.Fatalf("MCP_ADMIN_TOOLS=%q: %v", tc.value, err)
+		}
+		if c.MCPAdminTools != tc.want {
+			t.Errorf("MCP_ADMIN_TOOLS=%q: got %v, want %v", tc.value, c.MCPAdminTools, tc.want)
+		}
+	}
+	t.Setenv("MCP_ADMIN_TOOLS", "yes please")
+	if _, err := bootstrap.LoadConfig(); err == nil {
+		t.Error("an invalid MCP_ADMIN_TOOLS must stop startup")
+	}
+}
