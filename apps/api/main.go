@@ -71,7 +71,7 @@ func run() error {
 	}
 
 	handler := middleware.Observe(log, middleware.Security(secure, middleware.CORS(cfg.CORSOrigins, mux)))
-	srv := &http.Server{Addr: cfg.Addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
+	srv := newServer(cfg.Addr, handler)
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Addr)
 	if err != nil {
 		return err
@@ -151,4 +151,28 @@ func loopback(addr string) string {
 		host = "[" + host + "]"
 	}
 	return "http://" + host + ":" + port
+}
+
+// Limits of one request. readTimeout bounds reading the whole request, body
+// included, so a client cannot hold a connection by sending its body slowly;
+// it leaves room for a receipt of receipt.MaxSize on a slow link.
+// writeTimeout counts from the end of the headers and must stay above the
+// longest handler: POST /internal/jobs runs for up to 5 minutes, and a
+// receipt scan waits up to 3 minutes for the AI provider after its upload.
+const (
+	readTimeout    = 2 * time.Minute
+	writeTimeout   = 6 * time.Minute
+	maxHeaderBytes = 64 << 10
+)
+
+func newServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    maxHeaderBytes,
+	}
 }
