@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,12 +17,21 @@ import (
 	"github.com/google/uuid"
 )
 
-type memRepo struct{ subs map[uuid.UUID]*Subscription }
+// memRepo is safe for the concurrent sends of one delivery.
+type memRepo struct {
+	mu   sync.Mutex
+	subs map[uuid.UUID]*Subscription
+}
 
 func (m *memRepo) Save(_ context.Context, s *Subscription) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for _, old := range m.subs {
 		if old.Endpoint == s.Endpoint {
 			s.ID, s.CreatedAt = old.ID, old.CreatedAt
+			if old.P256dh == s.P256dh && old.Auth == s.Auth {
+				s.Failures = old.Failures
+			}
 			*old = *s
 			return false, nil
 		}
@@ -31,10 +42,13 @@ func (m *memRepo) Save(_ context.Context, s *Subscription) (bool, error) {
 }
 
 func (m *memRepo) List(_ context.Context, userID uuid.UUID) ([]*Subscription, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	var out []*Subscription
 	for _, s := range m.subs {
 		if s.UserID == userID {
-			out = append(out, s)
+			c := *s
+			out = append(out, &c)
 		}
 	}
 	return out, nil
@@ -46,6 +60,8 @@ func (m *memRepo) Count(ctx context.Context, userID uuid.UUID) (int, error) {
 }
 
 func (m *memRepo) Exists(_ context.Context, endpoint string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for _, s := range m.subs {
 		if s.Endpoint == endpoint {
 			return true, nil
@@ -55,6 +71,8 @@ func (m *memRepo) Exists(_ context.Context, endpoint string) (bool, error) {
 }
 
 func (m *memRepo) Delete(_ context.Context, userID, id uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if s, ok := m.subs[id]; !ok || s.UserID != userID {
 		return errs.NotFound("Device")
 	}
@@ -62,9 +80,16 @@ func (m *memRepo) Delete(_ context.Context, userID, id uuid.UUID) error {
 	return nil
 }
 
-func (m *memRepo) Remove(_ context.Context, id uuid.UUID) error { delete(m.subs, id); return nil }
+func (m *memRepo) Remove(_ context.Context, id uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.subs, id)
+	return nil
+}
 
 func (m *memRepo) Succeeded(_ context.Context, id uuid.UUID, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if s := m.subs[id]; s != nil {
 		s.LastSuccessAt, s.Failures = &at, 0
 	}
@@ -72,6 +97,8 @@ func (m *memRepo) Succeeded(_ context.Context, id uuid.UUID, at time.Time) error
 }
 
 func (m *memRepo) Failed(_ context.Context, id uuid.UUID) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	s := m.subs[id]
 	if s == nil {
 		return 0, nil
@@ -80,15 +107,25 @@ func (m *memRepo) Failed(_ context.Context, id uuid.UUID) (int, error) {
 	return s.Failures, nil
 }
 
-// fakeSender answers per endpoint and records payloads.
+// fakeSender answers per endpoint and records payloads. Endpoints in hang
+// never answer: Send waits until its context ends.
 type fakeSender struct {
+	mu       sync.Mutex
 	answers  map[string]error
+	hang     map[string]bool
 	payloads [][]byte
 }
 
-func (f *fakeSender) Send(_ context.Context, s *Subscription, payload []byte) error {
+func (f *fakeSender) Send(ctx context.Context, s *Subscription, payload []byte) error {
+	f.mu.Lock()
 	f.payloads = append(f.payloads, payload)
-	return f.answers[s.Endpoint]
+	hang, answer := f.hang[s.Endpoint], f.answers[s.Endpoint]
+	f.mu.Unlock()
+	if hang {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return answer
 }
 
 var (
@@ -102,7 +139,7 @@ func input(endpoint string) Input {
 
 func setup() (*Service, *memRepo, *fakeSender) {
 	repo := &memRepo{subs: map[uuid.UUID]*Subscription{}}
-	sender := &fakeSender{answers: map[string]error{}}
+	sender := &fakeSender{answers: map[string]error{}, hang: map[string]bool{}}
 	svc := NewService(repo, sender, clock.Fixed{At: time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)},
 		Settings{PublicKey: "key", AppName: "SplitSpends", Link: "https://split.example.com"})
 	return svc, repo, sender
@@ -231,6 +268,46 @@ func TestNotifyRemovesGoneAndCountsFailures(t *testing.T) {
 	}
 	if len(repo.subs) != 1 {
 		t.Fatalf("a device failing %d times in a row should be removed", MaxFailures)
+	}
+}
+
+// TestSlowDevicesDoNotHoldUpOthers checks that devices are sent to at once,
+// each within its own timeout: a user whose devices never answer costs one
+// timeout, not one per device, and their working device still gets the
+// message.
+func TestSlowDevicesDoNotHoldUpOthers(t *testing.T) {
+	svc, repo, sender := setup()
+	svc.timeout = 200 * time.Millisecond
+	ctx := context.Background()
+	me := uuid.New()
+	for i := range MaxDevices - 1 {
+		endpoint := fmt.Sprintf("https://slow.example.com/%d", i)
+		sender.hang[endpoint] = true
+		if _, _, err := svc.Register(ctx, me, input(endpoint)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/fast")); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	start := time.Now()
+	r, err := svc.Notify(ctx, ports.Notification{UserID: me, Subject: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*svc.timeout {
+		t.Fatalf("delivery took %v; devices should time out together, not one after another", took)
+	}
+	if r.Sent != 1 || r.Failed != MaxDevices-1 || !errors.Is(r.Err, context.DeadlineExceeded) {
+		t.Fatalf("unexpected report %+v", r)
+	}
+	for _, s := range repo.subs {
+		if s.Endpoint == "https://push.example.com/fast" && s.LastSuccessAt == nil {
+			t.Fatal("the working device should be marked delivered")
+		}
 	}
 }
 

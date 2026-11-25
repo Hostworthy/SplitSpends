@@ -33,7 +33,9 @@ func (r *PushSubscriptions) Save(ctx context.Context, s *push.Subscription) (boo
 		INSERT INTO push_subscriptions (id, user_id, created_at, updated_at, platform, endpoint, p256dh, auth, label)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = EXCLUDED.updated_at,
-			platform = EXCLUDED.platform, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth, label = EXCLUDED.label, failures = 0
+			platform = EXCLUDED.platform, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth, label = EXCLUDED.label,
+			failures = CASE WHEN push_subscriptions.p256dh = EXCLUDED.p256dh AND push_subscriptions.auth = EXCLUDED.auth
+				THEN push_subscriptions.failures ELSE 0 END
 		RETURNING id, created_at, last_success_at, failures, (xmax = 0)`,
 		s.ID, s.UserID, s.CreatedAt, s.UpdatedAt, s.Platform, s.Endpoint, s.P256dh, s.Auth, s.Label,
 	).Scan(&s.ID, &s.CreatedAt, &s.LastSuccessAt, &s.Failures, &created)

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
@@ -20,6 +22,14 @@ const (
 	// MaxFailures removes a subscription after this many failed deliveries
 	// in a row (for example after the server's VAPID key changed).
 	MaxFailures = 25
+	// SendTimeout bounds one delivery to one device. Endpoints are chosen
+	// by users, so a slow or silent one must not hold up the others.
+	SendTimeout = 5 * time.Second
+
+	// parallel is how many devices are sent to at once: all of a user's
+	// devices up to the cap, so one notification costs about one
+	// SendTimeout however its devices answer.
+	parallel = MaxDevices
 
 	maxTitle = 120
 	maxBody  = 600
@@ -41,12 +51,13 @@ type Service struct {
 	sender   Sender
 	clock    clock.Clock
 	settings Settings
+	timeout  time.Duration
 }
 
 // NewService builds a Service. A nil sender disables push: devices cannot
 // register and nothing is sent.
 func NewService(repo Repository, sender Sender, c clock.Clock, settings Settings) *Service {
-	return &Service{repo: repo, sender: sender, clock: c, settings: settings}
+	return &Service{repo: repo, sender: sender, clock: c, settings: settings, timeout: SendTimeout}
 }
 
 // Enabled reports whether this server sends push notifications.
@@ -114,7 +125,7 @@ type Report struct {
 	Sent    int
 	Failed  int
 	Removed int
-	// Err is the last delivery failure, for logs.
+	// Err is one of the delivery failures (the last device's), for logs.
 	Err error
 }
 
@@ -181,29 +192,51 @@ func (s *Service) Notify(ctx context.Context, n ports.Notification) (Report, err
 	return s.deliver(ctx, subs, Message{Title: n.Subject, Body: body, URL: link}), nil
 }
 
-// deliver sends to each device. Devices the push service forgot are
-// removed; other failures are counted, and a device that keeps failing is
-// eventually removed too.
+// deliver sends to the devices concurrently, each within its own timeout.
+// Devices the push service forgot are removed; other failures are counted,
+// and a device that keeps failing is eventually removed too.
 func (s *Service) deliver(ctx context.Context, subs []*Subscription, m Message) Report {
-	var r Report
 	payload := m.Payload()
-	for _, sub := range subs {
-		err := s.sender.Send(ctx, sub, payload)
-		switch {
-		case err == nil:
-			r.Sent++
-			_ = s.repo.Succeeded(ctx, sub.ID, s.clock.Now())
-		case errors.Is(err, ErrGone):
-			r.Removed++
-			_ = s.repo.Remove(ctx, sub.ID)
-		default:
-			r.Failed++
-			r.Err = err
-			if n, ferr := s.repo.Failed(ctx, sub.ID); ferr == nil && n >= MaxFailures {
-				r.Removed++
-				_ = s.repo.Remove(ctx, sub.ID)
-			}
+	results := make([]Report, len(subs))
+	slots := make(chan struct{}, parallel)
+	var wg sync.WaitGroup
+	for i, sub := range subs {
+		slots <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-slots; wg.Done() }()
+			results[i] = s.send(ctx, sub, payload)
+		}()
+	}
+	wg.Wait()
+	var r Report
+	for _, one := range results {
+		r.Sent, r.Failed, r.Removed = r.Sent+one.Sent, r.Failed+one.Failed, r.Removed+one.Removed
+		if one.Err != nil {
+			r.Err = one.Err
 		}
 	}
 	return r
+}
+
+// send delivers payload to one device and records the outcome.
+func (s *Service) send(ctx context.Context, sub *Subscription, payload []byte) Report {
+	sendCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	err := s.sender.Send(sendCtx, sub, payload)
+	cancel()
+	switch {
+	case err == nil:
+		_ = s.repo.Succeeded(ctx, sub.ID, s.clock.Now())
+		return Report{Sent: 1}
+	case errors.Is(err, ErrGone):
+		_ = s.repo.Remove(ctx, sub.ID)
+		return Report{Removed: 1}
+	default:
+		r := Report{Failed: 1, Err: err}
+		if n, ferr := s.repo.Failed(ctx, sub.ID); ferr == nil && n >= MaxFailures {
+			r.Removed = 1
+			_ = s.repo.Remove(ctx, sub.ID)
+		}
+		return r
+	}
 }
