@@ -106,13 +106,15 @@ func add[In any](ts *toolset, name, title, desc string, hints sdk.ToolAnnotation
 	hints.Title = title
 	tool := &sdk.Tool{Name: name, Title: title, Description: desc, Annotations: &hints}
 	sdk.AddTool(ts.server, tool, func(ctx context.Context, req *sdk.CallToolRequest, in In) (res *sdk.CallToolResult, out any, err error) {
+		t := &tools{log: ts.log}
 		defer func() {
 			if p := recover(); p != nil {
 				ts.log.ErrorContext(ctx, "mcp.tool.panicked", "tool", name, "panic", p, "stack", string(debug.Stack()))
-				res, out, err = fail(errors.New("something went wrong in this tool; the server logged the details"))
+				res, out, err = t.fail(ctx, errors.New("something went wrong in this tool; the server logged the details"))
 			}
 		}()
-		return h(&tools{c: ts.client(req)}, ctx, req, in)
+		t.c = ts.client(req)
+		return h(t, ctx, req, in)
 	})
 }
 
@@ -161,13 +163,24 @@ func stream(server func(*http.Request) *sdk.Server, log *slog.Logger) http.Handl
 	})
 }
 
-type tools struct{ c *Client }
+// tools run one call with the caller's API client and log failures.
+type tools struct {
+	c   *Client
+	log *slog.Logger
+}
 
 func text(s string) *sdk.CallToolResult {
 	return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: s}}}
 }
 
-func fail(err error) (*sdk.CallToolResult, any, error) {
+// fail reports err to the assistant as a tool error. A call that got no
+// usable answer from the API is logged with its detail and shown with a
+// fixed message.
+func (t *tools) fail(ctx context.Context, err error) (*sdk.CallToolResult, any, error) {
+	var f *failure
+	if errors.As(err, &f) {
+		t.log.ErrorContext(ctx, "mcp.api.failed", "method", f.method, "path", f.path, "status", f.status, "err", f.err)
+	}
 	var apiErr *APIError
 	if errors.As(err, &apiErr) && apiErr.Status == http.StatusUnauthorized {
 		err = errors.New("not signed in: create an API token in Split Spends under Account, API tokens, and configure it as the bearer token")
@@ -219,19 +232,19 @@ type empty struct{}
 func (t *tools) overview(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
 	me, _, err := t.index(ctx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	totals, err := get[platform.MyBalances](ctx, t.c, "/me/balances", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	groups, err := getList[platform.Group](ctx, t.c, "/groups", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	friends, err := getList[platform.Friend](ctx, t.c, "/friends", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are %q <%s> (id %s), default currency %s, role %s.\n", me.Name, email(me.Email), me.ID, me.DefaultCurrency, me.Role)
@@ -249,7 +262,7 @@ func (t *tools) overview(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (
 func (t *tools) listGroups(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
 	groups, err := getList[platform.Group](ctx, t.c, "/groups", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
 	for _, g := range groups.Items {
@@ -274,15 +287,15 @@ func (t *tools) getGroup(ctx context.Context, _ *sdk.CallToolRequest, in groupAr
 	path := "/groups/" + url.PathEscape(in.GroupID)
 	g, err := get[platform.Group](ctx, t.c, path, nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	sheet, err := get[platform.GroupBalances](ctx, t.c, path+"/balances", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	recent, err := getList[platform.Expense](ctx, t.c, "/expenses", url.Values{"groupId": {g.ID}, "limit": {"10"}})
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	idx := people{}
 	for _, m := range g.Members {
@@ -310,7 +323,7 @@ func (t *tools) getGroup(ctx context.Context, _ *sdk.CallToolRequest, in groupAr
 func (t *tools) listFriends(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
 	friends, err := getList[platform.Friend](ctx, t.c, "/friends", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
 	for _, f := range friends.Items {
@@ -363,7 +376,7 @@ type listArgs struct {
 func (t *tools) listExpenses(ctx context.Context, _ *sdk.CallToolRequest, in listArgs) (*sdk.CallToolResult, any, error) {
 	_, idx, err := t.index(ctx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	q := url.Values{}
 	for k, v := range map[string]string{"groupId": in.GroupID, "friendId": in.FriendID, "q": in.Query, "from": in.From, "to": in.To} {
@@ -377,7 +390,7 @@ func (t *tools) listExpenses(ctx context.Context, _ *sdk.CallToolRequest, in lis
 	q.Set("limit", strconv.Itoa(min(in.Limit, 200)))
 	res, err := getList[platform.Expense](ctx, t.c, "/expenses", q)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d of %d matching expenses:\n", len(res.Items), res.Total)
@@ -394,11 +407,11 @@ type expenseArgs struct {
 func (t *tools) getExpense(ctx context.Context, _ *sdk.CallToolRequest, in expenseArgs) (*sdk.CallToolResult, any, error) {
 	_, idx, err := t.index(ctx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	e, err := get[platform.Expense](ctx, t.c, "/expenses/"+url.PathEscape(in.ExpenseID), nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%q (%s), %s on %s, category %s, split %s\n", e.Description, e.Kind, t.c.format(ctx, e.Total, e.Currency), e.Date, e.Category, e.SplitMethod)
@@ -434,7 +447,7 @@ func (t *tools) listActivity(ctx context.Context, _ *sdk.CallToolRequest, in act
 	}
 	res, err := getList[platform.Activity](ctx, t.c, "/activity", url.Values{"limit": {strconv.Itoa(min(in.Limit, 200))}})
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
 	for _, a := range res.Items {
@@ -446,7 +459,7 @@ func (t *tools) listActivity(ctx context.Context, _ *sdk.CallToolRequest, in act
 func (t *tools) listCategories(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
 	res, err := getList[platform.CategoryEntry](ctx, t.c, "/categories", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	groups := map[string][]string{}
 	for _, c := range res.Items {
@@ -493,7 +506,7 @@ type addArgs struct {
 func (t *tools) addExpense(ctx context.Context, _ *sdk.CallToolRequest, in addArgs) (*sdk.CallToolResult, any, error) {
 	me, idx, err := t.index(ctx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	currency := strings.ToUpper(in.Currency)
 	var members []string
@@ -501,7 +514,7 @@ func (t *tools) addExpense(ctx context.Context, _ *sdk.CallToolRequest, in addAr
 	if in.GroupID != "" {
 		g, err := get[platform.Group](ctx, t.c, "/groups/"+url.PathEscape(in.GroupID), nil)
 		if err != nil {
-			return fail(err)
+			return t.fail(ctx, err)
 		}
 		if currency == "" {
 			currency = g.DefaultCurrency
@@ -517,7 +530,7 @@ func (t *tools) addExpense(ctx context.Context, _ *sdk.CallToolRequest, in addAr
 	}
 	total, err := t.c.minor(ctx, in.Amount, currency)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	payer := in.PaidBy
 	if payer == "" {
@@ -556,12 +569,12 @@ func (t *tools) addExpense(ctx context.Context, _ *sdk.CallToolRequest, in addAr
 		for _, v := range in.SplitValues {
 			value := strings.TrimSpace(v.Value)
 			if !plain(value) {
-				return fail(fmt.Errorf("the split value %q for %s is not a decimal number such as 60 or 33.5", v.Value, v.UserID))
+				return t.fail(ctx, fmt.Errorf("the split value %q for %s is not a decimal number such as 60 or 33.5", v.Value, v.UserID))
 			}
 			if method == "exact" {
 				m, err := t.c.minor(ctx, v.Value, currency)
 				if err != nil {
-					return fail(err)
+					return t.fail(ctx, err)
 				}
 				value = strconv.FormatInt(m, 10)
 			}
@@ -569,11 +582,11 @@ func (t *tools) addExpense(ctx context.Context, _ *sdk.CallToolRequest, in addAr
 			body.Splits = append(body.Splits, platform.Split{UserID: v.UserID, Value: &n})
 		}
 	default:
-		return fail(fmt.Errorf("splitMethod must be equal, exact, percent or shares"))
+		return t.fail(ctx, errors.New("splitMethod must be equal, exact, percent or shares"))
 	}
 	e, err := send[platform.Expense](ctx, t.c, http.MethodPost, "/expenses", body)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	return text("Added.\n" + t.line(ctx, e, idx)), nil, nil
 }
@@ -590,13 +603,13 @@ type paymentArgs struct {
 func (t *tools) recordPayment(ctx context.Context, _ *sdk.CallToolRequest, in paymentArgs) (*sdk.CallToolResult, any, error) {
 	me, idx, err := t.index(ctx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	currency := strings.ToUpper(in.Currency)
 	if currency == "" && in.GroupID != "" {
 		g, err := get[platform.Group](ctx, t.c, "/groups/"+url.PathEscape(in.GroupID), nil)
 		if err != nil {
-			return fail(err)
+			return t.fail(ctx, err)
 		}
 		currency = g.DefaultCurrency
 		for _, m := range g.Members {
@@ -608,7 +621,7 @@ func (t *tools) recordPayment(ctx context.Context, _ *sdk.CallToolRequest, in pa
 	}
 	amount, err := t.c.minor(ctx, in.Amount, currency)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	body := platform.PaymentInput{FromUserID: in.FromUserID, ToUserID: in.ToUserID, Amount: amount, Currency: currency, Notes: in.Notes}
 	if in.GroupID != "" {
@@ -616,7 +629,7 @@ func (t *tools) recordPayment(ctx context.Context, _ *sdk.CallToolRequest, in pa
 	}
 	e, err := send[platform.Expense](ctx, t.c, http.MethodPost, "/payments", body)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	return text("Recorded.\n" + t.line(ctx, e, idx)), nil, nil
 }
@@ -629,7 +642,7 @@ type remindArgs struct {
 func (t *tools) remind(ctx context.Context, _ *sdk.CallToolRequest, in remindArgs) (*sdk.CallToolResult, any, error) {
 	_, idx, err := t.index(ctx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	body := platform.ReminderInput{UserID: in.UserID}
 	if in.GroupID != "" {
@@ -637,7 +650,7 @@ func (t *tools) remind(ctx context.Context, _ *sdk.CallToolRequest, in remindArg
 	}
 	r, err := send[platform.Reminder](ctx, t.c, http.MethodPost, "/reminders", body)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	out := "Reminded " + idx.name(r.UserID) + " that they owe you " + t.balances(ctx, r.Balances) + "."
 	if !r.Emailed {
@@ -648,7 +661,7 @@ func (t *tools) remind(ctx context.Context, _ *sdk.CallToolRequest, in remindArg
 
 func (t *tools) deleteExpense(ctx context.Context, _ *sdk.CallToolRequest, in expenseArgs) (*sdk.CallToolResult, any, error) {
 	if _, err := t.c.do(ctx, http.MethodDelete, "/expenses/"+url.PathEscape(in.ExpenseID), nil, nil); err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	return text("Deleted expense " + in.ExpenseID + ". It can be restored from the app."), nil, nil
 }
