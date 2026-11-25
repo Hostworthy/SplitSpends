@@ -2,13 +2,17 @@ package bootstrap_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/invite"
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/packages/database"
+	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/google/uuid"
 )
 
@@ -135,6 +139,50 @@ func TestRemovedMemberCannotRejoinWithOwnLink(t *testing.T) {
 	}
 	if v.HasMember(ben) {
 		t.Fatal("Ben is back in the group")
+	}
+}
+
+// peeked is the group repository with a hook that runs right after a group
+// is read for the first time.
+type peeked struct {
+	*repositories.Groups
+	once *sync.Once
+	hook func()
+}
+
+func (p peeked) Get(ctx context.Context, id uuid.UUID) (*group.Group, error) {
+	g, err := p.Groups.Get(ctx, id)
+	p.once.Do(p.hook)
+	return g, err
+}
+
+// TestLinkCheckedWhenJoining checks that a link stops working for someone
+// who is accepting it at the moment its creator is removed: the removal
+// lands after the link was first checked, before the person joins.
+func TestLinkCheckedWhenJoining(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	cara := env.SignIn(t, "cara@example.com", "Cara").User.ID
+	issued, err := env.Services.Invites.Create(ctx, ben, g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookup := peeked{repositories.NewGroups(env.DB), &sync.Once{}, func() {
+		if err := env.Services.Groups.RemoveMember(context.Background(), ada, g.ID, ben); err != nil {
+			t.Error(err)
+		}
+	}}
+	invites := invite.NewService(repositories.NewInvites(env.DB), env.Services.Groups, lookup, env.Services.Users,
+		database.NewTx(env.DB), env.Clock, "http://test")
+	if _, err := invites.Accept(ctx, cara, issued.Token); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("the link of a removed member must not let anyone join, got %v", err)
+	}
+	v, err := env.Services.Groups.View(ctx, ada, g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.HasMember(cara) {
+		t.Fatal("Cara joined through the link of someone no longer in the group")
 	}
 }
 

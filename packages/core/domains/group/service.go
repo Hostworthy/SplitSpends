@@ -458,6 +458,20 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 	var added *user.User
 	var invited bool
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		// Locked and read again, as in Join, so additions at the same
+		// moment cannot pass the size check together.
+		if _, err := s.repo.Lock(ctx, id); err != nil {
+			return err
+		}
+		if g, err = s.repo.Get(ctx, id); err != nil {
+			return err
+		}
+		if !g.HasMember(actor) {
+			return errs.NotFound("Group")
+		}
+		if len(g.Members) >= MaxMembers {
+			return full()
+		}
 		u, created, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
 		if err != nil {
 			return err
@@ -487,27 +501,34 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 // Joining a group you already belong to changes nothing; an archived group
 // takes no new members.
 func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) {
-	g, err := s.repo.Get(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if g.HasMember(actor) {
-		return s.view(ctx, actor, g)
-	}
-	if g.ArchivedAt != nil {
-		return nil, errs.Conflict(g.Name + " is archived, so nobody new can join it.")
-	}
-	if len(g.Members) >= MaxMembers {
-		return nil, errs.Conflict(fmt.Sprintf("This group already has %d members, the most a group can have.", MaxMembers))
-	}
-	me, err := s.users.Get(ctx, actor)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.room(ctx, actor, me); err != nil {
-		return nil, err
-	}
-	err = s.tx.Do(ctx, func(ctx context.Context) error {
+	var g *Group
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		// Locked so people joining at the same moment cannot pass the size
+		// check together. The members are read again after the lock: the
+		// locking statement sees them as they were before it waited.
+		if _, err := s.repo.Lock(ctx, id); err != nil {
+			return err
+		}
+		var err error
+		if g, err = s.repo.Get(ctx, id); err != nil {
+			return err
+		}
+		if g.HasMember(actor) {
+			return nil
+		}
+		if g.ArchivedAt != nil {
+			return errs.Conflict(g.Name + " is archived, so nobody new can join it.")
+		}
+		if len(g.Members) >= MaxMembers {
+			return errs.Conflict(fmt.Sprintf("This group already has %d members, the most a group can have.", MaxMembers))
+		}
+		me, err := s.users.Get(ctx, actor)
+		if err != nil {
+			return err
+		}
+		if err := s.room(ctx, actor, me); err != nil {
+			return err
+		}
 		if err := s.repo.AddMember(ctx, g.ID, actor, s.clock.Now()); err != nil {
 			return err
 		}
