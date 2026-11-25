@@ -95,9 +95,18 @@ func TestObserve(t *testing.T) {
 			t.Fatalf("request id %q, header %q", seen, rec.Header().Get("X-Request-Id"))
 		}
 	})
-	t.Run("keeps a short caller id and replaces a long one", func(t *testing.T) {
+	t.Run("keeps a well-formed caller id and replaces others", func(t *testing.T) {
 		h := Observe(quiet(), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-		for id, keep := range map[string]bool{"abc-123": true, strings.Repeat("x", 65): false} {
+		for id, keep := range map[string]bool{
+			"abc-123":               true,
+			"A.b_C-9":               true,
+			strings.Repeat("x", 64): true,
+			strings.Repeat("x", 65): false,
+			"two words":             false,
+			"caf\u00e9":             false,
+			"id\x00":                false,
+			"a/b":                   false,
+		} {
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.Header.Set("X-Request-Id", id)
@@ -121,9 +130,41 @@ func TestObserve(t *testing.T) {
 		if e.Code != "INTERNAL" || e.RequestID == "" || e.RequestID != rec.Header().Get("X-Request-Id") {
 			t.Fatalf("unexpected envelope %+v", e)
 		}
-		if !strings.Contains(logs.String(), "middleware.panic.recovered") {
+		var record map[string]any
+		for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+			var r map[string]any
+			if err := json.Unmarshal([]byte(line), &r); err == nil && r["msg"] == "middleware.panic.recovered" {
+				record = r
+			}
+		}
+		if record == nil {
 			t.Fatalf("the panic must be logged: %s", logs.String())
 		}
+		if stack, _ := record["stack"].(string); !strings.Contains(stack, "goroutine") {
+			t.Fatalf("the panic log must carry a stack trace: %v", record)
+		}
+	})
+	t.Run("lets a deliberate abort through", func(t *testing.T) {
+		var logs bytes.Buffer
+		h := Observe(slog.New(slog.NewJSONHandler(&logs, nil)), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			panic(http.ErrAbortHandler)
+		}))
+		rec := httptest.NewRecorder()
+		defer func() {
+			if v := recover(); v != http.ErrAbortHandler {
+				t.Fatalf("want http.ErrAbortHandler to propagate, got %v", v)
+			}
+			if rec.Body.Len() != 0 {
+				t.Fatalf("an aborted response must get no error body: %s", rec.Body)
+			}
+			if strings.Contains(logs.String(), "middleware.panic.recovered") {
+				t.Fatalf("an abort is not a panic to report: %s", logs.String())
+			}
+			if !strings.Contains(logs.String(), "http.request.completed") {
+				t.Fatalf("an aborted request is still logged: %s", logs.String())
+			}
+		}()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/me", nil))
 	})
 }
 

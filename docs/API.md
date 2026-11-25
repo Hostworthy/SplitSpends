@@ -31,6 +31,8 @@ When AI reads amounts in another currency (a receipt from abroad), `POST /ai/exp
 
 Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `CONFLICT` (409), `RATE_LIMITED` (429), `AI_DISABLED` (503), `RATES_UNAVAILABLE` (503), `APPROVAL_PENDING` (403, the account waits for an administrator), `APPROVAL_DECLINED` (403), `INTERNAL` (500). Several codes share a status, so clients read `code`, never the status alone; a 502, 503 or 504 without the error envelope comes from a proxy in front of the API (a timeout or an outage), not from the API.
 
+Every response carries an `X-Request-Id` header, the same id as `requestId` in an error body and in the server log. A client may send its own `X-Request-Id` of 1 to 64 letters, digits, `.`, `_` or `-`; any other value is replaced by one the server makes.
+
 An object the caller may not see answers 404 `NOT_FOUND`, exactly as an id that does not exist, so ids of other people's groups, expenses, comments, categories and people reveal nothing. 403 `FORBIDDEN` is only for objects the caller can see but may not change.
 
 Every list accepts `limit` (max 200) and `offset` (default 0), and `total` counts the whole list. `GET /expenses`, `GET /activity`, `GET /admin/requests` and `GET /admin/accounts` return 50 items when `limit` is left out. The other lists return all their items when `limit` is left out, as they did before they took one. Limits keep the largest of them in check: a person belongs to at most 1000 groups (archived ones included), an expense holds at most 500 comments and a group at most 20 usable invite links.

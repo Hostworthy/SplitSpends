@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -76,10 +77,14 @@ func (r *recorder) Flush() {
 func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // Observe assigns a request id, recovers panics and writes an access log.
+// A caller's X-Request-Id is kept only when it is a plain token (see
+// validID), so ids in logs and error bodies stay easy to search for.
+// A handler that panics with http.ErrAbortHandler is logged and the panic
+// passed on, so net/http aborts the response as the handler intended.
 func Observe(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Request-Id")
-		if id == "" || len(id) > 64 {
+		if !validID(id) {
 			buf := make([]byte, 8)
 			_, _ = rand.Read(buf)
 			id = hex.EncodeToString(buf)
@@ -89,20 +94,40 @@ func Observe(log *slog.Logger, next http.Handler) http.Handler {
 		rec := &recorder{ResponseWriter: w}
 		start := time.Now()
 		defer func() {
-			if v := recover(); v != nil {
-				log.Error("middleware.panic.recovered", "requestId", id, "panic", v, "path", r.URL.Path)
+			v := recover()
+			if v != nil && v != http.ErrAbortHandler {
+				log.Error("middleware.panic.recovered", "requestId", id, "panic", v, "path", r.URL.Path,
+					"stack", string(debug.Stack()))
 				if rec.status == 0 {
 					WriteError(rec, r.WithContext(ctx), log, errors.New("middleware.panic"))
 				}
 			}
-			if r.URL.Path == "/health" {
-				return
+			if r.URL.Path != "/health" {
+				log.Info("http.request.completed", "requestId", id, "method", r.Method, "path", r.URL.Path,
+					"status", rec.status, "bytes", rec.bytes, "durationMs", time.Since(start).Milliseconds())
 			}
-			log.Info("http.request.completed", "requestId", id, "method", r.Method, "path", r.URL.Path,
-				"status", rec.status, "bytes", rec.bytes, "durationMs", time.Since(start).Milliseconds())
+			if v == http.ErrAbortHandler {
+				panic(v)
+			}
 		}()
 		next.ServeHTTP(rec, r.WithContext(ctx))
 	})
+}
+
+// validID reports whether a caller's request id is 1 to 64 letters, digits,
+// dots, underscores or hyphens.
+func validID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, c := range []byte(id) {
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '.', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // apiPolicy lets a response load nothing: JSON and stored files need no
