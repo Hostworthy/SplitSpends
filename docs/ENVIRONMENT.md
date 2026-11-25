@@ -60,7 +60,7 @@ Buckets stay private: the API checks access and streams receipts itself.
 | -------- | ------- | ------- |
 | `SIGNUP_MODE` | `invite` | Starting sign-up mode until an administrator changes it in the app (Account, Administration). `open`: anyone. `invite`: the allowed list, people a member added by email, group invite links, and people an administrator or manager approved. `approval`: anyone can ask and an administrator or manager approves them. `closed`: no new accounts. The very first account can always sign up and becomes the administrator (see `ADMIN_EMAIL`). `domain` is still read, as `invite` with the domains below |
 | `ADMIN_EMAIL` | empty | The email address of the person who runs the server. While no account is active, only this address can sign in, and it becomes the administrator; nobody else can claim a new server first. Empty: whoever signs in first becomes the administrator, whatever `SIGNUP_MODE` says, and the server logs `auth.bootstrap.open` at start until someone has |
-| `SIGNUP_ALLOWED_DOMAINS` | empty | Comma-separated domains that start out on the allowed list |
+| `SIGNUP_ALLOWED_DOMAINS` | empty | Comma-separated domains (`example.com` or `@example.com`) that start out on the allowed list. The server refuses to start when an entry is not a domain |
 | `SESSION_TTL_DAYS` | `90` | How long app sessions last. API tokens do not expire until revoked |
 
 Login codes are 6 digits, valid for 10 minutes, allow 5 attempts, and at most 5 codes per email per hour from one network and 10 per email per hour in total. Requests for unknown emails in `invite` mode get the same response as real ones and send nothing.

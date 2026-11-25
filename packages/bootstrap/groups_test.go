@@ -173,3 +173,22 @@ func TestLastMemberLeavingIsRefused(t *testing.T) {
 		t.Fatalf("they can delete the group instead: %v", err)
 	}
 }
+
+func TestArchivedGroupTakesNoMembers(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	cleo := env.SignIn(t, "cleo@example.com", "Cleo").User.ID
+	archived := true
+	if _, err := env.Services.Groups.Update(ctx, ada, g.ID, group.Patch{Archived: &archived}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Services.Groups.Join(ctx, cleo, g.ID); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("joining an archived group must be refused, got %v", err)
+	}
+	if _, err := env.Services.Groups.Join(ctx, ben, g.ID); err != nil {
+		t.Fatalf("a member joining again changes nothing: %v", err)
+	}
+	if _, err := env.Services.Groups.View(ctx, cleo, g.ID); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("Cleo must not be a member: %v", err)
+	}
+}

@@ -219,7 +219,11 @@ func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 	if invites != nil {
 		rt.Log.Error("jobs.invites.cleanup.failed", "error", invites)
 	}
-	return errors.Join(recurring, sessions, invites)
+	requests := rt.Services.Admin.Cleanup(ctx)
+	if requests != nil {
+		rt.Log.Error("jobs.requests.cleanup.failed", "error", requests)
+	}
+	return errors.Join(recurring, sessions, invites, requests)
 }
 
 // passes bounds the recurring passes of one run; each books up to 100 series.

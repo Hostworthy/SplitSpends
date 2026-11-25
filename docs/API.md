@@ -33,7 +33,7 @@ Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), 
 
 An object the caller may not see answers 404 `NOT_FOUND`, exactly as an id that does not exist, so ids of other people's groups, expenses, comments, categories and people reveal nothing. 403 `FORBIDDEN` is only for objects the caller can see but may not change.
 
-Every list accepts `limit` (max 200) and `offset` (default 0), and `total` counts the whole list. `GET /expenses`, `GET /activity` and `GET /admin/accounts` return 50 items when `limit` is left out. The other lists return all their items when `limit` is left out, as they did before they took one. Limits keep the largest of them in check: a person belongs to at most 1000 groups (archived ones included), an expense holds at most 500 comments and a group at most 20 usable invite links.
+Every list accepts `limit` (max 200) and `offset` (default 0), and `total` counts the whole list. `GET /expenses`, `GET /activity`, `GET /admin/requests` and `GET /admin/accounts` return 50 items when `limit` is left out. The other lists return all their items when `limit` is left out, as they did before they took one. Limits keep the largest of them in check: a person belongs to at most 1000 groups (archived ones included), an expense holds at most 500 comments and a group at most 20 usable invite links.
 
 Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
@@ -228,7 +228,7 @@ Any group member can create a link that lets anyone who has it join the group. L
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens, and links whose creator has left the group, alike |
+| GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens, links whose creator has left the group or was disabled, and links to archived groups, alike |
 | POST | `/invites/{token}/accept` | | `{ data: Group }`; adds the caller to the group and records `group.member-joined`. Accepting again, or as a member, returns the group unchanged. 409 when the caller is already in 1000 groups |
 
 People without an account follow the link, request a login code with `inviteToken`, sign in, then accept.
@@ -354,7 +354,7 @@ Existing active accounts always sign in. The allowed list holds addresses and wh
 | --- | --- | --- | --- |
 | GET | `/admin/signup` | | admin: `{ data: { mode, allowed: [], updatedAt } }` |
 | PUT | `/admin/signup` | `{ mode, allowed: [] }` | admin: the saved settings (entries lowercased, `example.com` becomes `@example.com`) |
-| GET | `/admin/requests` | `?status=pending\|approved\|declined` (pending by default) | admin or manager: list of `{ id, email, name, status, requestedAt, decidedAt }` |
+| GET | `/admin/requests` | `?status=pending\|approved\|declined&limit=&offset=` (pending by default) | admin or manager: list of `{ id, email, name, status, requestedAt, decidedAt }`, newest first |
 | POST | `/admin/requests/{requestId}/approve` | | admin or manager: the request; the person is emailed and can sign in. 409 while the sign-up mode is `closed` |
 | POST | `/admin/requests/{requestId}/decline` | | admin or manager: the request |
 | GET | `/admin/accounts` | `?status=active\|invited\|disabled&q=&limit=&offset=` | admin: list of `{ ...User, role, createdAt }` (everyone except people added by name only) |
@@ -362,7 +362,7 @@ Existing active accounts always sign in. The allowed list holds addresses and wh
 | POST | `/admin/accounts/{userId}/disable` | | admin: removes sessions, API tokens and push devices, deletes the email (keeping its SHA-256 hash so the same address is recognised) and sets `status: "disabled"`. The name stays on shared expenses |
 | POST | `/admin/accounts/{userId}/enable` | | admin: the person signs in again with their old email, which is stored again |
 
-Administrators and managers get an `approvals` notification (email and push) for each new request.
+Administrators and managers get an `approvals` notification (email and push) for a new request, unless another request was already waiting from less than an hour before; a burst of requests sends one notification. At most 500 requests wait at a time: beyond that, signing in as someone new answers 429 `RATE_LIMITED` until administrators decide some. A request nobody decides within 30 days is removed by the cleanup job, and the person can ask again.
 
 ### Maintenance
 

@@ -156,6 +156,14 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_MODE: use open, invite, approval or closed")
 	}
 	c.AllowedDomains = list(env("SIGNUP_ALLOWED_DOMAINS", ""))
+	if len(c.AllowedDomains) > auth.MaxAllowed {
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_ALLOWED_DOMAINS: use at most %d domains", auth.MaxAllowed)
+	}
+	for _, d := range c.AllowedDomains {
+		if _, ok := auth.Domain(d); !ok {
+			return nil, fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_ALLOWED_DOMAINS: %q is not a domain like example.com", d)
+		}
+	}
 	if c.SignupMode == auth.SignupDomain && len(c.AllowedDomains) == 0 {
 		return nil, fmt.Errorf("bootstrap.config.env.required.not-found.SIGNUP_ALLOWED_DOMAINS")
 	}
