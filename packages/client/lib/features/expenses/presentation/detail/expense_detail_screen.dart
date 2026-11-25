@@ -12,6 +12,7 @@ import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/widgets/back_home_button.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
+import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/features/categories/presentation/category_badge.dart';
@@ -161,7 +162,29 @@ class ExpenseDetailScreen extends ConsumerWidget {
 class _Header extends ConsumerWidget {
   const _Header({required this.expense});
 
+  /// A save this soon after adding counts as part of adding the expense,
+  /// not as an edit worth showing.
+  static const _settling = Duration(seconds: 5);
+
   final Expense expense;
+
+  /// "Added by you 2 days ago · edited by Ben 1 hour ago", or null when the
+  /// server did not say when the expense was added.
+  String? _history(Map<String, User> people, String? meId) {
+    final created = Dates.tryParse(expense.createdAt);
+    if (created == null) return null;
+    String who(String id) => id == meId ? 'you' : people.nameOf(id, meId: meId);
+    final added =
+        'Added by ${who(expense.createdBy ?? '')} ${Dates.relative(created)}';
+    final updated = Dates.tryParse(expense.updatedAt);
+    final editor = expense.updatedBy;
+    if (updated == null ||
+        editor == null ||
+        updated.difference(created) <= _settling) {
+      return added;
+    }
+    return '$added · edited by ${who(editor)} ${Dates.relative(updated)}';
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -173,8 +196,7 @@ class _Header extends ConsumerWidget {
     final groupName = expense.groupId == null
         ? null
         : ref.watch(groupProvider(expense.groupId!)).value?.name;
-    final created = Dates.tryParse(expense.createdAt);
-    final updated = Dates.tryParse(expense.updatedAt);
+    final history = _history(people, meId);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -215,13 +237,8 @@ class _Header extends ConsumerWidget {
                   ].where((s) => s.isNotEmpty).join(' · '),
                   style: text.bodyMedium?.copyWith(color: muted),
                 ),
-                if (created != null)
-                  Text(
-                    'Added by ${expense.createdBy == meId ? 'you' : people.nameOf(expense.createdBy ?? '', meId: meId)} '
-                    '${Dates.relative(created)}'
-                    '${updated != null && expense.updatedBy != null && updated.difference(created).inSeconds > 5 ? ' · edited by ${expense.updatedBy == meId ? 'you' : people.nameOf(expense.updatedBy!, meId: meId)} ${Dates.relative(updated)}' : ''}',
-                    style: text.bodySmall?.copyWith(color: muted),
-                  ),
+                if (history != null)
+                  Text(history, style: text.bodySmall?.copyWith(color: muted)),
                 if (expense.unknownRecurrence != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
