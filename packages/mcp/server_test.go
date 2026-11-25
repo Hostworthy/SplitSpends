@@ -433,7 +433,7 @@ func TestSignedOutMessage(t *testing.T) {
 		writeJSON(w, `{"error":"Sign in again.","code":"UNAUTHORIZED"}`)
 	})
 	res, _, _ := bind(c).listGroups(context.Background(), nil, empty{})
-	if !res.IsError || !strings.Contains(resultText(res), "create an API token") {
+	if !res.IsError || !strings.Contains(resultText(res), "under Account, API tokens") {
 		t.Fatalf("got %q", resultText(res))
 	}
 }

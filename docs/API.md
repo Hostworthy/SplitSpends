@@ -8,7 +8,7 @@ A JSON request body holds exactly one JSON value of at most 1 MB (16 MB for `POS
 
 ### Authentication
 
-Send `Authorization: Bearer <token>`. Tokens come from the OTP login flow (sessions) or from **Settings → API tokens** (long-lived personal tokens, used by the MCP server). Unauthenticated endpoints are marked **public**.
+Send `Authorization: Bearer <token>`. Tokens come from the OTP login flow (sessions) or from **Account → API tokens** in the app (long-lived personal tokens, used by the MCP server). Unauthenticated endpoints are marked **public**.
 
 ### Money
 
