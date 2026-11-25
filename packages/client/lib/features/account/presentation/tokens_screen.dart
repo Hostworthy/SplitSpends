@@ -6,6 +6,7 @@ import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/account/domain/api_token.dart';
 import 'package:splitspends/features/account/presentation/providers.dart';
 
 /// Personal API tokens for the MCP server and other clients.
@@ -13,33 +14,10 @@ class TokensScreen extends ConsumerWidget {
   const TokensScreen({super.key});
 
   Future<void> _create(BuildContext context, WidgetRef ref) async {
-    final controller = TextEditingController(text: 'MCP');
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('New API token'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Name',
-            hintText: 'Claude Desktop, laptop…',
-          ),
-          onSubmitted: (v) => Navigator.pop(context, v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Create'),
-          ),
-        ],
-      ),
+      builder: (context) => const _NameDialog(),
     );
-    controller.dispose();
     if (name == null || name.trim().isEmpty) return;
     try {
       final token = await ref
@@ -47,8 +25,10 @@ class TokensScreen extends ConsumerWidget {
           .create(name.trim());
       ref.invalidate(tokensProvider);
       if (!context.mounted || token.token == null) return;
+      // The secret is shown only once, so only Done closes the dialog.
       await showDialog<void>(
         context: context,
+        barrierDismissible: false,
         builder: (context) => _TokenCreatedDialog(token: token.token!),
       );
     } catch (error) {
@@ -56,9 +36,34 @@ class TokensScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _revoke(BuildContext context, WidgetRef ref, String id) async {
+  Future<void> _revoke(
+    BuildContext context,
+    WidgetRef ref,
+    ApiToken token,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Revoke "${token.name}"?'),
+        content: const Text(
+          'Clients using this token stop working until you give them a '
+          'new one.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Revoke'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
     try {
-      await ref.read(tokensRepositoryProvider).revoke(id);
+      await ref.read(tokensRepositoryProvider).revoke(token.id);
       ref.invalidate(tokensProvider);
     } catch (error) {
       if (context.mounted) showError(context, error);
@@ -128,7 +133,7 @@ class TokensScreen extends ConsumerWidget {
                                   '${t.lastUsedAt == null ? ' · never used' : ' · used ${Dates.relative(Dates.tryParse(t.lastUsedAt) ?? DateTime.now())}'}',
                                 ),
                                 trailing: TextButton(
-                                  onPressed: () => _revoke(context, ref, t.id),
+                                  onPressed: () => _revoke(context, ref, t),
                                   child: const Text('Revoke'),
                                 ),
                               ),
@@ -144,6 +149,51 @@ class TokensScreen extends ConsumerWidget {
   }
 }
 
+/// Asks for the new token's name. It owns its controller, so the field
+/// outlives the dialog's closing animation.
+class _NameDialog extends StatefulWidget {
+  const _NameDialog();
+
+  @override
+  State<_NameDialog> createState() => _NameDialogState();
+}
+
+class _NameDialogState extends State<_NameDialog> {
+  final _controller = TextEditingController(text: 'MCP');
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('New API token'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(
+          labelText: 'Name',
+          hintText: 'Claude Desktop, laptop…',
+        ),
+        onSubmitted: (v) => Navigator.pop(context, v),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Create'),
+        ),
+      ],
+    );
+  }
+}
+
 class _TokenCreatedDialog extends StatelessWidget {
   const _TokenCreatedDialog({required this.token});
 
@@ -151,41 +201,44 @@ class _TokenCreatedDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Copy your token'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('You will not see it again.'),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: const Text('Copy your token'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('You will not see it again.'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: SelectableText(
+                token,
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
             ),
-            child: SelectableText(
-              token,
-              style: const TextStyle(fontFamily: 'monospace'),
-            ),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: token));
+              if (context.mounted) showMessage(context, 'Token copied');
+            },
+            icon: const Icon(Icons.copy_rounded),
+            label: const Text('Copy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done'),
           ),
         ],
       ),
-      actions: [
-        TextButton.icon(
-          onPressed: () async {
-            await Clipboard.setData(ClipboardData(text: token));
-            if (context.mounted) showMessage(context, 'Token copied');
-          },
-          icon: const Icon(Icons.copy_rounded),
-          label: const Text('Copy'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Done'),
-        ),
-      ],
     );
   }
 }
