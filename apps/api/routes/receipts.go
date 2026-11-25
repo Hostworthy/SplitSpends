@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
@@ -106,12 +105,7 @@ func (a *API) draftExpense(w http.ResponseWriter, r *http.Request) error {
 		out.Payers = append(out.Payers, platform.Payer{UserID: p.UserID.String(), Amount: p.Amount})
 	}
 	for _, s := range d.Splits {
-		split := platform.Split{UserID: s.UserID.String()}
-		if s.Value != "" {
-			v := json.Number(s.Value)
-			split.Value = &v
-		}
-		out.Splits = append(out.Splits, split)
+		out.Splits = append(out.Splits, platform.Split{UserID: s.UserID.String(), Value: number(s.Value)})
 	}
 	for _, it := range d.Items {
 		ids := make([]string, len(it.UserIDs))

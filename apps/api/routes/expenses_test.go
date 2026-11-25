@@ -3,6 +3,7 @@ package routes
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"net/http"
 	"slices"
 	"testing"
@@ -75,6 +76,34 @@ func TestDecimalString(t *testing.T) {
 		if got := decimalString(c.amount, c.exponent); got != c.want {
 			t.Errorf("decimalString(%d, %d) = %q, want %q", c.amount, c.exponent, got, c.want)
 		}
+	}
+}
+
+func TestNumber(t *testing.T) {
+	for _, c := range []struct {
+		value string
+		want  string
+	}{
+		{"60", "60"},
+		{"33.3333", "33.3333"},
+		{"2.50", "2.50"},
+		{".5", "0.5"},
+		{"1.", "1"},
+		{"+2", "2"},
+		{"05", "5"},
+		{"-0", "0"},
+	} {
+		got := number(c.value)
+		if got == nil || got.String() != c.want {
+			t.Errorf("number(%q) = %v, want %q", c.value, got, c.want)
+			continue
+		}
+		if _, err := json.Marshal(got); err != nil {
+			t.Errorf("number(%q) is not valid JSON: %v", c.value, err)
+		}
+	}
+	if got := number(""); got != nil {
+		t.Errorf("number(\"\") = %v, want nil", *got)
 	}
 }
 
