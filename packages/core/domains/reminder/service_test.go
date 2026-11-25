@@ -37,6 +37,7 @@ func (m memUsers) List(_ context.Context, ids []uuid.UUID) ([]*user.User, error)
 func (m memUsers) Create(_ context.Context, u *user.User) error { m[u.ID] = u; return nil }
 func (m memUsers) Update(_ context.Context, u *user.User) error { m[u.ID] = u; return nil }
 func (m memUsers) Count(context.Context) (int, error)           { return len(m), nil }
+func (m memUsers) Lock(context.Context) error                   { return nil }
 func (m memUsers) Placeholders(context.Context, uuid.UUID) (int, error) {
 	return 0, nil
 }
