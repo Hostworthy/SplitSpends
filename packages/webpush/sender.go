@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	wp "github.com/SherClockHolmes/webpush-go"
+	"golang.org/x/net/http/httpproxy"
 )
 
 // TTL is how long push services keep a message for an offline device.
@@ -138,7 +140,9 @@ func recordSize(n int) uint32 {
 // guarded returns a client that does not follow redirects and refuses to
 // connect to addresses a user-supplied endpoint should never reach (cloud
 // metadata, and unless allowPrivate, loopback and private networks).
-// Connections to a configured HTTP(S) proxy are allowed.
+// Connections to a configured HTTP(S) proxy are allowed; the proxy connects
+// to the endpoint itself, so before handing a request to it the endpoint's
+// host is checked as far as this server can resolve it.
 func guarded(allowPrivate bool) *http.Client {
 	proxies := proxyAddrs()
 	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
@@ -153,6 +157,17 @@ func guarded(allowPrivate bool) *http.Client {
 	}}
 	direct := &net.Dialer{Timeout: 10 * time.Second}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	proxy := httpproxy.FromEnvironment().ProxyFunc()
+	transport.Proxy = func(req *http.Request) (*url.URL, error) {
+		via, err := proxy(req.URL)
+		if err != nil || via == nil {
+			return via, err
+		}
+		if err := screen(req.Context(), req.URL.Hostname(), allowPrivate, net.DefaultResolver.LookupNetIP); err != nil {
+			return nil, err
+		}
+		return via, nil
+	}
 	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if proxies[addr] {
 			return direct.DialContext(ctx, network, addr)
@@ -161,6 +176,25 @@ func guarded(allowPrivate bool) *http.Client {
 	}
 	return &http.Client{Transport: transport, Timeout: 15 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+// screen refuses a host that is, or resolves to, an address Blocked
+// rejects. Any blocked address is enough, since the proxy may pick it. A
+// host this server cannot resolve is left to the proxy: networks that only
+// reach the internet through a proxy often have no public DNS.
+func screen(ctx context.Context, host string, allowPrivate bool, lookup func(context.Context, string, string) ([]netip.Addr, error)) error {
+	addrs := []netip.Addr{}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		addrs = append(addrs, ip)
+	} else if found, err := lookup(ctx, "ip", host); err == nil {
+		addrs = found
+	}
+	for _, ip := range addrs {
+		if push.Blocked(net.IP(ip.Unmap().AsSlice()), allowPrivate) {
+			return fmt.Errorf("webpush.endpoint.blocked: %s", host)
+		}
+	}
+	return nil
 }
 
 // proxyAddrs lists host:port of the proxies in the environment, which the

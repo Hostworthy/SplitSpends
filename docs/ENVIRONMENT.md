@@ -108,7 +108,7 @@ The private key in the database is stored like the rest of your data: it only le
 
 Push is on whenever a key pair is available; `GET /api/v1/config` reports `pushEnabled` and `vapidPublicKey`. With `SERVERLESS=true`, notifications are pushed before the response returns, like emails.
 
-Outgoing requests: push endpoints come from devices, so the server refuses endpoints that resolve to loopback, private, link-local (cloud metadata) or carrier-grade NAT addresses and does not follow redirects; an endpoint whose host is such an address is refused when the device registers. `PUSH_ALLOW_PRIVATE=true` lifts the private and loopback part (link-local stays blocked). When the server reaches the internet through an `HTTPS_PROXY`, the proxy resolves endpoints, so the address check applies only to direct connections.
+Outgoing requests: push endpoints come from devices, so the server refuses endpoints that resolve to loopback, private, link-local (cloud metadata) or carrier-grade NAT addresses and does not follow redirects; an endpoint whose host is such an address is refused when the device registers. `PUSH_ALLOW_PRIVATE=true` lifts the private and loopback part (link-local stays blocked). When the server reaches the internet through an `HTTPS_PROXY`, the proxy connects to endpoints itself: the server still refuses an endpoint whose host is such an address or resolves to one with the server's own DNS, but a host it cannot resolve is handed to the proxy, so restrict what the proxy may reach as well.
 
 ## AI (Optional)
 

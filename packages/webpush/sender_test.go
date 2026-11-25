@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -244,6 +245,88 @@ func TestDefaultClientRefusesLoopback(t *testing.T) {
 	}
 	if len(got()) != 0 {
 		t.Fatal("the request must not reach a loopback endpoint")
+	}
+}
+
+// TestProxyRefusesBlockedEndpoints checks that behind HTTPS_PROXY, where
+// the proxy and not this server connects to the endpoint, an endpoint at a
+// blocked address never reaches the proxy, while others go through it.
+func TestProxyRefusesBlockedEndpoints(t *testing.T) {
+	var mu sync.Mutex
+	var connects []string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		connects = append(connects, r.Method+" "+r.Host)
+		mu.Unlock()
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(proxy.Close)
+	for _, key := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("HTTPS_PROXY", proxy.URL)
+	public, private, _ := Keys()
+	sender, err := New(Config{PublicKey: public, PrivateKey: private, Subject: "mailto:a@b.c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := newDevice(t)
+	for _, endpoint := range []string{"https://169.254.169.254/latest", "https://10.0.0.5:6443/x", "https://[::ffff:10.0.0.5]/x"} {
+		err := sender.Send(context.Background(), dev.subscription(endpoint), []byte(`{}`))
+		if err == nil || !strings.Contains(err.Error(), "webpush.endpoint.blocked") {
+			t.Errorf("%s: want a blocked error, got %v", endpoint, err)
+		}
+	}
+	mu.Lock()
+	if len(connects) != 0 {
+		t.Errorf("blocked endpoints must not reach the proxy, got %v", connects)
+	}
+	mu.Unlock()
+
+	if err := sender.Send(context.Background(), dev.subscription("https://142.250.74.106/push"), []byte(`{}`)); err == nil {
+		t.Fatal("the test proxy refuses every tunnel, so the send should fail")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(connects) != 1 || connects[0] != "CONNECT 142.250.74.106:443" {
+		t.Fatalf("a public endpoint should be tunnelled through the proxy, got %v", connects)
+	}
+}
+
+func TestScreen(t *testing.T) {
+	names := map[string][]netip.Addr{
+		"push.example.com": {netip.MustParseAddr("142.250.74.106")},
+		"metadata.test":    {netip.MustParseAddr("169.254.169.254")},
+		"mixed.test":       {netip.MustParseAddr("142.250.74.106"), netip.MustParseAddr("10.0.0.5")},
+		"lan.test":         {netip.MustParseAddr("192.168.1.20")},
+	}
+	lookup := func(_ context.Context, _, host string) ([]netip.Addr, error) {
+		if addrs, ok := names[host]; ok {
+			return addrs, nil
+		}
+		return nil, errors.New("no such host")
+	}
+	cases := []struct {
+		host         string
+		allowPrivate bool
+		blocked      bool
+	}{
+		{"push.example.com", false, false},
+		{"142.250.74.106", false, false},
+		{"unresolvable.test", false, false},
+		{"metadata.test", false, true},
+		{"metadata.test", true, true},
+		{"mixed.test", false, true},
+		{"lan.test", false, true},
+		{"lan.test", true, false},
+		{"10.0.0.5", false, true},
+		{"::ffff:169.254.169.254", true, true},
+	}
+	for _, tc := range cases {
+		err := screen(context.Background(), tc.host, tc.allowPrivate, lookup)
+		if (err != nil) != tc.blocked {
+			t.Errorf("screen(%s, %v) = %v, want blocked %v", tc.host, tc.allowPrivate, err, tc.blocked)
+		}
 	}
 }
 
