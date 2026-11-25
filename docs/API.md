@@ -145,7 +145,7 @@ A `percent` or `shares` default applies only while its members are exactly the g
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| POST | `/auth/otp/request` | `{ email, inviteToken? }` | **public**, 202 `{ data: { sent: true, expiresInSeconds: 600 } }` (identical whether or not the email exists). `inviteToken` is the token of a valid group invite link; it lets a new email sign up when `signupMode` would otherwise refuse it. An invalid token gets the same response and sends nothing |
+| POST | `/auth/otp/request` | `{ email, inviteToken? }` | **public**, 202 `{ data: { sent: true, expiresInSeconds: 600 } }` (identical whether or not the email exists, and whether or not the email could be sent). 429 `RATE_LIMITED` after 5 requests for an email in an hour from one network, or 10 from all networks, for every address alike. `inviteToken` is the token of a valid group invite link; it lets a new email sign up when `signupMode` would otherwise refuse it. An invalid token gets the same response and sends nothing |
 | POST | `/auth/otp/verify` | `{ email, code, name? }` | **public**, 200 `{ data: { token, expiresAt, user: Me, isNew } }` |
 | POST | `/auth/logout` | | 204, revokes the current session |
 

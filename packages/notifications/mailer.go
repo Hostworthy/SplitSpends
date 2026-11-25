@@ -36,8 +36,8 @@ type Sender interface {
 	Send(ctx context.Context, to, subject, text, html string) error
 }
 
-// Notifier renders and delivers emails. Login codes and invites are sent
-// synchronously; other notifications go through a bounded background queue.
+// Notifier renders and delivers emails through a bounded background queue,
+// or before returning when Sync is set.
 type Notifier struct {
 	sender Sender
 	cfg    Config
@@ -77,17 +77,28 @@ func (n *Notifier) deliver(msg ports.Notification) {
 	defer cancel()
 	text, html := n.render(msg.Name, msg.Lines, msg.Link, "Open "+n.cfg.AppName)
 	if err := n.sender.Send(ctx, msg.To, msg.Subject, text, html); err != nil {
-		n.log.Error("notifications.send.failed", "subject", msg.Subject, "error", err)
+		n.log.Error("notifications.send.failed", about(msg), "error", err)
 	}
 }
 
+// loginCode is the kind of login code emails. Their subject holds the code,
+// so it is never logged.
+const loginCode = "loginCode"
+
+func about(msg ports.Notification) slog.Attr {
+	if msg.Kind == loginCode {
+		return slog.String("kind", msg.Kind)
+	}
+	return slog.String("subject", msg.Subject)
+}
+
+// LoginCode queues the code like any other email. Sign-in answers the same
+// way and as quickly whether or not a code is sent, so a slow or failing
+// mail server must not show in the response; failures are logged.
 func (n *Notifier) LoginCode(ctx context.Context, to, code string, ttl time.Duration) error {
 	lines := []string{"Your " + n.cfg.AppName + " sign-in code is:", code,
 		fmt.Sprintf("It expires in %d minutes. If you did not ask for it, you can ignore this email.", int(ttl.Minutes()))}
-	text, html := n.render("", lines, "", "")
-	if err := n.sender.Send(ctx, to, code+" is your "+n.cfg.AppName+" code", text, html); err != nil {
-		return fmt.Errorf("notifications.login-code.failed: %w", err)
-	}
+	n.Notify(ctx, ports.Notification{To: to, Kind: loginCode, Subject: code + " is your " + n.cfg.AppName + " code", Lines: lines})
 	return nil
 }
 
@@ -109,7 +120,7 @@ func (n *Notifier) Notify(_ context.Context, msg ports.Notification) {
 	select {
 	case n.queue <- msg:
 	default:
-		n.log.Warn("notifications.queue.full", "subject", msg.Subject)
+		n.log.Warn("notifications.queue.full", about(msg))
 	}
 }
 

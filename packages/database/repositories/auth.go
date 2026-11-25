@@ -43,7 +43,7 @@ func (r *Challenges) CountSince(ctx context.Context, email, client string, since
 
 func (r *Challenges) Attempt(ctx context.Context, email string, now time.Time, limit int) ([]*auth.Challenge, error) {
 	rows, err := r.db.Q(ctx).Query(ctx, `UPDATE login_challenges SET attempts = attempts + 1
-		WHERE email = $1 AND consumed_at IS NULL AND expires_at > $2 AND attempts < $3
+		WHERE email = $1 AND code_hash <> '' AND consumed_at IS NULL AND expires_at > $2 AND attempts < $3
 		RETURNING `+challengeColumns, email, now, limit)
 	if err != nil {
 		return nil, err
