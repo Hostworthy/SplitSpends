@@ -29,7 +29,7 @@ func (a *API) createPushSubscription(w http.ResponseWriter, r *http.Request) err
 	if strings.TrimSpace(label) == "" {
 		label = deviceLabel(r.UserAgent())
 	}
-	s, created, err := a.svc.Push.Register(r.Context(), me(r), push.Input{Endpoint: in.Endpoint, P256dh: in.Keys.P256dh,
+	s, created, err := a.svc.Push.Register(r.Context(), me(r), session(r), push.Input{Endpoint: in.Endpoint, P256dh: in.Keys.P256dh,
 		Auth: in.Keys.Auth, Platform: in.Platform, Label: label})
 	if err != nil {
 		return err

@@ -164,11 +164,11 @@ func TestNewValidates(t *testing.T) {
 		{Endpoint: "https://push.example.com/" + strings.Repeat("a", 2100), P256dh: testKey, Auth: testAuth},
 	}
 	for _, in := range bad {
-		if _, err := New(me, in, time.Now()); !errs.Is(err, errs.KindValidation) {
+		if _, err := New(me, uuid.New(), in, time.Now()); !errs.Is(err, errs.KindValidation) {
 			t.Errorf("%+v: want a validation error, got %v", in, err)
 		}
 	}
-	s, err := New(me, Input{Endpoint: " https://push.example.com/x ", P256dh: testKey + "=", Auth: testAuth, Label: "  My   phone "}, time.Now())
+	s, err := New(me, uuid.New(), Input{Endpoint: " https://push.example.com/x ", P256dh: testKey + "=", Auth: testAuth, Label: "  My   phone "}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,21 +210,21 @@ func TestRegisterRefusesBlockedAddresses(t *testing.T) {
 	ctx := context.Background()
 	me := uuid.New()
 	for _, endpoint := range []string{"https://127.0.0.1/x", "https://169.254.169.254/x", "https://[::1]:8443/x", "https://10.0.0.8/x"} {
-		if _, _, err := svc.Register(ctx, me, input(endpoint)); !errs.Is(err, errs.KindValidation) {
+		if _, _, err := svc.Register(ctx, me, uuid.New(), input(endpoint)); !errs.Is(err, errs.KindValidation) {
 			t.Errorf("%s: want a validation error, got %v", endpoint, err)
 		}
 	}
 	for _, endpoint := range []string{"https://push.example.com:8443/x", "https://142.250.74.106/x"} {
-		if _, _, err := svc.Register(ctx, me, input(endpoint)); err != nil {
+		if _, _, err := svc.Register(ctx, me, uuid.New(), input(endpoint)); err != nil {
 			t.Errorf("%s: %v", endpoint, err)
 		}
 	}
 
 	svc.settings.AllowPrivate = true
-	if _, _, err := svc.Register(ctx, me, input("https://192.168.1.20:2586/up")); err != nil {
+	if _, _, err := svc.Register(ctx, me, uuid.New(), input("https://192.168.1.20:2586/up")); err != nil {
 		t.Errorf("a LAN distributor should be allowed when private endpoints are: %v", err)
 	}
-	if _, _, err := svc.Register(ctx, me, input("https://169.254.169.254/x")); !errs.Is(err, errs.KindValidation) {
+	if _, _, err := svc.Register(ctx, me, uuid.New(), input("https://169.254.169.254/x")); !errs.Is(err, errs.KindValidation) {
 		t.Errorf("metadata addresses stay refused, got %v", err)
 	}
 }
@@ -233,17 +233,17 @@ func TestRegisterIsIdempotent(t *testing.T) {
 	svc, repo, _ := setup()
 	ctx := context.Background()
 	me := uuid.New()
-	first, created, err := svc.Register(ctx, me, input("https://push.example.com/a"))
+	first, created, err := svc.Register(ctx, me, uuid.New(), input("https://push.example.com/a"))
 	if err != nil || !created {
 		t.Fatalf("first register: created=%v err=%v", created, err)
 	}
-	again, created, err := svc.Register(ctx, me, input("https://push.example.com/a"))
+	again, created, err := svc.Register(ctx, me, uuid.New(), input("https://push.example.com/a"))
 	if err != nil || created || again.ID != first.ID || len(repo.subs) != 1 {
 		t.Fatalf("second register should refresh: created=%v id=%v rows=%d err=%v", created, again.ID, len(repo.subs), err)
 	}
 	// The same browser signed in as someone else moves to them.
 	other := uuid.New()
-	if _, _, err := svc.Register(ctx, other, input("https://push.example.com/a")); err != nil {
+	if _, _, err := svc.Register(ctx, other, uuid.New(), input("https://push.example.com/a")); err != nil {
 		t.Fatal(err)
 	}
 	if mine, _ := svc.List(ctx, me); len(mine) != 0 {
@@ -256,24 +256,24 @@ func TestRegisterCapsDevices(t *testing.T) {
 	ctx := context.Background()
 	me := uuid.New()
 	for i := 0; i < MaxDevices; i++ {
-		if _, _, err := svc.Register(ctx, me, input("https://push.example.com/"+uuid.NewString())); err != nil {
+		if _, _, err := svc.Register(ctx, me, uuid.New(), input("https://push.example.com/"+uuid.NewString())); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/one-more")); !errs.Is(err, errs.KindConflict) {
+	if _, _, err := svc.Register(ctx, me, uuid.New(), input("https://push.example.com/one-more")); !errs.Is(err, errs.KindConflict) {
 		t.Fatalf("want conflict over the cap, got %v", err)
 	}
 	// Taking over someone else's device counts too.
 	other := uuid.New()
-	if _, _, err := svc.Register(ctx, other, input("https://push.example.com/theirs")); err != nil {
+	if _, _, err := svc.Register(ctx, other, uuid.New(), input("https://push.example.com/theirs")); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/theirs")); !errs.Is(err, errs.KindConflict) {
+	if _, _, err := svc.Register(ctx, me, uuid.New(), input("https://push.example.com/theirs")); !errs.Is(err, errs.KindConflict) {
 		t.Fatalf("want conflict when moving a device over the cap, got %v", err)
 	}
 	// Refreshing a device already counted is fine.
 	mine, _ := svc.List(ctx, me)
-	if _, _, err := svc.Register(ctx, me, input(mine[0].Endpoint)); err != nil {
+	if _, _, err := svc.Register(ctx, me, uuid.New(), input(mine[0].Endpoint)); err != nil {
 		t.Fatalf("refreshing a device at the cap: %v", err)
 	}
 }
@@ -283,7 +283,7 @@ func TestDisabled(t *testing.T) {
 	if svc.Enabled() || svc.PublicKey() != "" {
 		t.Fatal("a service without a sender must be disabled")
 	}
-	if _, _, err := svc.Register(context.Background(), uuid.New(), input("https://push.example.com/a")); !errs.Is(err, errs.KindConflict) {
+	if _, _, err := svc.Register(context.Background(), uuid.New(), uuid.New(), input("https://push.example.com/a")); !errs.Is(err, errs.KindConflict) {
 		t.Fatalf("register should fail when disabled, got %v", err)
 	}
 	if r, err := svc.Notify(context.Background(), ports.Notification{UserID: uuid.New(), Subject: "x"}); err != nil || r != (Report{}) {
@@ -296,7 +296,7 @@ func TestNotifyRemovesGoneAndCountsFailures(t *testing.T) {
 	ctx := context.Background()
 	me := uuid.New()
 	for _, e := range []string{"ok", "gone", "down"} {
-		if _, _, err := svc.Register(ctx, me, input("https://push.example.com/"+e)); err != nil {
+		if _, _, err := svc.Register(ctx, me, uuid.New(), input("https://push.example.com/"+e)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -356,11 +356,11 @@ func TestSlowDevicesDoNotHoldUpOthers(t *testing.T) {
 	for i := range MaxDevices - 1 {
 		endpoint := fmt.Sprintf("https://slow.example.com/%d", i)
 		sender.hang[endpoint] = true
-		if _, _, err := svc.Register(ctx, me, input(endpoint)); err != nil {
+		if _, _, err := svc.Register(ctx, me, uuid.New(), input(endpoint)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/fast")); err != nil {
+	if _, _, err := svc.Register(ctx, me, uuid.New(), input("https://push.example.com/fast")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -388,7 +388,7 @@ func TestNotifyReportsStoreErrors(t *testing.T) {
 	svc, repo, sender := setup()
 	ctx := context.Background()
 	me := uuid.New()
-	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/gone")); err != nil {
+	if _, _, err := svc.Register(ctx, me, uuid.New(), input("https://push.example.com/gone")); err != nil {
 		t.Fatal(err)
 	}
 	sender.answers["https://push.example.com/gone"] = ErrGone
@@ -407,7 +407,7 @@ func TestNotifyReportsStoreErrors(t *testing.T) {
 func TestNotifyRecordsAfterDeadline(t *testing.T) {
 	svc, repo, sender := setup()
 	me := uuid.New()
-	if _, _, err := svc.Register(context.Background(), me, input("https://push.example.com/slow")); err != nil {
+	if _, _, err := svc.Register(context.Background(), me, uuid.New(), input("https://push.example.com/slow")); err != nil {
 		t.Fatal(err)
 	}
 	sender.hang["https://push.example.com/slow"] = true
@@ -444,7 +444,7 @@ func TestTest(t *testing.T) {
 	if _, err := svc.Test(ctx, me); !errs.Is(err, errs.KindConflict) {
 		t.Fatalf("testing without devices should explain, got %v", err)
 	}
-	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/a")); err != nil {
+	if _, _, err := svc.Register(ctx, me, uuid.New(), input("https://push.example.com/a")); err != nil {
 		t.Fatal(err)
 	}
 	r, err := svc.Test(ctx, me)
@@ -466,7 +466,7 @@ func TestTestHasDeadline(t *testing.T) {
 	for i := range MaxDevices {
 		endpoint := fmt.Sprintf("https://slow.example.com/%d", i)
 		sender.hang[endpoint] = true
-		if _, _, err := svc.Register(ctx, me, input(endpoint)); err != nil {
+		if _, _, err := svc.Register(ctx, me, uuid.New(), input(endpoint)); err != nil {
 			t.Fatal(err)
 		}
 	}

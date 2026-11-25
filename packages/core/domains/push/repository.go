@@ -11,13 +11,14 @@ import (
 // Repository persists subscriptions.
 type Repository interface {
 	// Save inserts s, or refreshes the subscription with the same endpoint
-	// (keys, platform, label and owner), resetting its failures only when
+	// (keys, platform, label, owner and session), resetting its failures only when
 	// the keys changed: the same device registering again is not a fresh
 	// start, a new subscription on it is. It fills s.ID, s.CreatedAt,
 	// s.LastSuccessAt and s.Failures from the stored row and reports
 	// whether a new row was created. When s.UserID already has limit other
 	// subscriptions it stores nothing and returns ErrFull; the check and
-	// the write are atomic, so concurrent calls cannot pass the limit.
+	// the write are atomic, so concurrent calls cannot pass the limit. A
+	// subscription is deleted together with its session (s.SessionID).
 	Save(ctx context.Context, s *Subscription, limit int) (created bool, err error)
 	// List returns userID's subscriptions, newest first.
 	List(ctx context.Context, userID uuid.UUID) ([]*Subscription, error)

@@ -19,12 +19,24 @@ type PushSubscriptions struct{ db *database.DB }
 // NewPushSubscriptions builds PushSubscriptions.
 func NewPushSubscriptions(db *database.DB) *PushSubscriptions { return &PushSubscriptions{db: db} }
 
-const pushColumns = `id, user_id, created_at, updated_at, last_success_at, failures, platform, endpoint, p256dh, auth, label`
+const pushColumns = `id, user_id, session_id, created_at, updated_at, last_success_at, failures, platform, endpoint, p256dh, auth, label`
 
 func scanPush(row pgx.Row) (*push.Subscription, error) {
 	var s push.Subscription
-	err := row.Scan(&s.ID, &s.UserID, &s.CreatedAt, &s.UpdatedAt, &s.LastSuccessAt, &s.Failures, &s.Platform, &s.Endpoint, &s.P256dh, &s.Auth, &s.Label)
+	var session *uuid.UUID
+	err := row.Scan(&s.ID, &s.UserID, &session, &s.CreatedAt, &s.UpdatedAt, &s.LastSuccessAt, &s.Failures, &s.Platform, &s.Endpoint, &s.P256dh, &s.Auth, &s.Label)
+	if session != nil {
+		s.SessionID = *session
+	}
 	return &s, err
+}
+
+// optional stores uuid.Nil as NULL.
+func optional(id uuid.UUID) *uuid.UUID {
+	if id == uuid.Nil {
+		return nil
+	}
+	return &id
 }
 
 // Save holds a lock on the user while it counts and writes, so concurrent
@@ -45,14 +57,14 @@ func (r *PushSubscriptions) Save(ctx context.Context, s *push.Subscription, limi
 			return push.ErrFull
 		}
 		return q.QueryRow(ctx, `
-		INSERT INTO push_subscriptions (id, user_id, created_at, updated_at, platform, endpoint, p256dh, auth, label)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = EXCLUDED.updated_at,
+		INSERT INTO push_subscriptions (id, user_id, session_id, created_at, updated_at, platform, endpoint, p256dh, auth, label)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, session_id = EXCLUDED.session_id, updated_at = EXCLUDED.updated_at,
 			platform = EXCLUDED.platform, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth, label = EXCLUDED.label,
 			failures = CASE WHEN push_subscriptions.p256dh = EXCLUDED.p256dh AND push_subscriptions.auth = EXCLUDED.auth
 				THEN push_subscriptions.failures ELSE 0 END
 		RETURNING id, created_at, last_success_at, failures, (xmax = 0)`,
-			s.ID, s.UserID, s.CreatedAt, s.UpdatedAt, s.Platform, s.Endpoint, s.P256dh, s.Auth, s.Label,
+			s.ID, s.UserID, optional(s.SessionID), s.CreatedAt, s.UpdatedAt, s.Platform, s.Endpoint, s.P256dh, s.Auth, s.Label,
 		).Scan(&s.ID, &s.CreatedAt, &s.LastSuccessAt, &s.Failures, &created)
 	})
 	return created, err
