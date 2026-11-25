@@ -249,6 +249,122 @@ func TestUploadQuotaIsAtomic(t *testing.T) {
 	}
 }
 
+// attaching is the expense repository with a hook that runs right after an
+// expense is written, before its transaction commits.
+type attaching struct {
+	*repositories.Expenses
+	after func()
+}
+
+func (a attaching) Create(ctx context.Context, e *expense.Expense) error {
+	if err := a.Expenses.Create(ctx, e); err != nil {
+		return err
+	}
+	a.after()
+	return nil
+}
+
+// stale uploads a receipt for Ada that has waited for an expense longer than
+// cleanup allows.
+func stale(t *testing.T, env *bootstraptest.Env, ada uuid.UUID) *receipt.Receipt {
+	t.Helper()
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+	r, err := env.Services.Receipts.Upload(context.Background(), ada, png)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.Clock.Add(receipt.PendingTTL + time.Minute)
+	return r
+}
+
+// bread is an expense Ada paid and shares equally with Ben, with a receipt.
+func bread(groupID, receiptID, ada, ben uuid.UUID) expense.Input {
+	return expense.Input{GroupID: &groupID, Description: "Bread", Currency: "EUR", Total: 300, Date: "2026-03-15",
+		Method: expense.MethodEqual, ReceiptID: &receiptID,
+		Payers: []expense.Payer{{UserID: ada, Amount: 300}}, Splits: []expense.SplitInput{{UserID: ada}, {UserID: ben}}}
+}
+
+// TestCleanupKeepsReceiptBeingAttached checks that a cleanup run that starts
+// while an expense is saved with an old unused receipt leaves the receipt on
+// the expense.
+func TestCleanupKeepsReceiptBeingAttached(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	r := stale(t, env, ada)
+	// Right after the expense is written, the cleanup job runs.
+	removed := make(chan int, 1)
+	svc := wired(env, attaching{repositories.NewExpenses(env.DB), func() {
+		meanwhile(t, env, func() {
+			n, err := env.Services.Receipts.Cleanup(ctx)
+			if err != nil {
+				t.Error(err)
+			}
+			removed <- n
+		})
+	}})
+	e, err := svc.Create(ctx, ada, bread(g.ID, r.ID, ada, ben))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := <-removed; n != 0 {
+		t.Fatalf("the receipt being attached must not be removed, %d removed", n)
+	}
+	saved, err := env.Services.Expenses.Get(ctx, ada, e.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.ReceiptID == nil || *saved.ReceiptID != r.ID {
+		t.Fatalf("the expense must keep its receipt, got %v", saved.ReceiptID)
+	}
+	_, body, err := env.Services.Receipts.Open(ctx, ada, r.ID)
+	if err != nil {
+		t.Fatalf("the receipt must stay: %v", err)
+	}
+	_ = body.Close()
+}
+
+// removing is a blob store with a hook that runs right before an image is
+// removed.
+type removing struct {
+	ports.BlobStore
+	before func()
+}
+
+func (r removing) Delete(ctx context.Context, key string) error {
+	r.before()
+	return r.BlobStore.Delete(ctx, key)
+}
+
+// TestAttachRefusesReceiptBeingRemoved checks that an expense saved with an
+// old unused receipt while cleanup removes it is refused, rather than saved
+// without the receipt.
+func TestAttachRefusesReceiptBeingRemoved(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	r := stale(t, env, ada)
+	// Once the cleanup has removed the row and before it commits, Ada saves
+	// an expense with the receipt.
+	created := make(chan error, 1)
+	blobs := removing{env.Blobs, func() {
+		meanwhile(t, env, func() {
+			_, err := env.Services.Expenses.Create(ctx, ada, bread(g.ID, r.ID, ada, ben))
+			created <- err
+		})
+	}}
+	svc := receipt.NewService(repositories.NewReceipts(env.DB), blobs, nil, database.NewTx(env.DB), env.Clock)
+	if removed, err := svc.Cleanup(ctx); err != nil || removed != 1 {
+		t.Fatalf("the unused receipt must be removed: %d removed, %v", removed, err)
+	}
+	err := <-created
+	var invalid *errs.Error
+	if !errors.As(err, &invalid) || invalid.Kind != errs.KindValidation || invalid.Field != "receiptId" {
+		t.Fatalf("an expense with a receipt being removed must be refused, got %v", err)
+	}
+	if n := len(groupExpenses(t, env, ada, g.ID)); n != 0 {
+		t.Fatalf("the refused expense must not be saved, %d saved", n)
+	}
+}
+
 // TestBlobs checks the PostgreSQL blob store keeps the blob store contract.
 func TestBlobs(t *testing.T) {
 	env := bootstraptest.Open(t, bootstraptest.Options{})

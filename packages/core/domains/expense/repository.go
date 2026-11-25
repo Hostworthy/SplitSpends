@@ -77,7 +77,9 @@ type CommentRepository interface {
 
 // Receipts checks that a receipt may be attached by a user.
 type Receipts interface {
-	// Owned reports whether userID uploaded the receipt.
+	// Owned reports whether userID uploaded the receipt. Inside a
+	// transaction it holds the receipt until the transaction ends, so it is
+	// not removed as unused before the expense using it is saved.
 	Owned(ctx context.Context, receiptID, userID uuid.UUID) (bool, error)
 }
 
