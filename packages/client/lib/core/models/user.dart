@@ -100,7 +100,10 @@ enum NotificationKind {
   expenseUpdated('Expense edited or deleted'),
   paymentReceived('Payment received'),
   addedToGroup('Added to a group'),
-  reminders('Settle-up reminders');
+  reminders('Settle-up reminders'),
+
+  /// Only administrators and managers are told about these.
+  approvals('People waiting to join');
 
   const NotificationKind(this.label);
 
@@ -117,6 +120,7 @@ class ChannelPrefs {
     this.paymentReceived = true,
     this.addedToGroup = true,
     this.reminders = true,
+    this.approvals = true,
   });
 
   factory ChannelPrefs.fromJson(JsonMap? json) => ChannelPrefs(
@@ -125,6 +129,7 @@ class ChannelPrefs {
     paymentReceived: (json?['paymentReceived'] as bool?) ?? true,
     addedToGroup: (json?['addedToGroup'] as bool?) ?? true,
     reminders: (json?['reminders'] as bool?) ?? true,
+    approvals: (json?['approvals'] as bool?) ?? true,
   );
 
   final bool expenseAdded;
@@ -135,12 +140,16 @@ class ChannelPrefs {
   /// Settle-up reminders from people you owe.
   final bool reminders;
 
+  /// People waiting to join the server.
+  final bool approvals;
+
   bool on(NotificationKind kind) => switch (kind) {
     NotificationKind.expenseAdded => expenseAdded,
     NotificationKind.expenseUpdated => expenseUpdated,
     NotificationKind.paymentReceived => paymentReceived,
     NotificationKind.addedToGroup => addedToGroup,
     NotificationKind.reminders => reminders,
+    NotificationKind.approvals => approvals,
   };
 
   /// A copy with [kind] switched to [value].
@@ -154,6 +163,7 @@ class ChannelPrefs {
         : paymentReceived,
     addedToGroup: kind == NotificationKind.addedToGroup ? value : addedToGroup,
     reminders: kind == NotificationKind.reminders ? value : reminders,
+    approvals: kind == NotificationKind.approvals ? value : approvals,
   );
 
   JsonMap toJson() => {for (final k in NotificationKind.values) k.key: on(k)};
@@ -229,6 +239,13 @@ class Me extends User {
 
   /// Administrators and managers approve people waiting to join.
   bool get canApprove => role == 'admin' || role == 'manager';
+
+  /// The notification kinds this person can receive, so the ones they can
+  /// set: approvals only reach administrators and managers.
+  List<NotificationKind> get notificationKinds => [
+    for (final kind in NotificationKind.values)
+      if (canApprove || kind != NotificationKind.approvals) kind,
+  ];
 
   @override
   Me copyWith({

@@ -37,6 +37,8 @@ func TestNoticeChannels(t *testing.T) {
 			status: StatusActive, kind: AddedToGroup},
 		{name: "other kinds unaffected", patch: NotificationsPatch{SwitchesPatch: SwitchesPatch{ExpenseAdded: &off}, Push: &SwitchesPatch{ExpenseAdded: &off}},
 			status: StatusActive, kind: ExpenseUpdated, email: true, push: true, delivered: true},
+		{name: "approvals can be turned off", patch: NotificationsPatch{SwitchesPatch: SwitchesPatch{Approvals: &off}, Push: &SwitchesPatch{Approvals: &off}},
+			status: StatusActive, kind: Approvals},
 		{name: "invited users get nothing", status: StatusInvited, kind: ExpenseAdded},
 		{name: "unknown kinds default on", status: StatusActive, kind: Kind("settleUpReminder"), email: true, push: true, delivered: true},
 	}
@@ -74,6 +76,9 @@ func TestNotificationsJSON(t *testing.T) {
 	}
 	if n.Push != DefaultNotifications().Push {
 		t.Fatalf("push should default on: %+v", n.Push)
+	}
+	if !n.Approvals {
+		t.Fatalf("switches added later should default on: %+v", n.Switches)
 	}
 	b, err := json.Marshal(n)
 	if err != nil {

@@ -43,6 +43,22 @@ func (r *Friends) Remove(ctx context.Context, a, b uuid.UUID) (bool, error) {
 	return tag.RowsAffected() > 0, nil
 }
 
+// pair names the advisory lock that guards whether a and b are connected.
+func pair(a, b uuid.UUID) string {
+	x, y := ordered(a, b)
+	return "friendship:" + x.String() + ":" + y.String()
+}
+
+func (r *Friends) Lock(ctx context.Context, a, b uuid.UUID) error {
+	_, err := r.db.Q(ctx).Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, pair(a, b))
+	return err
+}
+
+func (r *Friends) Hold(ctx context.Context, a, b uuid.UUID) error {
+	_, err := r.db.Q(ctx).Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))`, pair(a, b))
+	return err
+}
+
 func (r *Friends) List(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := r.db.Q(ctx).Query(ctx, `
 		SELECT user_b FROM friendships WHERE user_a = $1
@@ -150,6 +166,15 @@ func (r *Groups) Lock(ctx context.Context, id uuid.UUID) (*group.Group, error) {
 		return nil, errs.NotFound("Group")
 	}
 	return g, err
+}
+
+func (r *Groups) Hold(ctx context.Context, id uuid.UUID) error {
+	var one int
+	err := r.db.Q(ctx).QueryRow(ctx, `SELECT 1 FROM groups WHERE id=$1 FOR KEY SHARE`, id).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errs.NotFound("Group")
+	}
+	return err
 }
 
 func (r *Groups) Update(ctx context.Context, g *group.Group) error {

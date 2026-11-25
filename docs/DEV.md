@@ -98,8 +98,10 @@ Follow [ADR-001](adr/001-domain-driven-design.md):
 5. Request and response shapes in `packages/platform/contract.go`; document them in [API.md](API.md).
 6. Handler and serializer in `apps/api/routes/`, route in `router.go`.
 7. Client models and screens in `packages/client/lib/features/<feature>/`.
-8. MCP tool in `packages/mcp/server.go` if assistants should use it.
+8. MCP tool in `packages/mcp/server.go` (admin tools in `admin.go`), registered in `tools.go`, if assistants should use it.
 9. `make check`.
+
+A check and the write it guards run in one `tx.Do`, after taking the lock that the competing write takes too, so nothing changes between them. Anything that changes a group's members or deletes the group locks it first (`group.Repository.Lock`); anything that books or changes a group expense holds it first (`Hold`, which other bookings share), before locking the expense. Outside groups, ending a friendship locks the pair and booking an expense holds each pair it checks (`friend.Repository.Lock` and `Hold`).
 
 ## Testing
 

@@ -33,7 +33,7 @@ func (a *API) listCategories(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) createCategory(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.CategoryInput](r)
+	in, err := decode[platform.CategoryInput](w, r)
 	if err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ func (a *API) createCategory(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) patchCategory(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.CategoryInput](r)
+	in, err := decode[platform.CategoryInput](w, r)
 	if err != nil {
 		return err
 	}

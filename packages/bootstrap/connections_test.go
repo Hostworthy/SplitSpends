@@ -7,7 +7,10 @@ import (
 
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/friend"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/packages/database"
+	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/google/uuid"
 )
 
@@ -67,5 +70,47 @@ func TestNonGroupDebtsNeedConnectedPeople(t *testing.T) {
 	env.Clock.Add(30 * 24 * time.Hour)
 	if n := drain(t, svc.Expenses); n != 0 {
 		t.Fatalf("the job booked %d copies between people who are no longer connected", n)
+	}
+}
+
+// parting is the friendship repository with a hook that runs right before a
+// friendship ends.
+type parting struct {
+	*repositories.Friends
+	before func()
+}
+
+func (p parting) Remove(ctx context.Context, a, b uuid.UUID) (bool, error) {
+	p.before()
+	return p.Friends.Remove(ctx, a, b)
+}
+
+func TestRemoveFriendKeepsConcurrentExpense(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{Now: time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)})
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
+	if _, err := svc.Friends.Add(ctx, ada, "ben@example.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	created := make(chan error, 1)
+	// Right before the friendship ends, Ada books an expense Ben owes her for.
+	repo := parting{repositories.NewFriends(env.DB), func() {
+		meanwhile(t, env, func() {
+			_, err := svc.Expenses.Create(ctx, ada, owes(ada, ben, ada))
+			created <- err
+		})
+	}}
+	friends := friend.NewService(repo, svc.Users, svc.Balances, svc.Activity, database.NewTx(env.DB), env.Clock)
+	removed := friends.Remove(ctx, ada, ben)
+	if err := <-created; err == nil {
+		if !errs.Is(removed, errs.KindConflict) {
+			t.Fatalf("the friendship ended with a debt booked after the settled check: %v", removed)
+		}
+	} else if removed != nil {
+		t.Fatalf("neither the expense nor the removal went through: %v, %v", err, removed)
+	} else if !errs.Is(err, errs.KindValidation) {
+		t.Fatalf("an expense with someone no longer a friend should be refused as invalid, got %v", err)
 	}
 }

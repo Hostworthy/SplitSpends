@@ -34,12 +34,12 @@ func (h held) Lock(ctx context.Context, id uuid.UUID) (*expense.Expense, error) 
 }
 
 // blocked reports whether a session on the test database waits for a row
-// lock.
+// or advisory lock.
 func blocked(t *testing.T, env *bootstraptest.Env) bool {
 	t.Helper()
 	var ok bool
 	err := env.DB.Pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
-		WHERE datname = current_database() AND wait_event_type = 'Lock' AND wait_event IN ('transactionid', 'tuple'))`).Scan(&ok)
+		WHERE datname = current_database() AND wait_event_type = 'Lock' AND wait_event IN ('transactionid', 'tuple', 'advisory'))`).Scan(&ok)
 	if err != nil {
 		t.Fatal(err)
 	}

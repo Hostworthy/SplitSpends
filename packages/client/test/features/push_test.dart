@@ -201,6 +201,33 @@ void main() {
       expect(back.push.on(NotificationKind.paymentReceived), isFalse);
     });
 
+    test('approvals round-trip and default on', () {
+      final prefs = NotificationPrefs.fromJson({'approvals': false});
+      expect(prefs.email.on(NotificationKind.approvals), isFalse);
+      expect(prefs.push.on(NotificationKind.approvals), isTrue);
+      final json = prefs
+          .copyWith(push: prefs.push.set(NotificationKind.approvals, false))
+          .toJson();
+      expect(json['approvals'], isFalse);
+      expect((json['push'] as Map)['approvals'], isFalse);
+      expect(const ChannelPrefs().on(NotificationKind.approvals), isTrue);
+    });
+
+    test('only administrators and managers see the approvals switch', () {
+      Me withRole(String role) => Me(id: 'u1', name: 'Ada', role: role);
+      expect(
+        withRole('user').notificationKinds,
+        isNot(contains(NotificationKind.approvals)),
+      );
+      expect(
+        withRole('user').notificationKinds,
+        contains(NotificationKind.reminders),
+      );
+      for (final role in ['manager', 'admin']) {
+        expect(withRole(role).notificationKinds, NotificationKind.values);
+      }
+    });
+
     test('profiles saved before push default every push switch on', () {
       final prefs = NotificationPrefs.fromJson({'expenseAdded': false});
       expect(prefs.email.on(NotificationKind.expenseAdded), isFalse);

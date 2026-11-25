@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -95,9 +96,18 @@ func TestObserve(t *testing.T) {
 			t.Fatalf("request id %q, header %q", seen, rec.Header().Get("X-Request-Id"))
 		}
 	})
-	t.Run("keeps a short caller id and replaces a long one", func(t *testing.T) {
+	t.Run("keeps a well-formed caller id and replaces others", func(t *testing.T) {
 		h := Observe(quiet(), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-		for id, keep := range map[string]bool{"abc-123": true, strings.Repeat("x", 65): false} {
+		for id, keep := range map[string]bool{
+			"abc-123":               true,
+			"A.b_C-9":               true,
+			strings.Repeat("x", 64): true,
+			strings.Repeat("x", 65): false,
+			"two words":             false,
+			"caf\u00e9":             false,
+			"id\x00":                false,
+			"a/b":                   false,
+		} {
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.Header.Set("X-Request-Id", id)
@@ -121,10 +131,80 @@ func TestObserve(t *testing.T) {
 		if e.Code != "INTERNAL" || e.RequestID == "" || e.RequestID != rec.Header().Get("X-Request-Id") {
 			t.Fatalf("unexpected envelope %+v", e)
 		}
-		if !strings.Contains(logs.String(), "middleware.panic.recovered") {
+		var record map[string]any
+		for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+			var r map[string]any
+			if err := json.Unmarshal([]byte(line), &r); err == nil && r["msg"] == "middleware.panic.recovered" {
+				record = r
+			}
+		}
+		if record == nil {
 			t.Fatalf("the panic must be logged: %s", logs.String())
 		}
+		if stack, _ := record["stack"].(string); !strings.Contains(stack, "goroutine") {
+			t.Fatalf("the panic log must carry a stack trace: %v", record)
+		}
 	})
+	t.Run("lets a deliberate abort through", func(t *testing.T) {
+		var logs bytes.Buffer
+		h := Observe(slog.New(slog.NewJSONHandler(&logs, nil)), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			panic(http.ErrAbortHandler)
+		}))
+		rec := httptest.NewRecorder()
+		defer func() {
+			if err, _ := recover().(error); !errors.Is(err, http.ErrAbortHandler) {
+				t.Fatalf("want http.ErrAbortHandler to propagate, got %v", err)
+			}
+			if rec.Body.Len() != 0 {
+				t.Fatalf("an aborted response must get no error body: %s", rec.Body)
+			}
+			if strings.Contains(logs.String(), "middleware.panic.recovered") {
+				t.Fatalf("an abort is not a panic to report: %s", logs.String())
+			}
+			if !strings.Contains(logs.String(), "http.request.completed") {
+				t.Fatalf("an aborted request is still logged: %s", logs.String())
+			}
+		}()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/me", nil))
+	})
+}
+
+func TestObserveRedactsInviteTokens(t *testing.T) {
+	const secret = "abc123secret"
+	for _, tc := range []struct {
+		path  string
+		fails bool
+	}{
+		{"/api/v1/invites/" + secret, false},
+		{"/api/v1/invites/" + secret + "/accept", false},
+		{"/join/" + secret, false},
+		{"/api/v1/invites/" + secret, true},
+	} {
+		var logs bytes.Buffer
+		log := slog.New(slog.NewJSONHandler(&logs, nil))
+		h := Observe(log, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if tc.fails {
+				WriteError(w, r, log, errors.New("database down"))
+			}
+		}))
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if strings.Contains(logs.String(), secret) {
+			t.Errorf("%s: the log holds the token: %s", tc.path, logs.String())
+		}
+		if !strings.Contains(logs.String(), "{token}") {
+			t.Errorf("%s: the log must still show the route: %s", tc.path, logs.String())
+		}
+	}
+	for path, want := range map[string]string{
+		"/api/v1/groups/g1/invites/i1": "/api/v1/groups/g1/invites/i1",
+		"/api/v1/invites/":             "/api/v1/invites/",
+		"/join/":                       "/join/",
+		"/api/v1/me":                   "/api/v1/me",
+	} {
+		if got := redact(path); got != want {
+			t.Errorf("redact(%q) = %q, want %q", path, got, want)
+		}
+	}
 }
 
 func TestSecurity(t *testing.T) {
@@ -144,47 +224,76 @@ func TestSecurity(t *testing.T) {
 }
 
 func TestCORS(t *testing.T) {
+	const listed = "https://app.example.com"
 	for _, tc := range []struct {
-		name    string
-		origins []string
-		method  string
-		origin  string
-		allowed bool
-		reached bool // whether the request reaches the next handler
+		name      string
+		origins   []string
+		method    string
+		origin    string
+		preflight bool // whether Access-Control-Request-Method is sent
+		allowed   bool
+		vary      bool
+		reached   bool // whether the request reaches the next handler
 	}{
-		{"listed origin", []string{"https://app.example.com/"}, http.MethodGet, "https://app.example.com", true, true},
-		{"other origin", []string{"https://app.example.com"}, http.MethodGet, "https://evil.example.com", false, true},
-		{"any origin", []string{"*"}, http.MethodGet, "https://anywhere.example.com", true, true},
-		{"no origin", []string{"*"}, http.MethodGet, "", false, true},
-		{"no origins configured", nil, http.MethodGet, "https://app.example.com", false, true},
-		{"preflight", []string{"https://app.example.com"}, http.MethodOptions, "https://app.example.com", true, false},
-		{"preflight from other origin", []string{"https://app.example.com"}, http.MethodOptions, "https://evil.example.com", false, false},
-		{"options without origin", []string{"*"}, http.MethodOptions, "", false, true},
+		{"listed origin", []string{listed + "/"}, http.MethodGet, listed, false, true, true, true},
+		{"other origin", []string{listed}, http.MethodGet, "https://evil.example.com", false, false, true, true},
+		{"any origin", []string{"*"}, http.MethodGet, "https://anywhere.example.com", false, true, true, true},
+		{"no origin", []string{"*"}, http.MethodGet, "", false, false, true, true},
+		{"no origins configured", nil, http.MethodGet, listed, false, false, false, true},
+		{"preflight", []string{listed}, http.MethodOptions, listed, true, true, true, false},
+		{"preflight from any origin", []string{"*"}, http.MethodOptions, "https://anywhere.example.com", true, true, true, false},
+		{"preflight from other origin", []string{listed}, http.MethodOptions, "https://evil.example.com", true, false, true, true},
+		{"options without request method", []string{listed}, http.MethodOptions, listed, false, true, true, true},
+		{"options without origin", []string{"*"}, http.MethodOptions, "", true, false, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reached := false
-			h := CORS(tc.origins, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+			h := CORS(tc.origins, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				reached = true
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}))
 			req := httptest.NewRequest(tc.method, "/api/v1/me", nil)
 			if tc.origin != "" {
 				req.Header.Set("Origin", tc.origin)
 			}
+			if tc.preflight {
+				req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+			}
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 			got := rec.Header().Get("Access-Control-Allow-Origin")
-			if tc.allowed && (got != tc.origin || rec.Header().Get("Vary") != "Origin") {
-				t.Errorf("want origin %q allowed with Vary, got %q", tc.origin, got)
+			if tc.allowed && got != tc.origin {
+				t.Errorf("want origin %q allowed, got %q", tc.origin, got)
 			}
 			if !tc.allowed && got != "" {
 				t.Errorf("origin must not be allowed, got %q", got)
 			}
+			if vary := slices.Contains(rec.Header().Values("Vary"), "Origin"); vary != tc.vary {
+				t.Errorf("Vary: Origin present: %v, want %v", vary, tc.vary)
+			}
+			if rec.Header().Get("Access-Control-Allow-Credentials") != "" {
+				t.Error("credentials must never be allowed")
+			}
 			if reached != tc.reached {
 				t.Errorf("reached next handler: %v, want %v", reached, tc.reached)
 			}
-			if !tc.reached && rec.Code != http.StatusNoContent {
-				t.Errorf("preflight: want 204, got %d", rec.Code)
+			if !tc.reached && (rec.Code != http.StatusNoContent || rec.Header().Get("Access-Control-Allow-Methods") == "") {
+				t.Errorf("preflight: want 204 with Allow-Methods, got %d %v", rec.Code, rec.Header())
 			}
 		})
 	}
+	t.Run("keeps other Vary values", func(t *testing.T) {
+		h := CORS([]string{listed}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Add("Vary", "Accept-Encoding")
+		}))
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+		req.Header.Set("Origin", listed)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if got := rec.Header().Values("Vary"); !slices.Contains(got, "Origin") || !slices.Contains(got, "Accept-Encoding") {
+			t.Fatalf("want both Vary values, got %v", got)
+		}
+	})
 }
 
 func TestBearerToken(t *testing.T) {

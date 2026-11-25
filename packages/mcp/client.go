@@ -47,7 +47,9 @@ type settings struct {
 // https://split.example.com. hc may be nil; a client passed in is copied
 // so that, like the default one, it never follows redirects.
 func NewClient(base, token string, hc *http.Client) *Client {
-	client := http.Client{Timeout: 3 * time.Minute}
+	// No tool uploads anything, so an API call that takes longer than this
+	// is stuck rather than busy.
+	client := http.Client{Timeout: 30 * time.Second}
 	if hc != nil {
 		client = *hc
 	}
@@ -99,14 +101,44 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
-	if e.Body.Field != "" {
-		return fmt.Sprintf("%s (field %s)", e.Body.Error, e.Body.Field)
-	}
+	msg := fmt.Sprintf("request failed with status %d", e.Status)
 	if e.Body.Error != "" {
-		return e.Body.Error
+		msg = e.Body.Error
 	}
-	return fmt.Sprintf("request failed with status %d", e.Status)
+	if e.Body.Field != "" {
+		msg += " (field " + e.Body.Field + ")"
+	}
+	if e.Body.RequestID != "" {
+		msg += " (request id " + e.Body.RequestID + ")"
+	}
+	return msg
 }
+
+// failure is a call that got no usable answer from the API. Its message is
+// fixed and safe to show; the detail, which can name internal addresses,
+// is only logged.
+type failure struct {
+	message string
+	method  string
+	path    string
+	status  int
+	err     error
+}
+
+func (f *failure) Error() string { return f.message }
+
+func (f *failure) Unwrap() error { return f.err }
+
+// Messages of a failure.
+const (
+	unreachable = "the Split Spends server could not be reached; try again in a moment"
+	unexpected  = "the Split Spends server sent an answer that could not be read"
+	unprepared  = "the request could not be prepared; the server logged the details"
+	oversized   = "the Split Spends server sent a response too large to read; ask for fewer results"
+)
+
+// maxResponse is the largest answer read from the API.
+const maxResponse = 8 << 20
 
 // do sends one request and returns the body of a 2xx answer.
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, body any) ([]byte, error) {
@@ -114,7 +146,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if body != nil {
 		buf, err := json.Marshal(body)
 		if err != nil {
-			return nil, err
+			return nil, &failure{message: unprepared, method: method, path: path, err: err}
 		}
 		reader = bytes.NewReader(buf)
 	}
@@ -124,7 +156,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u, reader)
 	if err != nil {
-		return nil, err
+		return nil, &failure{message: unprepared, method: method, path: path, err: err}
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
@@ -135,12 +167,15 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	req.Header.Set("User-Agent", "splitspends-mcp")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("mcp.api.unreachable: %w", err)
+		return nil, &failure{message: unreachable, method: method, path: path, err: err}
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse+1))
 	if err != nil {
-		return nil, err
+		return nil, &failure{message: unexpected, method: method, path: path, status: resp.StatusCode, err: err}
+	}
+	if len(raw) > maxResponse {
+		return nil, &failure{message: oversized, method: method, path: path, status: resp.StatusCode, err: fmt.Errorf("more than %d bytes", maxResponse)}
 	}
 	if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
 		target := resp.Header.Get("Location")
@@ -157,26 +192,29 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	return raw, nil
 }
 
-// member decodes the key member of a success envelope into out. An answer
-// without it came from something other than the API endpoint and must not
-// read as success.
-func member(raw []byte, key string, out any) error {
+// member decodes the key member of a success envelope from path into out.
+// An answer without it came from something other than the API endpoint
+// and must not read as success.
+func member(path string, raw []byte, key string, out any) error {
 	var env map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return fmt.Errorf("mcp.api.response.invalid: %w", err)
+		return &failure{message: unexpected, path: path, err: err}
 	}
 	value, ok := env[key]
 	if !ok {
-		return fmt.Errorf("mcp.api.response.invalid: the answer has no %q; check that SPLITSPENDS_URL points at a Split Spends server", key)
+		return fmt.Errorf("the answer has no %q; check that SPLITSPENDS_URL points at a Split Spends server", key)
 	}
-	return json.Unmarshal(value, out)
+	if err := json.Unmarshal(value, out); err != nil {
+		return &failure{message: unexpected, path: path, err: err}
+	}
+	return nil
 }
 
 func get[T any](ctx context.Context, c *Client, path string, query url.Values) (T, error) {
 	var data T
 	raw, err := c.do(ctx, http.MethodGet, path, query, nil)
 	if err == nil {
-		err = member(raw, "data", &data)
+		err = member(path, raw, "data", &data)
 	}
 	return data, err
 }
@@ -185,10 +223,10 @@ func getList[T any](ctx context.Context, c *Client, path string, query url.Value
 	var list platform.List[T]
 	raw, err := c.do(ctx, http.MethodGet, path, query, nil)
 	if err == nil {
-		err = member(raw, "items", &list.Items)
+		err = member(path, raw, "items", &list.Items)
 	}
 	if err == nil {
-		err = member(raw, "total", &list.Total)
+		err = member(path, raw, "total", &list.Total)
 	}
 	return list, err
 }
@@ -197,7 +235,7 @@ func send[T any](ctx context.Context, c *Client, method, path string, body any) 
 	var data T
 	raw, err := c.do(ctx, method, path, nil, body)
 	if err == nil {
-		err = member(raw, "data", &data)
+		err = member(path, raw, "data", &data)
 	}
 	return data, err
 }
@@ -251,10 +289,27 @@ func plain(s string) bool {
 
 // minor converts a decimal string such as "12.50" into minor units.
 func (c *Client) minor(ctx context.Context, amount, currency string) (int64, error) {
-	exp, err := c.exponent(ctx, currency)
+	cur, err := c.unit(ctx, currency)
 	if err != nil {
 		return 0, err
 	}
+	return cur.minor(amount)
+}
+
+// unit returns a currency with its minor-unit exponent.
+func (c *Client) unit(ctx context.Context, code string) (unit, error) {
+	exp, err := c.exponent(ctx, code)
+	return unit{code: code, exponent: exp}, err
+}
+
+// unit is a currency and its minor-unit exponent.
+type unit struct {
+	code     string
+	exponent int
+}
+
+// minor converts a decimal string such as "12.50" into minor units.
+func (u unit) minor(amount string) (int64, error) {
 	s := strings.TrimSpace(amount)
 	if !plain(s) {
 		return 0, fmt.Errorf("amount %q is not a decimal number such as 12.50", amount)
@@ -263,9 +318,9 @@ func (c *Client) minor(ctx context.Context, amount, currency string) (int64, err
 	if !ok {
 		return 0, fmt.Errorf("amount %q is not a decimal number such as 12.50", amount)
 	}
-	r.Mul(r, new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(exp)), nil)))
+	r.Mul(r, new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(u.exponent)), nil)))
 	if !r.IsInt() {
-		return 0, fmt.Errorf("amount %q has more decimals than %s allows", amount, currency)
+		return 0, fmt.Errorf("amount %q has more decimals than %s allows", amount, u.code)
 	}
 	if !r.Num().IsInt64() {
 		return 0, fmt.Errorf("amount %q is too large", amount)

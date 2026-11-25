@@ -165,6 +165,11 @@ type Repository interface {
 	// Lock is Get inside the caller's transaction, with the group row locked
 	// until it ends, so nothing can be added to the group meanwhile.
 	Lock(ctx context.Context, id uuid.UUID) (*Group, error)
+	// Hold keeps the group from being locked by Lock until the caller's
+	// transaction ends, without blocking other holders, so the members stay
+	// as they are while an expense is booked. It returns errs.NotFound when
+	// the group is missing.
+	Hold(ctx context.Context, id uuid.UUID) error
 	Update(ctx context.Context, g *Group) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	// ForUser lists the user's groups with Members filled.

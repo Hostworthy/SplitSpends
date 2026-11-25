@@ -22,6 +22,8 @@ import (
 // Connections answers whether two users may share non-group expenses.
 type Connections interface {
 	Connected(ctx context.Context, a, b uuid.UUID) (bool, error)
+	// Hold keeps the answer for a and b until the transaction in ctx ends.
+	Hold(ctx context.Context, a, b uuid.UUID) error
 }
 
 // Service implements expense, payment and comment use cases.
@@ -74,10 +76,22 @@ func (s *Service) load(ctx context.Context, actor, id uuid.UUID) (*Expense, *gro
 // lock is load for a change, inside the caller's transaction. The row stays
 // locked until the change is saved, so the checks made on it still hold and
 // concurrent changes apply one after the other instead of overwriting each
-// other.
+// other. The group is held first, in the order deleting a group locks the
+// two, so its members cannot change meanwhile and the two never deadlock.
 func (s *Service) lock(ctx context.Context, actor, id uuid.UUID) (*Expense, *group.Group, error) {
-	e, err := s.repo.Lock(ctx, id)
+	e, err := s.repo.Get(ctx, id)
 	if err != nil {
+		return nil, nil, err
+	}
+	if e.GroupID != nil {
+		if err := s.groups.Hold(ctx, *e.GroupID); err != nil {
+			if errs.Is(err, errs.KindNotFound) {
+				return nil, nil, errs.NotFound("Expense")
+			}
+			return nil, nil, err
+		}
+	}
+	if e, err = s.repo.Lock(ctx, id); err != nil {
 		return nil, nil, err
 	}
 	return s.visible(ctx, actor, e)
@@ -113,6 +127,9 @@ func editable(actor uuid.UUID, g *group.Group) error {
 }
 
 // authorize checks that the actor may book an expense with these participants.
+// Inside Tx.Do it holds the group, or the connections between the people
+// outside groups, until the transaction ends, so nobody leaves or stops being
+// a friend between the check and the save; outside one it only checks.
 func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.UUID, shares []Share, receiptID *uuid.UUID) (*group.Group, error) {
 	if receiptID != nil {
 		ok, err := s.receipts.Owned(ctx, *receiptID, actor)
@@ -124,7 +141,11 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 		}
 	}
 	if groupID != nil {
-		g, err := s.groups.Get(ctx, *groupID)
+		err := s.groups.Hold(ctx, *groupID)
+		var g *group.Group
+		if err == nil {
+			g, err = s.groups.Get(ctx, *groupID)
+		}
 		if err != nil {
 			if errs.Is(err, errs.KindNotFound) {
 				return nil, errs.Validation("groupId", "Group not found.")
@@ -176,7 +197,7 @@ func (s *Service) connected(ctx context.Context, actor uuid.UUID, shares []Share
 		if sh.UserID == actor {
 			continue
 		}
-		ok, err := s.connections.Connected(ctx, actor, sh.UserID)
+		ok, err := s.pair(ctx, actor, sh.UserID)
 		if err != nil || !ok {
 			return false, err
 		}
@@ -196,13 +217,22 @@ func (s *Service) linked(ctx context.Context, shares []Share) (bool, error) {
 			if d.Paid >= d.Owed {
 				continue
 			}
-			ok, err := s.connections.Connected(ctx, c.UserID, d.UserID)
+			ok, err := s.pair(ctx, c.UserID, d.UserID)
 			if err != nil || !ok {
 				return false, err
 			}
 		}
 	}
 	return true, nil
+}
+
+// pair reports whether a and b are connected and keeps them so until the
+// transaction in ctx ends.
+func (s *Service) pair(ctx context.Context, a, b uuid.UUID) (bool, error) {
+	if err := s.connections.Hold(ctx, a, b); err != nil {
+		return false, err
+	}
+	return s.connections.Connected(ctx, a, b)
 }
 
 // category checks that the actor may file an expense under a custom
@@ -283,11 +313,16 @@ func (s *Service) existing(ctx context.Context, actor uuid.UUID, id *uuid.UUID, 
 	return e, nil
 }
 
-// insert saves a new expense and its activity. When a request with the same
-// client-chosen id saved its expense first, insert returns that one instead;
-// it returns nil when e was saved.
-func (s *Service) insert(ctx context.Context, actor uuid.UUID, e *Expense, g *group.Group, kind activity.Kind, extra map[string]any) (*Expense, error) {
+// insert authorizes and saves a new expense and its activity, and returns its
+// group. When a request with the same client-chosen id saved its expense
+// first, insert returns that one instead; it returns nil when e was saved.
+func (s *Service) insert(ctx context.Context, actor uuid.UUID, e *Expense, kind activity.Kind, extra map[string]any) (*Expense, *group.Group, error) {
+	var g *group.Group
 	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		var err error
+		if g, err = s.authorize(ctx, actor, e.GroupID, e.Shares, e.ReceiptID); err != nil {
+			return err
+		}
 		if err := s.repo.Create(ctx, e); err != nil {
 			return err
 		}
@@ -295,10 +330,10 @@ func (s *Service) insert(ctx context.Context, actor uuid.UUID, e *Expense, g *gr
 	})
 	if errs.Is(err, errs.KindConflict) {
 		if prior, err := s.existing(ctx, actor, &e.ID, e.Kind, e.GroupID); prior != nil || err != nil {
-			return prior, err
+			return prior, nil, err
 		}
 	}
-	return nil, err
+	return nil, g, err
 }
 
 func newID(id *uuid.UUID) uuid.UUID {
@@ -346,13 +381,10 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expen
 	if err := s.category(ctx, actor, n.Category, ""); err != nil {
 		return nil, err
 	}
-	g, err := s.authorize(ctx, actor, in.GroupID, n.Shares, in.ReceiptID)
-	if err != nil {
-		return nil, err
-	}
 	e := &Expense{ID: newID(in.ID), GroupID: in.GroupID, Kind: KindExpense, CreatedBy: actor, CreatedAt: now}
 	s.build(e, n, actor, now)
-	if prior, err := s.insert(ctx, actor, e, g, activity.ExpenseCreated, nil); prior != nil || err != nil {
+	prior, g, err := s.insert(ctx, actor, e, activity.ExpenseCreated, nil)
+	if prior != nil || err != nil {
 		return prior, err
 	}
 	s.notify(ctx, actor, e, g, false)
@@ -507,8 +539,8 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 		return nil, errs.Validation("fromUserId", "You must be part of a payment outside a group.")
 	}
 	// Authorizing first answers an id that does not exist like a stranger's.
-	g, err := s.authorize(ctx, actor, in.GroupID, n.Shares, nil)
-	if err != nil {
+	// insert authorizes again, holding the people until the payment is saved.
+	if _, err := s.authorize(ctx, actor, in.GroupID, n.Shares, nil); err != nil {
 		return nil, err
 	}
 	people, err := s.users.Index(ctx, []uuid.UUID{in.From, in.To})
@@ -522,7 +554,7 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	e := &Expense{ID: newID(in.ID), GroupID: in.GroupID, Kind: KindPayment, CreatedBy: actor, CreatedAt: now}
 	s.build(e, n, actor, now)
 	extra := map[string]any{"fromName": people[in.From].Name, "toName": people[in.To].Name}
-	if prior, err := s.insert(ctx, actor, e, g, activity.PaymentCreated, extra); prior != nil || err != nil {
+	if prior, _, err := s.insert(ctx, actor, e, activity.PaymentCreated, extra); prior != nil || err != nil {
 		return prior, err
 	}
 	if to := people[in.To]; !ports.IsQuiet(ctx) && to.ID != actor {
@@ -659,7 +691,7 @@ func (s *Service) RunRecurring(ctx context.Context) (int, error) {
 		var n int
 		err := s.tx.Do(ctx, func(ctx context.Context) error {
 			var err error
-			n, err = s.repeat(ctx, d.ID, today)
+			n, err = s.repeat(ctx, d, today)
 			return err
 		})
 		if err != nil {
@@ -684,9 +716,20 @@ func (s *Skipped) Unwrap() error { return s.Err }
 // repeat books the missed occurrences of one series inside the caller's
 // transaction and returns how many it booked. The row is claimed first, so
 // runners working at the same time book each occurrence once, and the copies
-// come from the stored row, so an edit saved after Due read it is kept.
-func (s *Service) repeat(ctx context.Context, id uuid.UUID, today time.Time) (int, error) {
-	src, err := s.repo.Claim(ctx, id, today)
+// come from the stored row, so an edit saved after Due read it is kept. The
+// group is held before the claim, like lock does, so its members stay as
+// checked until the copies are saved.
+func (s *Service) repeat(ctx context.Context, due *Expense, today time.Time) (int, error) {
+	if due.GroupID != nil {
+		if err := s.groups.Hold(ctx, *due.GroupID); err != nil {
+			// A deleted group took its expenses with it.
+			if errs.Is(err, errs.KindNotFound) {
+				return 0, nil
+			}
+			return 0, err
+		}
+	}
+	src, err := s.repo.Claim(ctx, due.ID, today)
 	if err != nil || src == nil {
 		return 0, err
 	}

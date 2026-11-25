@@ -456,21 +456,15 @@ func (s *Service) RemoveMember(ctx context.Context, actor, id, member uuid.UUID)
 	if !g.HasMember(member) {
 		return errs.NotFound("Member")
 	}
-	settled, err := s.balances.Settled(ctx, g.ID, member)
-	if err != nil {
-		return err
-	}
-	if !settled {
-		return errs.Conflict("That person still has an outstanding balance in this group.")
-	}
 	target, err := s.users.Get(ctx, member)
 	if err != nil {
 		return err
 	}
 	return s.tx.Do(ctx, func(ctx context.Context) error {
-		// Locked so two members leaving at once cannot both pass the check.
-		// The members are read again after the lock: the locking statement
-		// sees them as they were before it waited.
+		// Locked so two members leaving at once cannot both pass the check,
+		// and so an expense booked meanwhile either counts in the balance or
+		// waits and is refused. The members are read again after the lock:
+		// the locking statement sees them as they were before it waited.
 		if _, err := s.repo.Lock(ctx, g.ID); err != nil {
 			return err
 		}
@@ -483,6 +477,13 @@ func (s *Service) RemoveMember(ctx context.Context, actor, id, member uuid.UUID)
 		}
 		if !g.HasMember(member) {
 			return errs.NotFound("Member")
+		}
+		settled, err := s.balances.Settled(ctx, g.ID, member)
+		if err != nil {
+			return err
+		}
+		if !settled {
+			return errs.Conflict("That person still has an outstanding balance in this group.")
 		}
 		if err := s.keepsReachable(ctx, g, member); err != nil {
 			return err

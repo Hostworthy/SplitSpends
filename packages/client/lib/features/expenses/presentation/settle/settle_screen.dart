@@ -314,11 +314,12 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
                     avatar: const Icon(Icons.event_rounded, size: 18),
                     label: Text(Dates.short(_date)),
                     onPressed: () async {
+                      final range = Dates.pickable(_date);
                       final picked = await showDatePicker(
                         context: context,
                         initialDate: _date,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime.now().add(const Duration(days: 30)),
+                        firstDate: range.first,
+                        lastDate: range.last,
                       );
                       if (picked != null) setState(() => _date = picked);
                     },

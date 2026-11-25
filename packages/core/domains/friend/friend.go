@@ -26,6 +26,10 @@ type Repository interface {
 	List(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	// Connected reports whether a and b are friends or share a group.
 	Connected(ctx context.Context, a, b uuid.UUID) (bool, error)
+	// Lock and Hold take an exclusive and a shared lock on the connection
+	// between a and b that last until the caller's transaction ends.
+	Lock(ctx context.Context, a, b uuid.UUID) error
+	Hold(ctx context.Context, a, b uuid.UUID) error
 }
 
 // Service implements friend use cases.
@@ -175,27 +179,34 @@ func (s *Service) Detail(ctx context.Context, me, id uuid.UUID) (*Detail, error)
 
 // Remove ends an explicit friendship once everything is settled. Someone
 // who is a friend only through a shared group stays one, so that is a
-// conflict rather than a removal that changes nothing.
+// conflict rather than a removal that changes nothing. The connection stays
+// locked from the check to the removal, so an expense booked meanwhile either
+// counts in the check or is refused.
 func (s *Service) Remove(ctx context.Context, me, id uuid.UUID) error {
-	d, err := s.Detail(ctx, me, id)
-	if err != nil {
-		return err
-	}
-	if !d.Balances.Settled() {
-		return errs.Conflict("Settle up with " + d.User.Name + " before removing them.")
-	}
-	removed, err := s.repo.Remove(ctx, me, id)
-	if err != nil || removed {
-		return err
-	}
-	connected, err := s.repo.Connected(ctx, me, id)
-	if err != nil {
-		return err
-	}
-	if connected {
-		return errs.Conflict("You share a group with " + d.User.Name + ". Leave the group to stop being connected.")
-	}
-	return nil
+	return s.tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.repo.Lock(ctx, me, id); err != nil {
+			return err
+		}
+		d, err := s.Detail(ctx, me, id)
+		if err != nil {
+			return err
+		}
+		if !d.Balances.Settled() {
+			return errs.Conflict("Settle up with " + d.User.Name + " before removing them.")
+		}
+		removed, err := s.repo.Remove(ctx, me, id)
+		if err != nil || removed {
+			return err
+		}
+		connected, err := s.repo.Connected(ctx, me, id)
+		if err != nil {
+			return err
+		}
+		if connected {
+			return errs.Conflict("You share a group with " + d.User.Name + ". Leave the group to stop being connected.")
+		}
+		return nil
+	})
 }
 
 // Connected reports whether a and b may share non-group expenses.
@@ -204,4 +215,13 @@ func (s *Service) Connected(ctx context.Context, a, b uuid.UUID) (bool, error) {
 		return true, nil
 	}
 	return s.repo.Connected(ctx, a, b)
+}
+
+// Hold keeps a and b connected, if they are, until the transaction in ctx
+// ends: Remove waits for it. It must be called inside Tx.Do.
+func (s *Service) Hold(ctx context.Context, a, b uuid.UUID) error {
+	if a == b {
+		return nil
+	}
+	return s.repo.Hold(ctx, a, b)
 }
