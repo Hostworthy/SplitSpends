@@ -275,6 +275,10 @@ func itemized(in Input) (map[uuid.UUID]int64, map[uuid.UUID]string, error) {
 	if in.Tax < 0 || in.Tip < 0 {
 		return nil, nil, errs.Validation("tax", "Tax and tip cannot be negative.")
 	}
+	// Bounding each term keeps items plus tax and tip far from overflow.
+	if in.Tax > MaxTotal || in.Tip > MaxTotal {
+		return nil, nil, errs.Validation("tax", "Tax and tip are too large.")
+	}
 	subtotals := map[uuid.UUID]int64{}
 	order := []uuid.UUID{}
 	var itemsSum int64

@@ -1,6 +1,7 @@
 package expense
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -253,5 +254,28 @@ func BenchmarkMerge(b *testing.B) {
 	}
 	for b.Loop() {
 		merge(paid, owed, nil)
+	}
+}
+
+func TestItemizedRejectsHugeTax(t *testing.T) {
+	cases := []struct {
+		name     string
+		tax, tip int64
+		item     int64
+	}{
+		{"tax above max", MaxTotal + 1, 0, 100},
+		{"tip above max", 0, MaxTotal + 1, 100},
+		{"sum wraps", math.MaxInt64, math.MaxInt64, 102},
+	}
+	for _, c := range cases {
+		in := Input{Description: "Lunch", Currency: "USD", Total: 100, Method: MethodItemized,
+			Payers: []Payer{{ada, 100}},
+			Items:  []Item{{Name: "Soup", Amount: c.item, UserIDs: []uuid.UUID{ada, ben}}},
+			Tax:    c.tax, Tip: c.tip,
+		}
+		_, err := Normalize(in, day)
+		if de, ok := errs.As(err); !ok || de.Field != "tax" {
+			t.Errorf("%s: want an error on tax, got %v", c.name, err)
+		}
 	}
 }

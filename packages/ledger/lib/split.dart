@@ -368,6 +368,10 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
   if (input.tax < 0 || input.tip < 0) {
     throw const LedgerError('tax', 'Tax and tip cannot be negative.');
   }
+  // Bounding each term keeps items plus tax and tip far from overflow.
+  if (input.tax > maxTotal || input.tip > maxTotal) {
+    throw const LedgerError('tax', 'Tax and tip are too large.');
+  }
   final subtotals = <String, int>{};
   final order = <String>[];
   final items = <ItemInput>[];

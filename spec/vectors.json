@@ -1194,6 +1194,58 @@
     ]
    },
    "error": "splits"
+  },
+  {
+   "name": "itemized tax above the maximum is refused",
+   "input": {
+    "total": 100,
+    "method": "itemized",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "items": [
+     {
+      "name": "Soup",
+      "amount": 100,
+      "userIds": [
+       "00000000-0000-0000-0000-00000000000a",
+       "00000000-0000-0000-0000-00000000000b"
+      ]
+     }
+    ],
+    "tax": 1000000000001,
+    "tip": 0
+   },
+   "error": "tax"
+  },
+  {
+   "name": "itemized tax and tip that would overflow are refused",
+   "input": {
+    "total": 100,
+    "method": "itemized",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 100
+     }
+    ],
+    "items": [
+     {
+      "name": "Soup",
+      "amount": 102,
+      "userIds": [
+       "00000000-0000-0000-0000-00000000000a",
+       "00000000-0000-0000-0000-00000000000b"
+      ]
+     }
+    ],
+    "tax": 9223372036854775807,
+    "tip": 9223372036854775807
+   },
+   "error": "tax"
   }
  ],
  "balances": {
