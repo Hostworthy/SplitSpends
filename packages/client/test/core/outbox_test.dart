@@ -808,6 +808,34 @@ void main() {
     });
 
     test(
+      'an edit on top of a queued edit without a version is saved',
+      () async {
+        online = true;
+        final dinner = await repo.get('e0');
+        online = false;
+        // Queued by an app that did not send versions yet.
+        await outbox.add(
+          'PUT',
+          '/expenses/e0',
+          body: {...edit(dinner, 'Dinner at Luigi').toJson()}
+            ..remove('updatedAt'),
+          label: 'Edit “Dinner at Luigi”',
+        );
+        await repo.update('e0', edit(await repo.get('e0'), 'Dinner for four'));
+        expect(
+          (await outbox.pending()).last.body! as Map,
+          isNot(contains('updatedAt')),
+        );
+
+        online = true;
+        final result = await outbox.flush(client);
+        expect(result.rejected, isEmpty);
+        expect(result.sent, 2);
+        expect(stored['e0']!['description'], 'Dinner for four');
+      },
+    );
+
+    test(
       'a later offline edit is not saved when the first one was not',
       () async {
         online = true;

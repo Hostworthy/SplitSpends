@@ -175,17 +175,16 @@ class OfflineExpensesRepository implements ExpensesRepository {
   /// An edit of an expense already edited in the queue builds on that queued
   /// edit, whose version is only the device's own: it is sent as based on
   /// the server version the queued edit started from, and the outbox moves
-  /// it on to the version each earlier write produces as they replay.
+  /// it on to the version each earlier write produces as they replay. A
+  /// queued edit that names no version (queued by an earlier app) replaces
+  /// whatever the server has, so the edit on top of it does too.
   @override
   Future<Expense> update(String id, ExpenseInput input) async {
     var based = input;
     for (final op in await _outbox.pending()) {
       final body = op.body;
-      if (op.method == 'PUT' &&
-          op.path == '/expenses/$id' &&
-          body is Map &&
-          body['updatedAt'] is String) {
-        based = input.withVersion(body['updatedAt'] as String);
+      if (op.method == 'PUT' && op.path == '/expenses/$id' && body is Map) {
+        based = input.withVersion(body['updatedAt'] as String?);
       }
     }
     return _outbox.write(
