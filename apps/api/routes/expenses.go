@@ -313,13 +313,13 @@ func (a *API) exportGroup(w http.ResponseWriter, r *http.Request) error {
 	cw := csv.NewWriter(w)
 	header := []string{"Date", "Description", "Category", "Kind", "Currency", "Cost"}
 	for _, id := range order {
-		header = append(header, names[id])
+		header = append(header, safeCell(names[id]))
 	}
 	_ = cw.Write(header)
 	for i := len(all) - 1; i >= 0; i-- {
 		e := all[i]
 		c, _ := money.Lookup(e.Currency)
-		row := []string{e.Date.Format(time.DateOnly), safeCell(e.Description), e.Category, string(e.Kind), e.Currency, decimalString(e.Total, c.Exponent)}
+		row := []string{e.Date.Format(time.DateOnly), safeCell(e.Description), safeCell(e.Category), string(e.Kind), e.Currency, decimalString(e.Total, c.Exponent)}
 		for _, id := range order {
 			row = append(row, decimalString(e.Net(id), c.Exponent))
 		}
@@ -329,7 +329,10 @@ func (a *API) exportGroup(w http.ResponseWriter, r *http.Request) error {
 	return cw.Error()
 }
 
-// safeCell neutralises spreadsheet formula injection.
+// safeCell neutralises spreadsheet formula injection in text a person
+// typed: names, descriptions and categories. Amount cells never pass through
+// it, since a negative amount must stay a number. The on-device export
+// (LocalGroupsRepository.export in packages/client) follows the same rule.
 func safeCell(s string) string {
 	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
 		return "'" + s

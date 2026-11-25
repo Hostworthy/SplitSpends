@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sembast/sembast_memory.dart';
 
@@ -528,5 +530,39 @@ void main() {
       feed.items.first.summary,
       '“Rent” stopped repeating in Flat because someone in it left the group',
     );
+  });
+
+  test('export neutralises formulas in names and descriptions', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final group = await groups.create(
+      const GroupInput(
+        name: 'Flat',
+        members: [MemberInput(name: '=1+1')],
+      ),
+    );
+    final sam = group.members[1].id;
+    await LocalExpensesRepository(ledger).create(
+      ExpenseInput(
+        groupId: group.id,
+        description: '@SUM(A1)',
+        currency: 'EUR',
+        total: 200,
+        date: '2026-11-20',
+        payers: const [Payer(userId: meId, amount: 200)],
+        splits: [
+          const SplitEntry(userId: meId),
+          SplitEntry(userId: sam),
+        ],
+      ),
+    );
+    final rows = [
+      for (final line in const LineSplitter().convert(
+        utf8.decode(await groups.export(group.id)),
+      ))
+        line.split(','),
+    ];
+    expect(rows[0].sublist(6), ['Ada', "'=1+1"]);
+    expect(rows[1][1], "'@SUM(A1)");
+    expect(rows[1].sublist(6), ['100', '-100']);
   });
 }
