@@ -66,10 +66,11 @@ func (t *tools) setSignup(ctx context.Context, _ *sdk.CallToolRequest, in signup
 
 type requestsArgs struct {
 	Status string `json:"status,omitempty" jsonschema:"pending (default), approved or declined"`
+	Offset int    `json:"offset,omitempty" jsonschema:"requests to skip, for the next page"`
 }
 
 func (t *tools) listRequests(ctx context.Context, _ *sdk.CallToolRequest, in requestsArgs) (*sdk.CallToolResult, any, error) {
-	q := url.Values{"limit": {"200"}}
+	q := page(200, in.Offset)
 	if in.Status != "" {
 		q.Set("status", in.Status)
 	}
@@ -88,9 +89,7 @@ func (t *tools) listRequests(ctx context.Context, _ *sdk.CallToolRequest, in req
 		}
 		fmt.Fprintf(&b, "- %s <%s>, %s since %s (id %s)\n", name, r.Email, r.Status, day(r.RequestedAt), r.ID)
 	}
-	if list.Total > len(list.Items) {
-		fmt.Fprintf(&b, "Showing the newest %d of %d.\n", len(list.Items), list.Total)
-	}
+	more(&b, max(in.Offset, 0), len(list.Items), list.Total)
 	return text(b.String()), nil, nil
 }
 
@@ -114,10 +113,11 @@ func (t *tools) decideRequest(ctx context.Context, _ *sdk.CallToolRequest, in de
 type accountsArgs struct {
 	Status string `json:"status,omitempty" jsonschema:"active, invited or disabled"`
 	Query  string `json:"query,omitempty" jsonschema:"part of a name or email"`
+	Offset int    `json:"offset,omitempty" jsonschema:"accounts to skip, for the next page"`
 }
 
 func (t *tools) listAccounts(ctx context.Context, _ *sdk.CallToolRequest, in accountsArgs) (*sdk.CallToolResult, any, error) {
-	q := url.Values{"limit": {"200"}}
+	q := page(200, in.Offset)
 	if in.Status != "" {
 		q.Set("status", in.Status)
 	}
@@ -133,6 +133,7 @@ func (t *tools) listAccounts(ctx context.Context, _ *sdk.CallToolRequest, in acc
 	for _, a := range list.Items {
 		fmt.Fprintf(&b, "- %q <%s>: %s, %s (id %s)\n", a.Name, email(a.Email), a.Role, a.Status, a.ID)
 	}
+	more(&b, max(in.Offset, 0), len(list.Items), list.Total)
 	return text(b.String()), nil, nil
 }
 

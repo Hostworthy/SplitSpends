@@ -15,6 +15,8 @@ Assistants should be able to read balances and add expenses with the same rules 
 - The SDK runs tool calls on goroutines of its own, outside the HTTP recovery middleware, so every tool is registered through one helper that recovers a panic into a tool error.
 - `apps/mcp` runs the same server over stdio for local assistants, configured with `SPLITSPENDS_URL` and `SPLITSPENDS_TOKEN`.
 - Tools accept decimal amounts ("12.50") and return readable text with names and ids, because language models handle those better than minor units.
+- The `admin_` tools are registered only when the operator opts in (`MCP_ADMIN_TOOLS` for `/mcp`, `SPLITSPENDS_ADMIN_TOOLS` for stdio), because tools read text other people wrote and an administrator's token should not be talked into changing the instance. The API still checks the caller's role on every admin call.
+- `/mcp` is on by default; `MCP_ENABLED=false` removes it without changing the API.
 - DNS-rebinding protection is disabled for `/mcp` because every call needs an explicit bearer token, which a rebinding page cannot supply; this lets the server sit behind a local reverse proxy.
 
 ## Consequences

@@ -145,6 +145,7 @@ type listArgs struct {
 	From     string `json:"from,omitempty" jsonschema:"start date YYYY-MM-DD"`
 	To       string `json:"to,omitempty" jsonschema:"end date YYYY-MM-DD"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"maximum results, default 25, at most 200"`
+	Offset   int    `json:"offset,omitempty" jsonschema:"results to skip, for the next page"`
 }
 
 func (t *tools) listExpenses(ctx context.Context, _ *sdk.CallToolRequest, in listArgs) (*sdk.CallToolResult, any, error) {
@@ -152,16 +153,15 @@ func (t *tools) listExpenses(ctx context.Context, _ *sdk.CallToolRequest, in lis
 	if err != nil {
 		return t.fail(ctx, err)
 	}
-	q := url.Values{}
+	if in.Limit <= 0 {
+		in.Limit = 25
+	}
+	q := page(min(in.Limit, 200), in.Offset)
 	for k, v := range map[string]string{"groupId": in.GroupID, "friendId": in.FriendID, "q": in.Query, "from": in.From, "to": in.To} {
 		if v != "" {
 			q.Set(k, v)
 		}
 	}
-	if in.Limit <= 0 {
-		in.Limit = 25
-	}
-	q.Set("limit", strconv.Itoa(min(in.Limit, 200)))
 	res, err := getList[platform.Expense](ctx, t.c, "/expenses", q)
 	if err != nil {
 		return t.fail(ctx, err)
@@ -171,6 +171,7 @@ func (t *tools) listExpenses(ctx context.Context, _ *sdk.CallToolRequest, in lis
 	for _, e := range res.Items {
 		b.WriteString(t.line(ctx, e, idx))
 	}
+	more(&b, max(in.Offset, 0), len(res.Items), res.Total)
 	return text(b.String()), nil, nil
 }
 
@@ -222,6 +223,9 @@ func (t *tools) listActivity(ctx context.Context, _ *sdk.CallToolRequest, in act
 	res, err := getList[platform.Activity](ctx, t.c, "/activity", url.Values{"limit": {strconv.Itoa(min(in.Limit, 200))}})
 	if err != nil {
 		return t.fail(ctx, err)
+	}
+	if len(res.Items) == 0 {
+		return text("No activity yet."), nil, nil
 	}
 	var b strings.Builder
 	for _, a := range res.Items {
