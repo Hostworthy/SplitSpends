@@ -167,7 +167,8 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	users := user.NewService(userRepo, notifier, quotas, c)
 	act := activity.NewService(repositories.NewActivities(db), c)
 	balances := balance.NewService(expenseRepo)
-	groups := group.NewService(groupRepo, users, balances, act, notifier, quotas, tx, c, cfg.BaseURL)
+	groups := group.NewService(group.Deps{Repo: groupRepo, Users: users, Balances: balances, Activity: act, Notifier: notifier,
+		Quota: quotas, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
 	receipts := receipt.NewService(receiptRepo, blobs, reader, tx, c)
 	categories := category.NewService(repositories.NewCategories(db), c)
