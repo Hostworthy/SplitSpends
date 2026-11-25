@@ -226,3 +226,55 @@ void showMessage(
 
 void showError(BuildContext context, Object error) =>
     showMessage(context, describeError(error));
+
+/// Asks the person to confirm [action]; true only when they take it.
+Future<bool> confirm(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required String action,
+  Key? actionKey,
+}) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: actionKey,
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(action),
+        ),
+      ],
+    ),
+  );
+  return ok ?? false;
+}
+
+/// Runs a change the person asked for and tells them how it went, with
+/// [done] on success or what went wrong otherwise.
+///
+/// The container is taken before the first await and handed to [change],
+/// so the change and whatever it refreshes finish even when the person
+/// leaves the screen meanwhile. Messages show only while [context] is.
+/// Returns whether the change succeeded.
+Future<bool> runChange(
+  BuildContext context,
+  Future<void> Function(ProviderContainer container) change, {
+  String? done,
+}) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  try {
+    await change(container);
+  } catch (error) {
+    if (context.mounted) showError(context, error);
+    return false;
+  }
+  if (done != null && context.mounted) showMessage(context, done);
+  return true;
+}

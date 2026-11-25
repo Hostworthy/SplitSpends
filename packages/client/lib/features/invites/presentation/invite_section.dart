@@ -30,25 +30,16 @@ class _InviteSectionState extends ConsumerState<InviteSection> {
 
   String get _groupId => widget.group.id;
 
-  /// The container outlives this section, so a change saved after the
-  /// person left settings still refreshes the list of links.
-  ProviderContainer get _container =>
-      ProviderScope.containerOf(context, listen: false);
-
   Future<void> _create() async {
-    final container = _container;
     setState(() => _busy = true);
-    try {
+    await runChange(context, (container) async {
       final invite = await container
           .read(invitesRepositoryProvider)
           .create(_groupId);
       container.invalidate(groupInvitesProvider(_groupId));
       if (mounted) setState(() => _created = invite);
-    } catch (error) {
-      if (mounted) showError(context, error);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    });
+    if (mounted) setState(() => _busy = false);
   }
 
   Future<void> _copy(String url) async {
@@ -67,37 +58,22 @@ class _InviteSectionState extends ConsumerState<InviteSection> {
   }
 
   Future<void> _revoke(Invite invite) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Revoke this link?'),
-        content: const Text(
+    final ok = await confirm(
+      context,
+      title: 'Revoke this link?',
+      message:
           'People who have it can no longer join. Members stay in the group.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Revoke'),
-          ),
-        ],
-      ),
+      action: 'Revoke',
     );
-    if (ok != true || !mounted) return;
-    final container = _container;
-    try {
+    if (!ok || !mounted) return;
+    final revoked = await runChange(context, (container) async {
       await container
           .read(invitesRepositoryProvider)
           .revoke(_groupId, invite.id);
       container.invalidate(groupInvitesProvider(_groupId));
-      if (!mounted) return;
-      if (_created?.id == invite.id) setState(() => _created = null);
-      showMessage(context, 'Link revoked');
-    } catch (error) {
-      if (mounted) showError(context, error);
+    }, done: 'Link revoked');
+    if (revoked && mounted && _created?.id == invite.id) {
+      setState(() => _created = null);
     }
   }
 

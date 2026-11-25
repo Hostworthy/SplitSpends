@@ -10,6 +10,7 @@ import 'package:splitspends/app/theme.dart';
 import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
+import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/auth/presentation/auth_layout.dart';
 import 'package:splitspends/features/auth/presentation/welcome_screen.dart';
 import 'package:splitspends/features/invites/domain/invite.dart';
@@ -110,32 +111,19 @@ class _JoinScreenState extends ConsumerState<JoinScreen> {
     if (mounted) context.go(Routes.login);
   }
 
-  Future<bool> _confirmServer(String server, String current) async {
+  Future<bool> _confirmServer(String server, String current) {
     final host = Uri.tryParse(server)?.host ?? server;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(current.isEmpty ? 'Use this server?' : 'Switch servers?'),
-        content: Text(
+    return confirm(
+      context,
+      title: current.isEmpty ? 'Use this server?' : 'Switch servers?',
+      message:
           'This invite is for $server. Split Spends will use that server '
           '${current.isEmpty ? 'from now on' : 'instead of $current'} and '
           'send your sign-in code to it. Continue only if you trust whoever '
           'sent you the link.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('join-confirm-server'),
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Use $host'),
-          ),
-        ],
-      ),
+      action: 'Use $host',
+      actionKey: const Key('join-confirm-server'),
     );
-    return confirmed ?? false;
   }
 
   @override

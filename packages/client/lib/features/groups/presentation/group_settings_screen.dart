@@ -17,7 +17,6 @@ import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
-import 'package:splitspends/features/groups/domain/groups_repository.dart';
 import 'package:splitspends/features/groups/presentation/default_split_section.dart';
 import 'package:splitspends/features/groups/presentation/emoji_picker.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';
@@ -55,7 +54,6 @@ class _SettingsState extends ConsumerState<_Settings> {
   late final _name = TextEditingController(text: widget.group.name);
 
   Group get group => widget.group;
-  GroupsRepository get _repo => ref.read(groupsRepositoryProvider);
 
   @override
   void dispose() {
@@ -63,105 +61,11 @@ class _SettingsState extends ConsumerState<_Settings> {
     super.dispose();
   }
 
-  /// The container outlives this screen, so a change saved after the person
-  /// left still refreshes the lists.
-  ProviderContainer get _container =>
-      ProviderScope.containerOf(context, listen: false);
-
-  Future<void> _patch(GroupInput input, {String? done}) async {
-    final container = _container;
-    try {
-      await _repo.update(group.id, input);
-      refreshLedgerIn(container);
-      if (mounted && done != null) showMessage(context, done);
-    } catch (error) {
-      if (mounted) showError(context, error);
-    }
-  }
-
-  Future<void> _addMember() async {
-    final entry = await showPersonDialog(context, title: 'Add member');
-    if (entry == null || !mounted) return;
-    final container = _container;
-    try {
-      await _repo.addMember(group.id, email: entry.email, name: entry.name);
-      refreshLedgerIn(container);
-    } catch (error) {
-      if (mounted) showError(context, error);
-    }
-  }
-
-  Future<bool> _confirm(String title, String message, String action) async =>
-      await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(action),
-            ),
-          ],
-        ),
-      ) ??
-      false;
-
-  Future<void> _removeMember(String userId, {required bool self}) async {
-    final ok = await _confirm(
-      self ? 'Leave group?' : 'Remove member?',
-      'Only possible when their balance in this group is settled.',
-      self ? 'Leave' : 'Remove',
-    );
-    if (!ok || !mounted) return;
-    final container = _container;
-    try {
-      await _repo.removeMember(group.id, userId);
-      refreshLedgerIn(container);
-      if (self && mounted) context.go(Routes.groups);
-    } catch (error) {
-      if (mounted) showError(context, error);
-    }
-  }
-
-  Future<void> _delete() async {
-    final ok = await _confirm(
-      'Delete group?',
-      'This removes ${group.name} and its expenses for everyone. Only possible when everyone is settled up.',
-      'Delete',
-    );
-    if (!ok || !mounted) return;
-    final container = _container;
-    try {
-      await _repo.delete(group.id);
-      refreshLedgerIn(container);
-      if (mounted) context.go(Routes.groups);
-    } catch (error) {
-      if (mounted) showError(context, error);
-    }
-  }
-
-  Future<void> _export() async {
-    try {
-      final bytes = await _repo.export(group.id);
-      final name = '${group.name.replaceAll(RegExp(r'[^\w\- ]'), '')}.csv';
-      if (!saveDownload(name, bytes, 'text/csv')) {
-        await Clipboard.setData(ClipboardData(text: utf8.decode(bytes)));
-        if (mounted) showMessage(context, 'CSV copied to the clipboard');
-      }
-    } catch (error) {
-      if (mounted) showError(context, error);
-    }
-  }
+  void _rename(String name) =>
+      _patch(context, group, GroupInput(name: name.trim()), done: 'Renamed');
 
   @override
   Widget build(BuildContext context) {
-    final meId = ref.watch(meProvider)?.id;
-    final scheme = Theme.of(context).colorScheme;
     return ListView(
       padding: const EdgeInsets.only(bottom: 96),
       children: [
@@ -174,14 +78,10 @@ class _SettingsState extends ConsumerState<_Settings> {
               labelText: 'Name',
               suffixIcon: IconButton(
                 icon: const Icon(Icons.check_rounded),
-                onPressed: () => _patch(
-                  GroupInput(name: _name.text.trim()),
-                  done: 'Renamed',
-                ),
+                onPressed: () => _rename(_name.text),
               ),
             ),
-            onSubmitted: (v) =>
-                _patch(GroupInput(name: v.trim()), done: 'Renamed'),
+            onSubmitted: _rename,
           ),
         ),
         const SectionHeader('Type'),
@@ -194,11 +94,66 @@ class _SettingsState extends ConsumerState<_Settings> {
                 ChoiceChip(
                   label: Text('${kind.emoji}  ${kind.label}'),
                   selected: group.kind == kind,
-                  onSelected: (_) => _patch(GroupInput(kind: kind)),
+                  onSelected: (_) =>
+                      _patch(context, group, GroupInput(kind: kind)),
                 ),
             ],
           ),
         ),
+        _LookSection(group: group),
+        _MoneySection(group: group),
+        _MembersSection(group: group),
+        InviteSection(group: group),
+        DefaultSplitSection(group: group),
+        _DangerZone(group: group),
+      ],
+    );
+  }
+}
+
+Future<void> _patch(
+  BuildContext context,
+  Group group,
+  GroupInput input, {
+  String? done,
+}) => changeLedger(
+  context,
+  (container) =>
+      container.read(groupsRepositoryProvider).update(group.id, input),
+  done: done,
+);
+
+Future<void> _removeMember(
+  BuildContext context,
+  Group group,
+  String userId, {
+  required bool self,
+}) async {
+  final ok = await confirm(
+    context,
+    title: self ? 'Leave group?' : 'Remove member?',
+    message: 'Only possible when their balance in this group is settled.',
+    action: self ? 'Leave' : 'Remove',
+  );
+  if (!ok || !context.mounted) return;
+  final removed = await changeLedger(
+    context,
+    (container) =>
+        container.read(groupsRepositoryProvider).removeMember(group.id, userId),
+  );
+  if (removed && self && context.mounted) context.go(Routes.groups);
+}
+
+class _LookSection extends StatelessWidget {
+  const _LookSection({required this.group});
+
+  final Group group;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         const SectionHeader('Look'),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -214,7 +169,8 @@ class _SettingsState extends ConsumerState<_Settings> {
                 ChoiceChip(
                   label: Text(e, style: const TextStyle(fontSize: 18)),
                   selected: group.displayEmoji == e,
-                  onSelected: (_) => _patch(GroupInput(emoji: e)),
+                  onSelected: (_) =>
+                      _patch(context, group, GroupInput(emoji: e)),
                 ),
               ActionChip(
                 key: const Key('emoji-more'),
@@ -225,7 +181,9 @@ class _SettingsState extends ConsumerState<_Settings> {
                     context,
                     selected: group.displayEmoji,
                   );
-                  if (e != null) unawaited(_patch(GroupInput(emoji: e)));
+                  if (e != null && context.mounted) {
+                    unawaited(_patch(context, group, GroupInput(emoji: e)));
+                  }
                 },
               ),
             ],
@@ -235,9 +193,42 @@ class _SettingsState extends ConsumerState<_Settings> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: Swatches(
             selected: group.color,
-            onSelected: (hex) => _patch(GroupInput(color: hex)),
+            onSelected: (hex) => _patch(context, group, GroupInput(color: hex)),
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _MoneySection extends StatelessWidget {
+  const _MoneySection({required this.group});
+
+  final Group group;
+
+  Future<void> _export(BuildContext context) async {
+    try {
+      final bytes = await ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(groupsRepositoryProvider).export(group.id);
+      final name = '${group.name.replaceAll(RegExp(r'[^\w\- ]'), '')}.csv';
+      if (!saveDownload(name, bytes, 'text/csv')) {
+        await Clipboard.setData(ClipboardData(text: utf8.decode(bytes)));
+        if (context.mounted) {
+          showMessage(context, 'CSV copied to the clipboard');
+        }
+      }
+    } catch (error) {
+      if (context.mounted) showError(context, error);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         const SectionHeader('Money'),
         ListTile(
           leading: const Icon(Icons.currency_exchange_rounded),
@@ -251,8 +242,10 @@ class _SettingsState extends ConsumerState<_Settings> {
               context,
               selected: group.defaultCurrency,
             );
-            if (code != null) {
-              unawaited(_patch(GroupInput(defaultCurrency: code)));
+            if (code != null && context.mounted) {
+              unawaited(
+                _patch(context, group, GroupInput(defaultCurrency: code)),
+              );
             }
           },
         ),
@@ -263,17 +256,45 @@ class _SettingsState extends ConsumerState<_Settings> {
             'Combine debts so the group settles with fewer payments.',
           ),
           value: group.simplifyDebts,
-          onChanged: (v) => _patch(GroupInput(simplifyDebts: v)),
+          onChanged: (v) =>
+              _patch(context, group, GroupInput(simplifyDebts: v)),
         ),
         ListTile(
           leading: const Icon(Icons.download_rounded),
           title: const Text('Export as CSV'),
-          onTap: _export,
+          onTap: () => _export(context),
         ),
+      ],
+    );
+  }
+}
+
+class _MembersSection extends ConsumerWidget {
+  const _MembersSection({required this.group});
+
+  final Group group;
+
+  Future<void> _add(BuildContext context) async {
+    final entry = await showPersonDialog(context, title: 'Add member');
+    if (entry == null || !context.mounted) return;
+    await changeLedger(
+      context,
+      (container) => container
+          .read(groupsRepositoryProvider)
+          .addMember(group.id, email: entry.email, name: entry.name),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final meId = ref.watch(meProvider)?.id;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         SectionHeader(
           'Members',
           trailing: TextButton.icon(
-            onPressed: _addMember,
+            onPressed: () => _add(context),
             icon: const Icon(Icons.person_add_alt_1_rounded),
             label: const Text('Add'),
           ),
@@ -290,11 +311,44 @@ class _SettingsState extends ConsumerState<_Settings> {
                 : IconButton(
                     tooltip: 'Remove',
                     icon: const Icon(Icons.person_remove_outlined),
-                    onPressed: () => _removeMember(m.id, self: false),
+                    onPressed: () =>
+                        _removeMember(context, group, m.id, self: false),
                   ),
           ),
-        InviteSection(group: group),
-        DefaultSplitSection(group: group),
+      ],
+    );
+  }
+}
+
+class _DangerZone extends ConsumerWidget {
+  const _DangerZone({required this.group});
+
+  final Group group;
+
+  Future<void> _delete(BuildContext context) async {
+    final ok = await confirm(
+      context,
+      title: 'Delete group?',
+      message:
+          'This removes ${group.name} and its expenses for everyone. Only '
+          'possible when everyone is settled up.',
+      action: 'Delete',
+    );
+    if (!ok || !context.mounted) return;
+    final deleted = await changeLedger(
+      context,
+      (container) => container.read(groupsRepositoryProvider).delete(group.id),
+    );
+    if (deleted && context.mounted) context.go(Routes.groups);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final meId = ref.watch(meProvider)?.id;
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         const SectionHeader('Danger zone'),
         ListTile(
           leading: Icon(
@@ -302,6 +356,8 @@ class _SettingsState extends ConsumerState<_Settings> {
           ),
           title: Text(group.archived ? 'Unarchive group' : 'Archive group'),
           onTap: () => _patch(
+            context,
+            group,
             GroupInput(archived: !group.archived),
             done: group.archived ? 'Group restored' : 'Group archived',
           ),
@@ -311,12 +367,12 @@ class _SettingsState extends ConsumerState<_Settings> {
           ListTile(
             leading: const Icon(Icons.logout_rounded),
             title: const Text('Leave group'),
-            onTap: () => _removeMember(meId, self: true),
+            onTap: () => _removeMember(context, group, meId, self: true),
           ),
         ListTile(
           leading: Icon(Icons.delete_forever_rounded, color: scheme.error),
           title: Text('Delete group', style: TextStyle(color: scheme.error)),
-          onTap: _delete,
+          onTap: () => _delete(context),
         ),
       ],
     );
