@@ -83,6 +83,33 @@ class ErrorView extends StatelessWidget {
   }
 }
 
+/// The end of a list whose next page failed to load.
+class PageError extends StatelessWidget {
+  const PageError({super.key, required this.error, required this.onRetry});
+
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      children: [
+        Text(
+          'Could not load more. ${describeError(error)}',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('Try again'),
+        ),
+      ],
+    ),
+  );
+}
+
 /// Renders an [AsyncValue] with skeleton loading and error retry.
 class AsyncView<T> extends StatelessWidget {
   const AsyncView({

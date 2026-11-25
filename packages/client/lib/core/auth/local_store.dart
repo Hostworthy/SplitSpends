@@ -1,6 +1,8 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:splitspends/core/log.dart';
+
 /// Device persistence for the session (server URL, token) and preferences.
 abstract class LocalStore {
   Future<String?> readServerUrl();
@@ -42,7 +44,9 @@ class DeviceLocalStore implements LocalStore {
   Future<String?> readToken() async {
     try {
       return await _secure.read(key: _tokenKey);
-    } catch (_) {
+    } catch (error, stack) {
+      // An unreadable keystore means signing in again; the log keeps why.
+      log('auth.token.unreadable', error: error, stack: stack);
       return null;
     }
   }

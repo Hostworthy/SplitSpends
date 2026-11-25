@@ -1,3 +1,5 @@
+import 'package:splitspends/core/log.dart';
+
 /// Error returned by the SplitSpends API (or raised for transport failures).
 ///
 /// Mirrors the error envelope `{ error, code, field?, requestId? }`.
@@ -16,6 +18,17 @@ class ApiError implements Exception {
   const ApiError.network(this.message)
     : status = 0,
       code = 'NETWORK',
+      field = null,
+      requestId = null,
+      hasEnvelope = false,
+      retryAfter = null;
+
+  /// The server's certificate or TLS handshake was rejected. Unlike a
+  /// network error it is not read as being offline: the server answered,
+  /// but cannot be trusted.
+  const ApiError.tls(this.message)
+    : status = 0,
+      code = 'TLS',
       field = null,
       requestId = null,
       hasEnvelope = false,
@@ -63,7 +76,7 @@ class ApiError implements Exception {
     return ApiError(
       status: status,
       message: (json['error'] as String?) ?? 'Something went wrong.',
-      code: (json['code'] as String?) ?? _codeFor(status),
+      code: (json['code'] as String?) ?? codeFor(status),
       field: json['field'] as String?,
       requestId: json['requestId'] as String?,
       hasEnvelope: json['error'] is String && json['code'] is String,
@@ -86,7 +99,8 @@ class ApiError implements Exception {
   final Duration? retryAfter;
 
   bool get isUnauthorized => status == 401;
-  bool get isNetwork => status == 0;
+  bool get isNetwork => code == 'NETWORK';
+  bool get isTls => code == 'TLS';
   bool get isAiDisabled => code == 'AI_DISABLED';
 
   /// The account waits for an administrator or manager to approve it.
@@ -96,7 +110,8 @@ class ApiError implements Exception {
   bool get isDeclined => code == 'APPROVAL_DECLINED';
   bool get needsServer => code == 'NEEDS_SERVER';
 
-  static String _codeFor(int status) => switch (status) {
+  /// The code for an answer without the error envelope.
+  static String codeFor(int status) => switch (status) {
     401 => 'UNAUTHORIZED',
     403 => 'FORBIDDEN',
     404 => 'NOT_FOUND',
@@ -121,5 +136,6 @@ String describeError(Object error) {
     }
     return error.message;
   }
+  log('app.error.unexpected', error: error);
   return 'Something went wrong.';
 }
