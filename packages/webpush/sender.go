@@ -150,7 +150,7 @@ func guarded(allowPrivate bool) *http.Client {
 		if err != nil {
 			return err
 		}
-		if ip := net.ParseIP(host); ip == nil || push.Blocked(ip, allowPrivate) {
+		if ip, err := netip.ParseAddr(host); err != nil || push.Blocked(ip, allowPrivate) {
 			return fmt.Errorf("webpush.endpoint.blocked: %s", host)
 		}
 		return nil
@@ -190,7 +190,7 @@ func screen(ctx context.Context, host string, allowPrivate bool, lookup func(con
 		addrs = found
 	}
 	for _, ip := range addrs {
-		if push.Blocked(net.IP(ip.Unmap().AsSlice()), allowPrivate) {
+		if push.Blocked(ip, allowPrivate) {
 			return fmt.Errorf("webpush.endpoint.blocked: %s", host)
 		}
 	}

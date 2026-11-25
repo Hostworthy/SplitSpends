@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -178,11 +178,12 @@ func TestNewValidates(t *testing.T) {
 }
 
 func TestBlocked(t *testing.T) {
-	cases := []struct {
+	type blockCase struct {
 		ip           string
 		allowPrivate bool
 		blocked      bool
-	}{
+	}
+	cases := []blockCase{
 		{"142.250.74.106", false, false},
 		{"2a00:1450:4001:80b::200a", false, false},
 		{"127.0.0.1", false, true},
@@ -197,9 +198,22 @@ func TestBlocked(t *testing.T) {
 		{"127.0.0.1", true, false},
 		{"169.254.169.254", true, true},
 		{"fe80::1", true, true},
+		{"::ffff:10.0.0.8", false, true},
+		{"::ffff:142.250.74.106", false, false},
+		{"64:ff9b::8efa:4a6a", false, false},
+		{"2002:8efa:4a6a::1", false, false},
+		{"64:ff9b::a00:8", false, true},
+		{"64:ff9b::a00:8", true, false},
+		{"fe80::1%eth0", true, true},
+		{"fd00::1%eth0", false, true},
+	}
+	// Reserved and cloud metadata ranges stay blocked whatever the policy.
+	for _, ip := range []string{"192.0.0.192", "64:ff9b::a9fe:a9fe", "2002:a9fe:a9fe::1", "0.1.2.3", "240.0.0.1",
+		"198.18.0.1", "255.255.255.255", "224.0.0.1", "ff02::1", "::", "fd00:ec2::254", "100.100.100.200"} {
+		cases = append(cases, blockCase{ip, false, true}, blockCase{ip, true, true})
 	}
 	for _, tc := range cases {
-		if got := Blocked(net.ParseIP(tc.ip), tc.allowPrivate); got != tc.blocked {
+		if got := Blocked(netip.MustParseAddr(tc.ip), tc.allowPrivate); got != tc.blocked {
 			t.Errorf("Blocked(%s, %v) = %v, want %v", tc.ip, tc.allowPrivate, got, tc.blocked)
 		}
 	}
