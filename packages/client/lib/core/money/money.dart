@@ -44,8 +44,12 @@ abstract final class Money {
   }
 
   /// Parses user input like `12.5`, `12,50`, `1,234.56` or `-3` into minor
-  /// units. Returns null when the text is not a valid amount or has more
-  /// decimals than the currency allows.
+  /// units. Returns null when the text is not a valid amount, has more
+  /// decimals than the currency allows, or is too large to hold exactly.
+  ///
+  /// A lone `.` is always the decimal point when the currency has decimals,
+  /// so `9.999` in a 2-decimal currency is rejected rather than read as
+  /// 9,999. A lone `,` followed by three digits reads as grouping (`1,234`).
   static int? parse(String input, int exponent) {
     var text = input.trim().replaceAll(RegExp(r'[\s_]'), '');
     if (text.isEmpty) return null;
@@ -59,8 +63,9 @@ abstract final class Money {
     text = text.replaceAll(RegExp(r'[^0-9.,]'), '');
     if (text.isEmpty) return null;
 
-    // Decide which separator is the decimal one: the last of `.`/`,` when
-    // followed by 1..exponent digits (or any digits when it is the only one).
+    // Decide which separator is the decimal one: the last of `.`/`,` unless
+    // it repeats or is a lone grouping comma (or a lone dot in a currency
+    // without decimals).
     final lastDot = text.lastIndexOf('.');
     final lastComma = text.lastIndexOf(',');
     final sepIndex = lastDot > lastComma ? lastDot : lastComma;
@@ -75,6 +80,7 @@ abstract final class Money {
           count > 1 ||
           (tail.length == 3 &&
               exponent < 3 &&
+              (sep == ',' || exponent == 0) &&
               RegExp(r'^[1-9]\d{0,2}$').hasMatch(head));
       final otherSepPresent = sep == '.' ? lastComma >= 0 : lastDot >= 0;
       if (!looksLikeThousands || otherSepPresent) {
@@ -82,8 +88,13 @@ abstract final class Money {
         frac = tail;
       }
     }
-    whole = whole.replaceAll(RegExp(r'[.,]'), '');
+    whole = whole
+        .replaceAll(RegExp(r'[.,]'), '')
+        .replaceFirst(RegExp(r'^0+'), '');
     if (whole.isEmpty) whole = '0';
+    // Fifteen digits in minor units stay exact both as a 64-bit int and as
+    // a JavaScript number on the web, and cover the largest allowed total.
+    if (whole.length + exponent > 15) return null;
     if (frac.contains(RegExp(r'[^0-9]'))) return null;
     if (frac.length > exponent) {
       // Allow trailing zeros beyond the exponent ("12.500" for 2 decimals).

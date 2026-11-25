@@ -17,9 +17,9 @@ type ChallengeRepository interface {
 	// since: in total, and from client.
 	CountSince(ctx context.Context, email, client string, since time.Time) (total, own int, err error)
 	// Attempt counts one attempt against every code of email that is
-	// unconsumed, unexpired at now and below limit attempts, and returns those
-	// codes. Counting and checking are one step, so concurrent attempts never
-	// take a code past limit.
+	// usable at now with limit attempts (Challenge.Usable), and returns
+	// those codes. Counting and checking are one step, so concurrent
+	// attempts never take a code past limit.
 	Attempt(ctx context.Context, email string, now time.Time, limit int) ([]*Challenge, error)
 	// Consume marks a code used and reports whether it was still unused.
 	Consume(ctx context.Context, id uuid.UUID, at time.Time) (bool, error)

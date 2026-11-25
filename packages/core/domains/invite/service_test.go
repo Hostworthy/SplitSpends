@@ -91,6 +91,8 @@ func (m users) List(context.Context, []uuid.UUID) ([]*user.User, error) { return
 func (m users) Create(context.Context, *user.User) error                { return nil }
 func (m users) Update(context.Context, *user.User) error                { return nil }
 func (m users) Count(context.Context) (int, error)                      { return len(m), nil }
+func (m users) Placeholders(context.Context, uuid.UUID) (int, error)    { return 0, nil }
+func (m users) Lock(context.Context) error                              { return nil }
 
 type clockAt struct{ at time.Time }
 
@@ -104,7 +106,7 @@ func setup(t *testing.T) (*Service, *groups, *user.User, *clockAt) {
 	}
 	g := &groups{g: &group.Group{ID: uuid.New(), Name: "Flat", Emoji: "🏠", Members: []uuid.UUID{ada.ID}}}
 	c := &clockAt{at: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)}
-	svc := NewService(&memInvites{}, g, g, user.NewService(users{ada.ID: ada}, nil, c), c, "https://split.test")
+	svc := NewService(&memInvites{}, g, g, user.NewService(users{ada.ID: ada}, nil, nil, c), c, "https://split.test")
 	return svc, g, ada, c
 }
 
@@ -219,5 +221,45 @@ func TestExpiredUnknownAndRevokedLookTheSame(t *testing.T) {
 	list, _ := svc.List(ctx, ada.ID, g.g.ID)
 	if len(list) != 0 {
 		t.Fatalf("expired invites are not active: %v", list)
+	}
+}
+
+func TestLinksEndWhenTheirCreatorLeaves(t *testing.T) {
+	ctx := context.Background()
+	svc, g, ada, _ := setup(t)
+	mal := uuid.New()
+	g.g.Members = append(g.g.Members, mal)
+	issued, err := svc.Create(ctx, mal, g.g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := svc.Create(ctx, ada.ID, g.g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := svc.Lookup(ctx, issued.Token)
+	if err != nil || hash == "" {
+		t.Fatalf("the link works while Mal is a member: %q %v", hash, err)
+	}
+	g.g.Members = []uuid.UUID{ada.ID}
+
+	if _, err := svc.Accept(ctx, mal, issued.Token); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("a link of someone who left must not work, got %v", err)
+	}
+	if g.g.HasMember(mal) {
+		t.Fatal("Mal rejoined through his own link")
+	}
+	if _, err := svc.Preview(ctx, issued.Token); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("preview: %v", err)
+	}
+	if ok, err := svc.Live(ctx, hash); ok || err != nil {
+		t.Fatalf("a link of someone who left must not let anyone sign up: %v", err)
+	}
+	list, err := svc.List(ctx, ada.ID, g.g.ID)
+	if err != nil || len(list) != 1 || list[0].ID != kept.ID {
+		t.Fatalf("only Ada's link is still usable: %v %v", list, err)
+	}
+	if _, err := svc.Accept(ctx, uuid.New(), kept.Token); err != nil {
+		t.Fatalf("links of current members keep working: %v", err)
 	}
 }

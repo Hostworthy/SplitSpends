@@ -440,6 +440,9 @@ type ExpenseInput struct {
 	Tip         int64   `json:"tip,omitempty"`
 	ReceiptID   *string `json:"receiptId,omitempty"`
 	Recurrence  string  `json:"recurrence,omitempty"`
+	// UpdatedAt, on PUT, is the updatedAt of the expense the edit started
+	// from. The server answers CONFLICT when the expense has changed since.
+	UpdatedAt *string `json:"updatedAt,omitempty"`
 }
 
 // PaymentInput records a settle-up payment.

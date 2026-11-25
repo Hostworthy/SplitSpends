@@ -14,17 +14,11 @@ import 'package:splitspends/features/groups/domain/stats.dart';
 /// needs the server's answer, e.g. member invites). Groups still waiting to
 /// be created are shown alongside the server's.
 class OfflineGroupsRepository implements GroupsRepository {
-  OfflineGroupsRepository(
-    this._remote,
-    this._outbox, {
-    required this.me,
-    required this.onQueued,
-  });
+  OfflineGroupsRepository(this._remote, this._outbox, {required this.me});
 
   final GroupsRepository _remote;
   final Outbox _outbox;
   final User? Function() me;
-  final void Function() onQueued;
 
   @override
   Future<Group> create(GroupInput input) async {
@@ -42,21 +36,15 @@ class OfflineGroupsRepository implements GroupsRepository {
       color: input.color,
       members: input.members,
     );
-    if ((await _outbox.pending()).isEmpty) {
-      try {
-        return await _remote.create(withId);
-      } on ApiError catch (error) {
-        if (!error.isNetwork) rethrow;
-      }
-    }
-    await _outbox.add(
-      'POST',
-      '/groups',
-      body: withId.toJson(),
+    final body = withId.toJson();
+    return _outbox.write(
+      online: () => _remote.create(withId),
+      offline: () => _optimistic(body),
+      method: 'POST',
+      path: '/groups',
+      body: body,
       label: 'Create “$name”',
     );
-    onQueued();
-    return _optimistic(withId.toJson());
   }
 
   @override

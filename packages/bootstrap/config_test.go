@@ -70,3 +70,29 @@ func TestDatabaseConns(t *testing.T) {
 		}
 	}
 }
+
+// TestAdminEmail normalizes ADMIN_EMAIL like a sign-in address and rejects
+// values that are not one.
+func TestAdminEmail(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
+	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	for _, tc := range []struct{ value, want string }{
+		{"", ""},
+		{" Owner@Example.com ", "owner@example.com"},
+	} {
+		t.Setenv("ADMIN_EMAIL", tc.value)
+		c, err := bootstrap.LoadConfig()
+		if err != nil {
+			t.Fatalf("%q: %v", tc.value, err)
+		}
+		if c.AdminEmail != tc.want {
+			t.Errorf("%q: want %q, got %q", tc.value, tc.want, c.AdminEmail)
+		}
+	}
+	for _, value := range []string{"owner", "a@b.com,c@d.com"} {
+		t.Setenv("ADMIN_EMAIL", value)
+		if _, err := bootstrap.LoadConfig(); err == nil || !strings.Contains(err.Error(), "ADMIN_EMAIL") {
+			t.Errorf("%q: want an ADMIN_EMAIL error, got %v", value, err)
+		}
+	}
+}

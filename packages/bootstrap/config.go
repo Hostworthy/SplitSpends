@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/exchange"
 )
 
@@ -24,6 +25,7 @@ type Config struct {
 	Secret         []byte
 	SignupMode     auth.SignupMode
 	AllowedDomains []string
+	AdminEmail     string
 	SessionTTL     time.Duration
 	CORSOrigins    []string
 	ProxyHops      int
@@ -156,6 +158,11 @@ func LoadConfig() (*Config, error) {
 	c.AllowedDomains = list(env("SIGNUP_ALLOWED_DOMAINS", ""))
 	if c.SignupMode == auth.SignupDomain && len(c.AllowedDomains) == 0 {
 		return nil, fmt.Errorf("bootstrap.config.env.required.not-found.SIGNUP_ALLOWED_DOMAINS")
+	}
+	if admin := env("ADMIN_EMAIL", ""); admin != "" {
+		if c.AdminEmail, err = user.NormalizeEmail(admin); err != nil {
+			return nil, fmt.Errorf("bootstrap.config.env.invalid.ADMIN_EMAIL: use the one email address the first administrator signs in with")
+		}
 	}
 	days, err := strconv.Atoi(env("SESSION_TTL_DAYS", "90"))
 	if err != nil || days < 1 {

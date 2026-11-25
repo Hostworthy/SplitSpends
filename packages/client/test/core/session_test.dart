@@ -15,6 +15,7 @@ import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/core/sync/outbox.dart';
 import 'package:splitspends/core/sync/outbox_sync.dart';
+import 'package:splitspends/core/sync/reachability.dart';
 
 const _server = 'http://server.test';
 const _ada = Me(id: 'ada', name: 'Ada');
@@ -173,6 +174,87 @@ void main() {
     final session = await container.read(sessionProvider.future);
     expect(session.me, isNull);
     expect(session.owner, (server: _server, user: _ada.id));
+  });
+
+  group('an offline start', () {
+    var online = false;
+
+    setUp(() {
+      online = false;
+      store
+        ..token = 'ada'
+        ..appMode = AppMode.connected.name;
+    });
+
+    ProviderContainer offline() {
+      final container = ProviderContainer(
+        overrides: [
+          localStoreProvider.overrideWithValue(store),
+          databaseProvider.overrideWith((ref) async => db),
+          httpClientProvider.overrideWithValue(
+            MockClient((request) async {
+              if (!online) throw http.ClientException('offline');
+              return http.Response(jsonEncode({'data': _ada.toJson()}), 200);
+            }),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('uses the cached profile', () async {
+      await Stores.meta.record('account').put(db, _ada.id);
+      final container = offline();
+      await container.read(responseCacheProvider).write('$_server/api/v1/me', {
+        'data': _ada.toJson(),
+      });
+
+      final session = await container.read(sessionProvider.future);
+      expect(session.me?.id, _ada.id);
+      expect(session.me?.name, 'Ada');
+    });
+
+    test('uses the profile kept at sign-in', () async {
+      online = true;
+      final first = offline();
+      await first.read(sessionProvider.future);
+      await first.read(sessionProvider.notifier).signIn(token: 'ada', me: _ada);
+      await first.read(responseCacheProvider).clear();
+      first.dispose();
+
+      online = false;
+      final session = await offline().read(sessionProvider.future);
+      expect(session.me?.id, _ada.id);
+    });
+
+    test('loads the profile once the server is reachable', () async {
+      await Stores.meta.record('account').put(db, _ada.id);
+      final container = offline();
+      expect((await container.read(sessionProvider.future)).me, isNull);
+
+      online = true;
+      container.read(reachabilityProvider.notifier)
+        ..report(false)
+        ..report(true);
+      await pumpEventQueue();
+      expect(container.read(meProvider)?.id, _ada.id);
+    });
+
+    test('forgets the kept profile on sign-out', () async {
+      online = true;
+      final first = offline();
+      await first.read(sessionProvider.future);
+      await first.read(sessionProvider.notifier).signIn(token: 'ada', me: _ada);
+      await first.read(sessionProvider.notifier).signOut();
+      first.dispose();
+
+      online = false;
+      store
+        ..token = 'ada'
+        ..appMode = AppMode.connected.name;
+      expect((await offline().read(sessionProvider.future)).me, isNull);
+    });
   });
 
   group('OutboxSync', () {

@@ -37,6 +37,10 @@ func (m memUsers) List(_ context.Context, ids []uuid.UUID) ([]*user.User, error)
 func (m memUsers) Create(_ context.Context, u *user.User) error { m[u.ID] = u; return nil }
 func (m memUsers) Update(_ context.Context, u *user.User) error { m[u.ID] = u; return nil }
 func (m memUsers) Count(context.Context) (int, error)           { return len(m), nil }
+func (m memUsers) Lock(context.Context) error                   { return nil }
+func (m memUsers) Placeholders(context.Context, uuid.UUID) (int, error) {
+	return 0, nil
+}
 
 // ledger holds one group's entries plus non-group entries.
 type ledger struct {
@@ -113,6 +117,27 @@ func (o *outbox) LoginCode(context.Context, string, string, time.Duration) error
 func (o *outbox) Invite(context.Context, string, string) error                   { return nil }
 func (o *outbox) Notify(_ context.Context, n ports.Notification)                 { o.sent = append(o.sent, n) }
 
+// memQuota mirrors the database rule: limit uses per window from the first.
+type memQuota map[string]*budget
+
+type budget struct {
+	start time.Time
+	used  int
+}
+
+func (m memQuota) Take(_ context.Context, key string, limit int, window time.Duration, now time.Time) (bool, error) {
+	q := m[key]
+	if q == nil || !q.start.After(now.Add(-window)) {
+		q = &budget{start: now}
+		m[key] = q
+	}
+	if q.used >= limit {
+		return false, nil
+	}
+	q.used++
+	return true, nil
+}
+
 type noTx struct{}
 
 func (noTx) Do(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
@@ -161,8 +186,8 @@ func setup(t *testing.T) *fixture {
 		{UserID: f.ada.ID, Paid: 9000, Owed: 3000}, {UserID: f.ben.ID, Owed: 3000}, {UserID: f.sam.ID, Owed: 3000},
 	}}}}
 	f.svc = NewService(Deps{Repo: memReminders{}, Groups: f.ledger, Connections: links{{f.ada.ID, f.ben.ID}: true},
-		Users: user.NewService(users, nil, f.clock), Balances: balance.NewService(f.ledger),
-		Activity: activity.NewService(f.feed, f.clock), Notifier: f.mail, Tx: noTx{}, Clock: f.clock, BaseURL: "https://split.test"})
+		Users: user.NewService(users, nil, memQuota{}, f.clock), Balances: balance.NewService(f.ledger),
+		Activity: activity.NewService(f.feed, f.clock), Notifier: f.mail, Quota: memQuota{}, Tx: noTx{}, Clock: f.clock, BaseURL: "https://split.test"})
 	return f
 }
 

@@ -11,7 +11,7 @@ Secret Manager ──> database URL, SECRET_KEY, SMTP and AI keys
 
 ```bash
 cd deploy/gcp
-cp terraform.tfvars.example terraform.tfvars   # fill in project_id, database_url, smtp
+cp terraform.tfvars.example terraform.tfvars   # fill in project_id, database_url, admin_email, smtp
 cp backend.tf.example backend.tf               # fill in your state bucket (see below)
 terraform init
 terraform apply                                # first run: APIs, registry, secrets (no service yet)

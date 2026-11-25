@@ -138,11 +138,13 @@ func (e *Env) Join(t testing.TB, email, name, invite string) *auth.Login {
 	return login
 }
 
-// Notifier records login codes and notifications instead of sending them.
+// Notifier records login codes, invitations and notifications instead of
+// sending them.
 type Notifier struct {
-	mu    sync.Mutex
-	codes map[string]string
-	sent  []ports.Notification
+	mu      sync.Mutex
+	codes   map[string]string
+	invites []string
+	sent    []ports.Notification
 }
 
 // NewNotifier returns an empty Notifier.
@@ -155,7 +157,19 @@ func (n *Notifier) LoginCode(_ context.Context, to, code string, _ time.Duration
 	return nil
 }
 
-func (n *Notifier) Invite(context.Context, string, string) error { return nil }
+func (n *Notifier) Invite(_ context.Context, to, _ string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.invites = append(n.invites, to)
+	return nil
+}
+
+// Invites returns the addresses invitations were sent to, in order.
+func (n *Notifier) Invites() []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]string(nil), n.invites...)
+}
 
 func (n *Notifier) Notify(_ context.Context, msg ports.Notification) {
 	n.mu.Lock()
@@ -198,11 +212,11 @@ func (n *Notifier) Subjects(email string) []string {
 	return subjects
 }
 
-// Reset drops the recorded notifications.
+// Reset drops the recorded invitations and notifications.
 func (n *Notifier) Reset() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.sent = nil
+	n.invites, n.sent = nil, nil
 }
 
 // Clock is a clock that moves only when a test moves it.

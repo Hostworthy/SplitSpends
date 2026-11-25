@@ -2,6 +2,7 @@
 region       = "us-east-1"
 database_url = "postgres://user:password@ep-example.us-east-1.aws.neon.tech/splitspends?sslmode=require"
 signup_mode  = "invite"
+admin_email  = "you@example.com"
 
 smtp = {
   host     = "smtp.gmail.com"
