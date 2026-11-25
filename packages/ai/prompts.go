@@ -7,9 +7,20 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+)
+
+// Every provider call gets the same budget. requestTimeout covers the whole
+// call, retries included, so a scan or draft never waits longer than this for
+// the provider; the API server's write timeout is sized to it. retries is how
+// often the Anthropic SDK repeats a rate-limited or failing call within that
+// budget; the OpenAI-compatible adapter does not retry.
+const (
+	requestTimeout = 3 * time.Minute
+	retries        = 1
 )
 
 const receiptPrompt = `You read photos of receipts and bills for an expense-splitting app.

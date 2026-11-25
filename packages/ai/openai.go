@@ -24,12 +24,13 @@ type OpenAICompatible struct {
 	apiKey  string
 	model   string
 	http    *http.Client
+	timeout time.Duration
 }
 
 // NewOpenAICompatible builds a reader. baseURL ends before /chat/completions,
 // for example http://localhost:11434/v1.
 func NewOpenAICompatible(baseURL, apiKey, model string) *OpenAICompatible {
-	return &OpenAICompatible{baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, model: model, http: &http.Client{Timeout: 3 * time.Minute}}
+	return &OpenAICompatible{baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, model: model, http: &http.Client{}, timeout: requestTimeout}
 }
 
 type chatMessage struct {
@@ -38,6 +39,8 @@ type chatMessage struct {
 }
 
 func (o *OpenAICompatible) ask(ctx context.Context, system string, user any, name string, schema map[string]any) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, o.timeout)
+	defer cancel()
 	body, err := json.Marshal(map[string]any{
 		"model":    o.model,
 		"messages": []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}},

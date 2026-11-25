@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
@@ -24,24 +25,29 @@ var fallbackModels = map[string]bool{
 
 // Anthropic reads receipts with Claude.
 type Anthropic struct {
-	client anthropic.Client
-	model  string
-	effort string
+	client  anthropic.Client
+	model   string
+	effort  string
+	timeout time.Duration
 }
 
 // NewAnthropic builds an Anthropic reader. effort may be empty.
 func NewAnthropic(apiKey, baseURL, model, effort string) *Anthropic {
-	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	// The SDK otherwise allows each attempt up to ten minutes and retries
+	// twice; ask bounds the whole call instead.
+	opts := []option.RequestOption{option.WithAPIKey(apiKey), option.WithMaxRetries(retries)}
 	if baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
 	if model == "" {
 		model = DefaultAnthropicModel
 	}
-	return &Anthropic{client: anthropic.NewClient(opts...), model: model, effort: effort}
+	return &Anthropic{client: anthropic.NewClient(opts...), model: model, effort: effort, timeout: requestTimeout}
 }
 
 func (a *Anthropic) ask(ctx context.Context, system string, content []anthropic.BetaContentBlockParamUnion, schema map[string]any) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, a.timeout)
+	defer cancel()
 	params := anthropic.BetaMessageNewParams{
 		Model:     a.model,
 		MaxTokens: 16000,
