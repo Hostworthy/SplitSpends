@@ -268,18 +268,21 @@ String toHexColor(Color color) {
   return '#${(argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 }
 
-/// Palette offered for avatars and groups.
-const palette = <Color>[
-  Color(0xFF0E7C66),
-  Color(0xFF00897B),
-  Color(0xFF1E88E5),
-  Color(0xFF5E35B1),
-  Color(0xFF8E24AA),
-  Color(0xFFD81B60),
-  Color(0xFFE53935),
-  Color(0xFFF4511E),
-  Color(0xFFFB8C00),
-  Color(0xFFC0A000),
-  Color(0xFF43A047),
-  Color(0xFF546E7A),
+/// Palette offered for avatars and groups, with the names screen readers
+/// announce for each colour.
+const swatches = <({Color color, String name})>[
+  (color: Color(0xFF0E7C66), name: 'Deep teal'),
+  (color: Color(0xFF00897B), name: 'Teal'),
+  (color: Color(0xFF1E88E5), name: 'Blue'),
+  (color: Color(0xFF5E35B1), name: 'Deep purple'),
+  (color: Color(0xFF8E24AA), name: 'Purple'),
+  (color: Color(0xFFD81B60), name: 'Pink'),
+  (color: Color(0xFFE53935), name: 'Red'),
+  (color: Color(0xFFF4511E), name: 'Deep orange'),
+  (color: Color(0xFFFB8C00), name: 'Orange'),
+  (color: Color(0xFFC0A000), name: 'Mustard'),
+  (color: Color(0xFF43A047), name: 'Green'),
+  (color: Color(0xFF546E7A), name: 'Slate'),
 ];
+
+final palette = [for (final s in swatches) s.color];

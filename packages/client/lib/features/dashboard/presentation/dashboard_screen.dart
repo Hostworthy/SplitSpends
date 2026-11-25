@@ -76,9 +76,15 @@ class DashboardScreen extends ConsumerWidget {
                               ),
                             ),
                             if (me != null)
-                              GestureDetector(
-                                onTap: () => context.go(Routes.account),
-                                child: UserAvatar(user: me, size: 44),
+                              IconButton(
+                                tooltip: 'Account',
+                                padding: EdgeInsets.zero,
+                                onPressed: () => context.go(Routes.account),
+                                // The tooltip names the button; the
+                                // avatar's initials would only add noise.
+                                icon: ExcludeSemantics(
+                                  child: UserAvatar(user: me, size: 44),
+                                ),
                               ),
                           ],
                         ),
