@@ -67,7 +67,7 @@ func (a *API) acceptInvite(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusOK, toGroup(v))
+	return details(w, http.StatusOK, a.toGroup(v))
 }
 
 func toInvite(i *invite.Invite) platform.Invite {

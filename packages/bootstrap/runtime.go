@@ -164,7 +164,7 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	}
 
 	quotas := repositories.NewQuotas(db)
-	users := user.NewService(userRepo, notifier, quotas, c, log)
+	users := user.NewService(userRepo, notifier, quotas, c, log, user.Settings{Gravatar: cfg.Gravatar})
 	act := activity.NewService(repositories.NewActivities(db), c)
 	balances := balance.NewService(expenseRepo)
 	groups := group.NewService(group.Deps{Repo: groupRepo, Users: users, Balances: balances, Activity: act, Notifier: notifier,

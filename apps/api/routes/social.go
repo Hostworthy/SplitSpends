@@ -17,7 +17,7 @@ func (a *API) listFriends(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]platform.Friend, 0, len(friends))
 	for _, f := range friends {
-		out = append(out, toFriend(f))
+		out = append(out, a.toFriend(f))
 	}
 	return paged(w, r, out)
 }
@@ -31,7 +31,7 @@ func (a *API) addFriend(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusCreated, toFriend(*f))
+	return details(w, http.StatusCreated, a.toFriend(*f))
 }
 
 func (a *API) getFriend(w http.ResponseWriter, r *http.Request) error {
@@ -43,7 +43,7 @@ func (a *API) getFriend(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := platform.FriendDetail{Friend: toFriend(d.Summary), Groups: []platform.FriendGroup{}, NonGroup: toBalances(d.NonGroup)}
+	out := platform.FriendDetail{Friend: a.toFriend(d.Summary), Groups: []platform.FriendGroup{}, NonGroup: toBalances(d.NonGroup)}
 	for _, g := range d.Groups {
 		out.Groups = append(out.Groups, platform.FriendGroup{GroupID: g.GroupID.String(), GroupName: g.GroupName, Balances: toBalances(g.Balances)})
 	}
@@ -66,7 +66,7 @@ func (a *API) inviteFriend(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusOK, toFriend(d.Summary))
+	return details(w, http.StatusOK, a.toFriend(d.Summary))
 }
 
 func (a *API) removeFriend(w http.ResponseWriter, r *http.Request) error {
@@ -127,7 +127,7 @@ func (a *API) listGroups(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]platform.Group, 0, len(groups))
 	for _, g := range groups {
-		out = append(out, toGroup(g))
+		out = append(out, a.toGroup(g))
 	}
 	return list(w, out, total)
 }
@@ -151,7 +151,7 @@ func (a *API) createGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusCreated, toGroup(v))
+	return details(w, http.StatusCreated, a.toGroup(v))
 }
 
 func (a *API) getGroup(w http.ResponseWriter, r *http.Request) error {
@@ -163,7 +163,7 @@ func (a *API) getGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusOK, toGroup(v))
+	return details(w, http.StatusOK, a.toGroup(v))
 }
 
 func (a *API) patchGroup(w http.ResponseWriter, r *http.Request) error {
@@ -183,7 +183,7 @@ func (a *API) patchGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusOK, toGroup(v))
+	return details(w, http.StatusOK, a.toGroup(v))
 }
 
 func (a *API) deleteGroup(w http.ResponseWriter, r *http.Request) error {
@@ -210,7 +210,7 @@ func (a *API) addMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusCreated, toGroup(v))
+	return details(w, http.StatusCreated, a.toGroup(v))
 }
 
 func (a *API) removeMember(w http.ResponseWriter, r *http.Request) error {

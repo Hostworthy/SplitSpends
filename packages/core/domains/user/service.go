@@ -31,11 +31,28 @@ type Service struct {
 	quota    ports.Quota
 	clock    clock.Clock
 	log      *slog.Logger
+	settings Settings
+}
+
+// Settings are the host's choices about accounts.
+type Settings struct {
+	// Gravatar lets people show their Gravatar picture. When it is off
+	// nobody can turn theirs on and no picture is shown.
+	Gravatar bool
 }
 
 // NewService builds a Service.
-func NewService(repo Repository, notifier ports.Notifier, quota ports.Quota, c clock.Clock, log *slog.Logger) *Service {
-	return &Service{repo: repo, notifier: notifier, quota: quota, clock: c, log: log}
+func NewService(repo Repository, notifier ports.Notifier, quota ports.Quota, c clock.Clock, log *slog.Logger, settings Settings) *Service {
+	return &Service{repo: repo, notifier: notifier, quota: quota, clock: c, log: log, settings: settings}
+}
+
+// Picture is the Gravatar image URL to show for u at size pixels, or ""
+// when u has none or the host turned pictures off.
+func (s *Service) Picture(u *User, size int) string {
+	if !s.settings.Gravatar {
+		return ""
+	}
+	return u.Picture(size)
 }
 
 // Get returns a user by id.
@@ -66,6 +83,9 @@ func (s *Service) Index(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*Us
 
 // Update applies a profile patch.
 func (s *Service) Update(ctx context.Context, id uuid.UUID, p Patch) (*User, error) {
+	if p.Gravatar != nil && *p.Gravatar && !s.settings.Gravatar {
+		return nil, errs.Validation("gravatar", "Gravatar pictures are turned off on this server.")
+	}
 	u, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, err

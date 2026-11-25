@@ -62,14 +62,10 @@ func toBalances(b money.Balances) []platform.Balance {
 	return out
 }
 
-// pictures mirrors the host's GRAVATAR setting; New sets it once at startup
-// so every serializer can honour it.
-var pictures = true
-
 // toUser shows u to other people. Whether an administrator disabled someone
 // is between them and the administrators, so others see them as active.
-func toUser(u *user.User) platform.User {
-	out := toAccountUser(u)
+func (a *API) toUser(u *user.User) platform.User {
+	out := a.toAccountUser(u)
 	if u.Status == user.StatusDisabled {
 		out.Status = string(user.StatusActive)
 	}
@@ -78,20 +74,20 @@ func toUser(u *user.User) platform.User {
 
 // toAccountUser shows u with its real status, to itself and to
 // administrators.
-func toAccountUser(u *user.User) platform.User {
+func (a *API) toAccountUser(u *user.User) platform.User {
 	var email, picture *string
 	if u.Email != "" {
 		email = &u.Email
 	}
-	if p := u.Picture(160); pictures && p != "" {
+	if p := a.svc.Users.Picture(u, 160); p != "" {
 		picture = &p
 	}
 	return platform.User{ID: u.ID.String(), Email: email, Name: u.Name, DefaultCurrency: u.DefaultCurrency, AvatarColor: u.AvatarColor,
 		AvatarURL: picture, Status: string(u.Status)}
 }
 
-func toMe(u *user.User) platform.Me {
-	return platform.Me{User: toAccountUser(u), Timezone: u.Timezone, Gravatar: u.Gravatar, Role: string(u.Role), Notifications: platform.Notifications{
+func (a *API) toMe(u *user.User) platform.Me {
+	return platform.Me{User: a.toAccountUser(u), Timezone: u.Timezone, Gravatar: u.Gravatar, Role: string(u.Role), Notifications: platform.Notifications{
 		NotificationSwitches: platform.NotificationSwitches(u.Notifications.Switches),
 		Push:                 platform.NotificationSwitches(u.Notifications.Push),
 	}}
@@ -106,10 +102,10 @@ func toToken(s *auth.Session, token string) platform.Token {
 	return platform.Token{ID: s.ID.String(), Name: s.Name, Token: token, CreatedAt: stamp(s.CreatedAt), LastUsedAt: stampPtr(s.LastUsedAt)}
 }
 
-func toGroup(v *group.View) platform.Group {
+func (a *API) toGroup(v *group.View) platform.Group {
 	members := make([]platform.User, 0, len(v.People))
 	for _, u := range v.People {
-		members = append(members, toUser(u))
+		members = append(members, a.toUser(u))
 	}
 	return platform.Group{ID: v.ID.String(), Name: v.Name, Kind: string(v.Kind), DefaultCurrency: v.DefaultCurrency,
 		SimplifyDebts: v.SimplifyDebts, Emoji: v.Emoji, Color: v.Color, Archived: v.ArchivedAt != nil,
@@ -125,8 +121,8 @@ func toDebts(ds []balance.Debt) []platform.Debt {
 	return out
 }
 
-func toFriend(f friend.Summary) platform.Friend {
-	return platform.Friend{User: toUser(f.User), Balances: toBalances(f.Balances)}
+func (a *API) toFriend(f friend.Summary) platform.Friend {
+	return platform.Friend{User: a.toUser(f.User), Balances: toBalances(f.Balances)}
 }
 
 func toExpense(e *expense.Expense, viewer uuid.UUID) platform.Expense {
@@ -155,11 +151,11 @@ func toExpense(e *expense.Expense, viewer uuid.UUID) platform.Expense {
 		MyBalance: e.Net(viewer)}
 }
 
-func toActivity(a *activity.Activity, actor *user.User) platform.Activity {
-	u := platform.User{ID: a.ActorID.String(), Name: "Someone"}
+func (a *API) toActivity(e *activity.Activity, actor *user.User) platform.Activity {
+	u := platform.User{ID: e.ActorID.String(), Name: "Someone"}
 	if actor != nil {
-		u = toUser(actor)
+		u = a.toUser(actor)
 	}
-	return platform.Activity{ID: a.ID.String(), Kind: string(a.Kind), Actor: u, GroupID: idPtr(a.GroupID), ExpenseID: idPtr(a.ExpenseID),
-		Summary: activity.Describe(a, u.Name), Data: a.Data, CreatedAt: stamp(a.CreatedAt)}
+	return platform.Activity{ID: e.ID.String(), Kind: string(e.Kind), Actor: u, GroupID: idPtr(e.GroupID), ExpenseID: idPtr(e.ExpenseID),
+		Summary: activity.Describe(e, u.Name), Data: e.Data, CreatedAt: stamp(e.CreatedAt)}
 }

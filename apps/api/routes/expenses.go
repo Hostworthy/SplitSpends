@@ -191,7 +191,7 @@ func (a *API) listComments(w http.ResponseWriter, r *http.Request) error {
 	for _, c := range comments {
 		u := platform.User{ID: c.UserID.String(), Name: "Someone"}
 		if p := people[c.UserID]; p != nil {
-			u = toUser(p)
+			u = a.toUser(p)
 		}
 		out = append(out, platform.Comment{ID: c.ID.String(), ExpenseID: c.ExpenseID.String(), User: u, Body: c.Body, CreatedAt: stamp(c.CreatedAt)})
 	}
@@ -215,7 +215,7 @@ func (a *API) addComment(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusCreated, platform.Comment{ID: c.ID.String(), ExpenseID: c.ExpenseID.String(), User: toUser(u), Body: c.Body, CreatedAt: stamp(c.CreatedAt)})
+	return details(w, http.StatusCreated, platform.Comment{ID: c.ID.String(), ExpenseID: c.ExpenseID.String(), User: a.toUser(u), Body: c.Body, CreatedAt: stamp(c.CreatedAt)})
 }
 
 func (a *API) deleteComment(w http.ResponseWriter, r *http.Request) error {
@@ -407,7 +407,7 @@ func (a *API) listActivity(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]platform.Activity, 0, len(items))
 	for _, it := range items {
-		out = append(out, toActivity(it, people[it.ActorID]))
+		out = append(out, a.toActivity(it, people[it.ActorID]))
 	}
 	return list(w, out, total)
 }
