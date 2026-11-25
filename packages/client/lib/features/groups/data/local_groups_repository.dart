@@ -237,6 +237,14 @@ class LocalGroupsRepository implements GroupsRepository {
       if (!LocalLedger.memberIds(g).contains(userId)) {
         throw ApiError.notFound('Member');
       }
+      // The device owner is the only one who can open the group here; the
+      // server refuses to remove the last such member for the same reason.
+      if (userId == (await _ledger.me(txn)).id) {
+        throw const ApiError.conflict(
+          'On this device you cannot leave a group. Archive it to put it '
+          'away, or delete it once everyone is settled up.',
+        );
+      }
       final entries = LocalLedger.groupEntries(await _ledger.expenses(txn), id);
       if (!(nets(entries)[userId]?.settled ?? true)) {
         throw const ApiError.conflict(

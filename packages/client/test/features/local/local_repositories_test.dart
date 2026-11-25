@@ -164,6 +164,16 @@ void main() {
     expect((await groups.get(group.id)).members, hasLength(3));
   });
 
+  test('the device owner cannot leave a group', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final group = await trip(groups);
+    await expectLater(
+      groups.removeMember(group.id, meId),
+      throwsA(isA<ApiError>().having((e) => e.status, 'status', 409)),
+    );
+    expect((await groups.list()).map((g) => g.id), [group.id]);
+  });
+
   test('a group member can record a payment between two others', () async {
     final groups = LocalGroupsRepository(ledger);
     final expenses = LocalExpensesRepository(ledger);
@@ -571,7 +581,14 @@ void main() {
         ],
       ),
     );
-    await groups.removeMember(group.id, meId);
+    // The app no longer lets the owner leave; a stored group without them
+    // still keeps its expenses out of reach.
+    final db = await ledger.db;
+    final stored = await ledger.group(group.id, db);
+    await Stores.groups.record(group.id).put(db, {
+      ...stored,
+      'memberIds': [sam, alex],
+    });
     final notFound = isA<ApiError>().having((e) => e.code, 'code', 'NOT_FOUND');
     await expectLater(expenses.delete(e.id), throwsA(notFound));
     await expectLater(
