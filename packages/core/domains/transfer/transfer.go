@@ -130,13 +130,25 @@ func (s *Service) Import(ctx context.Context, actor uuid.UUID, b Bundle) (*Resul
 			}
 			res.Categories++
 		}
+		patches, members := make([]group.Patch, len(b.Groups)), make([][]uuid.UUID, len(b.Groups))
+		everyone := []uuid.UUID{actor}
 		for i, g := range b.Groups {
-			patch, members, err := remapGroup(res.People, names, g)
-			if err != nil {
+			var err error
+			if patches[i], members[i], err = remapGroup(res.People, names, g); err != nil {
 				return wrap(err, fmt.Sprintf("groups[%d]", i), name(g.Patch.Name))
 			}
+			everyone = append(everyone, members[i]...)
+		}
+		// Everyone's group count is held up front, in one order, so an
+		// import and others adding the same people cannot deadlock.
+		if len(b.Groups) > 0 {
+			if err := s.groups.Reserve(ctx, everyone); err != nil {
+				return err
+			}
+		}
+		for i, g := range b.Groups {
 			id := g.ID
-			if _, err := s.groups.Create(ctx, actor, group.CreateInput{ID: &id, Patch: patch, People: members}); err != nil {
+			if _, err := s.groups.Create(ctx, actor, group.CreateInput{ID: &id, Patch: patches[i], People: members[i]}); err != nil {
 				return wrap(err, fmt.Sprintf("groups[%d]", i), name(g.Patch.Name))
 			}
 			res.Groups++
