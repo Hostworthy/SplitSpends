@@ -234,8 +234,13 @@ func (p paused) Due(ctx context.Context, day time.Time, limit int) ([]*expense.E
 }
 
 func runner(env *bootstraptest.Env, after func()) *expense.Service {
+	return wired(env, paused{repositories.NewExpenses(env.DB), after})
+}
+
+// wired is the expense service of env on repo.
+func wired(env *bootstraptest.Env, repo expense.Repository) *expense.Service {
 	db := env.DB
-	return expense.NewService(expense.Deps{Repo: paused{repositories.NewExpenses(db), after},
+	return expense.NewService(expense.Deps{Repo: repo,
 		Comments: repositories.NewComments(db), Groups: repositories.NewGroups(db), Connections: env.Services.Friends,
 		Receipts: repositories.NewReceipts(db), Catalog: env.Services.Categories, Users: env.Services.Users,
 		Activity: env.Services.Activity, Notifier: env.Notifier, Tx: database.NewTx(db), Clock: env.Clock, BaseURL: "http://test"})

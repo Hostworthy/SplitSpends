@@ -93,7 +93,15 @@ func (r *Expenses) Update(ctx context.Context, e *expense.Expense) error {
 }
 
 func (r *Expenses) Get(ctx context.Context, id uuid.UUID) (*expense.Expense, error) {
-	e, err := scanExpense(r.db.Q(ctx).QueryRow(ctx, `SELECT `+expenseColumns+` FROM expenses e WHERE e.id=$1`, id))
+	return r.one(ctx, `SELECT `+expenseColumns+` FROM expenses e WHERE e.id=$1`, id)
+}
+
+func (r *Expenses) Lock(ctx context.Context, id uuid.UUID) (*expense.Expense, error) {
+	return r.one(ctx, `SELECT `+expenseColumns+` FROM expenses e WHERE e.id=$1 FOR UPDATE OF e`, id)
+}
+
+func (r *Expenses) one(ctx context.Context, query string, id uuid.UUID) (*expense.Expense, error) {
+	e, err := scanExpense(r.db.Q(ctx).QueryRow(ctx, query, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, errs.NotFound("Expense")
 	}

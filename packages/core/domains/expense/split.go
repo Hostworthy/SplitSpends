@@ -47,6 +47,10 @@ type Input struct {
 	Tip         int64
 	ReceiptID   *uuid.UUID
 	Recurrence  Recurrence
+	// UpdatedAt, on an update, is the version of the expense the change was
+	// made to. The update fails when the expense has changed since; nil skips
+	// the check.
+	UpdatedAt *time.Time
 }
 
 // FirstDay is the earliest date an expense can have. Dates also stop a year
