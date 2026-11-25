@@ -87,10 +87,6 @@ type pusher interface {
 	Notify(ctx context.Context, n ports.Notification) (push.Report, error)
 }
 
-// fanout is the ports.Notifier services use: it sends each notification by
-// email and push, so services call Notify once. Push deliveries go through
-// a bounded queue (like emails) so slow push services never hold up a
-// request; with sync set (serverless) they finish before Notify returns.
 // pushWorkers send queued push notifications at once, so one recipient
 // whose devices answer slowly does not hold up everyone else's.
 const pushWorkers = 4
@@ -99,6 +95,10 @@ const pushWorkers = 4
 // of sends, which run together and stop after push.SendTimeout each.
 const pushBudget = 3 * push.SendTimeout
 
+// fanout is the ports.Notifier services use: it sends each notification by
+// email and push, so services call Notify once. Push deliveries go through
+// a bounded queue (like emails) so slow push services never hold up a
+// request; with sync set (serverless) they finish before Notify returns.
 type fanout struct {
 	email ports.Notifier
 	push  pusher
