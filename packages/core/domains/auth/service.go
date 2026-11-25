@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -48,11 +49,12 @@ type Service struct {
 	notifier   ports.Notifier
 	tx         ports.Tx
 	clock      clock.Clock
+	log        *slog.Logger
 }
 
 // NewService builds a Service. invites may be nil when links are not used.
-func NewService(p Policy, challenges ChallengeRepository, sessions SessionRepository, users user.Repository, invites Invites, notifier ports.Notifier, tx ports.Tx, c clock.Clock) *Service {
-	return &Service{policy: p, challenges: challenges, sessions: sessions, users: users, invites: invites, notifier: notifier, tx: tx, clock: c}
+func NewService(p Policy, challenges ChallengeRepository, sessions SessionRepository, users user.Repository, invites Invites, notifier ports.Notifier, tx ports.Tx, c clock.Clock, log *slog.Logger) *Service {
+	return &Service{policy: p, challenges: challenges, sessions: sessions, users: users, invites: invites, notifier: notifier, tx: tx, clock: c, log: log}
 }
 
 // Use makes g decide who may sign up, instead of the static policy.
@@ -361,7 +363,11 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*Principal, e
 		return nil, unauthorized
 	}
 	if sess.LastUsedAt == nil || now.Sub(*sess.LastUsedAt) > time.Minute {
-		_ = s.sessions.Touch(ctx, sess.ID, now)
+		// Last use is shown to the owner only, so a failed write must not
+		// turn a valid request away.
+		if err := s.sessions.Touch(ctx, sess.ID, now); err != nil {
+			s.log.ErrorContext(ctx, "auth.session.touch.failed", "session", sess.ID, "error", err)
+		}
 	}
 	return &Principal{UserID: sess.UserID, SessionID: sess.ID, Kind: sess.Kind}, nil
 }

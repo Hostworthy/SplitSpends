@@ -164,7 +164,7 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	}
 
 	quotas := repositories.NewQuotas(db)
-	users := user.NewService(userRepo, notifier, quotas, c)
+	users := user.NewService(userRepo, notifier, quotas, c, log)
 	act := activity.NewService(repositories.NewActivities(db), c)
 	balances := balance.NewService(expenseRepo)
 	groups := group.NewService(group.Deps{Repo: groupRepo, Users: users, Balances: balances, Activity: act, Notifier: notifier,
@@ -173,7 +173,7 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	receipts := receipt.NewService(receiptRepo, blobs, reader, tx, c)
 	categories := category.NewService(repositories.NewCategories(db), c)
 	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groups,
-		Connections: friends, Receipts: receiptRepo, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+		Connections: friends, Receipts: receiptRepo, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, Log: log, BaseURL: cfg.BaseURL})
 	// Rates only convert AI drafts read in another currency, so nothing is
 	// fetched unless AI is on.
 	var source rates.Source
@@ -187,7 +187,7 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	administration := admin.NewService(admin.Deps{Settings: repositories.NewSignupSettings(db), Requests: repositories.NewSignupRequests(db),
 		Users: userRepo, Accounts: userRepo, Credentials: repositories.NewCredentials(db), Notifier: notifier, Tx: tx, Clock: c, Log: log,
 		Defaults: policy.Signup(), BaseURL: cfg.BaseURL, AppName: cfg.AppName})
-	authn := auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, invites, notifier, tx, c)
+	authn := auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, invites, notifier, tx, c, log)
 	authn.Use(administration)
 	return &Services{
 		Admin:    administration,

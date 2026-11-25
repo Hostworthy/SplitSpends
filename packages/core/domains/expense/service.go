@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -64,6 +65,7 @@ type Service struct {
 	notifier    ports.Notifier
 	tx          ports.Tx
 	clock       clock.Clock
+	log         *slog.Logger
 	baseURL     string
 }
 
@@ -80,13 +82,14 @@ type Deps struct {
 	Notifier    ports.Notifier
 	Tx          ports.Tx
 	Clock       clock.Clock
+	Log         *slog.Logger
 	BaseURL     string
 }
 
 // NewService builds a Service.
 func NewService(d Deps) *Service {
 	return &Service{repo: d.Repo, comments: d.Comments, groups: d.Groups, connections: d.Connections, receipts: d.Receipts,
-		catalog: d.Catalog, users: d.Users, activity: d.Activity, notifier: d.Notifier, tx: d.Tx, clock: d.Clock, baseURL: d.BaseURL}
+		catalog: d.Catalog, users: d.Users, activity: d.Activity, notifier: d.Notifier, tx: d.Tx, clock: d.Clock, log: d.Log, baseURL: d.BaseURL}
 }
 
 // load fetches an expense the actor may see, plus its group when the actor is
@@ -614,8 +617,11 @@ func (s *Service) notify(ctx context.Context, actor uuid.UUID, e *Expense, g *gr
 	if ports.IsQuiet(ctx) {
 		return
 	}
+	// The expense is saved already, so a failed lookup is logged rather
+	// than returned.
 	people, err := s.users.List(ctx, e.Participants())
 	if err != nil {
+		s.log.ErrorContext(ctx, "expense.notify.failed", "expense", e.ID, "error", err)
 		return
 	}
 	var actorName string
