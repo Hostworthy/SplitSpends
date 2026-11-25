@@ -118,18 +118,18 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 	}
 	log.Info("bootstrap.storage.ready", "store", cfg.BlobStore)
 
-	var reader ports.Assistant
+	var assistant ports.Assistant
 	switch cfg.AIProvider {
 	case "anthropic":
-		reader = ai.NewAnthropic(cfg.AIAPIKey, cfg.AIBaseURL, cfg.AIModel, cfg.AIEffort)
+		assistant = ai.NewAnthropic(cfg.AIAPIKey, cfg.AIBaseURL, cfg.AIModel, cfg.AIEffort)
 	case "openai":
-		reader = ai.NewOpenAICompatible(cfg.AIBaseURL, cfg.AIAPIKey, cfg.AIModel)
+		assistant = ai.NewOpenAICompatible(cfg.AIBaseURL, cfg.AIAPIKey, cfg.AIModel)
 	}
-	if reader != nil {
+	if assistant != nil {
 		log.Info("bootstrap.ai.enabled", "provider", cfg.AIProvider)
 	}
 
-	services := Wire(cfg, Adapters{DB: db, Email: notifier, Blobs: blobs, Reader: reader,
+	services := Wire(cfg, Adapters{DB: db, Email: notifier, Blobs: blobs, Assistant: assistant,
 		Push: pushSender(ctx, db, cfg, log), Clock: clock.System{}, Log: log})
 	if open, err := services.Auth.Unclaimed(ctx); err == nil && open {
 		log.Warn("auth.bootstrap.open", "reason", "no account yet and ADMIN_EMAIL is empty: whoever signs in first becomes the administrator, whatever SIGNUP_MODE says")
@@ -142,9 +142,9 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 type Adapters struct {
 	DB *database.DB
 	// Email sends login codes, invites and notifications.
-	Email  ports.Notifier
-	Blobs  ports.BlobStore
-	Reader ports.Assistant
+	Email     ports.Notifier
+	Blobs     ports.BlobStore
+	Assistant ports.Assistant
 	// Push delivers Web Push and knows its VAPID key; nil disables push.
 	Push push.Sender
 	// Subscriptions stores push devices; nil keeps them in DB.
@@ -172,7 +172,7 @@ func Wire(cfg *Config, a Adapters) *Services {
 		p = pushes
 	}
 	notifier := newFanout(a.Email, p, log, cfg.Serverless)
-	blobs, reader := a.Blobs, a.Reader
+	blobs := a.Blobs
 	tx := database.NewTx(db)
 	// The repositories more than one service reads; the others are made
 	// where they are passed.
@@ -197,14 +197,14 @@ func Wire(cfg *Config, a Adapters) *Services {
 	groups := group.NewService(group.Deps{Repo: store.groups, Users: users, Balances: balances, Activity: act, Notifier: notifier,
 		Quota: quotas, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	friends := friend.NewService(store.friends, users, balances, act, tx, c)
-	receipts := receipt.NewService(store.receipts, blobs, reader, tx, c)
+	receipts := receipt.NewService(store.receipts, blobs, a.Assistant, tx, c)
 	categories := category.NewService(repositories.NewCategories(db), c)
 	expenses := expense.NewService(expense.Deps{Repo: store.expenses, Comments: repositories.NewComments(db), Groups: groups,
 		Connections: friends, Receipts: store.receipts, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, Log: log, BaseURL: cfg.BaseURL})
 	// Rates only convert AI drafts read in another currency, so nothing is
 	// fetched unless AI is on.
 	var source rates.Source
-	if cfg.RatesURL != "" && reader != nil {
+	if cfg.RatesURL != "" && a.Assistant != nil {
 		source = exchange.New(cfg.RatesURL)
 	}
 	exchangeRates := rates.NewService(repositories.NewRates(db), source, c, log)
@@ -216,7 +216,7 @@ func Wire(cfg *Config, a Adapters) *Services {
 		Defaults: policy.Signup(), BaseURL: cfg.BaseURL, AppName: cfg.AppName})
 	authentication := auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), store.users, invites, notifier, tx, c, log)
 	authentication.Use(administration)
-	assistant := assist.NewService(reader, users, groups, store.friends, receipts, exchangeRates, c)
+	assistant := assist.NewService(a.Assistant, users, groups, store.friends, receipts, exchangeRates, c)
 	statistics := stats.NewService(repositories.NewStats(db), groups, users, categories, c)
 	transfers := transfer.NewService(users, store.friends, groups, expenses, categories, tx, tx)
 	return &Services{

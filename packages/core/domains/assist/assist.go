@@ -54,18 +54,18 @@ type Draft struct {
 
 // Service builds drafts.
 type Service struct {
-	reader   ports.Assistant
-	users    *user.Service
-	groups   *group.Service
-	friends  friend.Repository
-	receipts *receipt.Service
-	rates    *rates.Service
-	clock    clock.Clock
+	assistant ports.Assistant
+	users     *user.Service
+	groups    *group.Service
+	friends   friend.Repository
+	receipts  *receipt.Service
+	rates     *rates.Service
+	clock     clock.Clock
 }
 
-// NewService builds a Service. reader may be nil when AI is disabled.
-func NewService(reader ports.Assistant, users *user.Service, groups *group.Service, friends friend.Repository, receipts *receipt.Service, r *rates.Service, c clock.Clock) *Service {
-	return &Service{reader: reader, users: users, groups: groups, friends: friends, receipts: receipts, rates: r, clock: c}
+// NewService builds a Service. assistant may be nil when AI is disabled.
+func NewService(assistant ports.Assistant, users *user.Service, groups *group.Service, friends friend.Repository, receipts *receipt.Service, r *rates.Service, c clock.Clock) *Service {
+	return &Service{assistant: assistant, users: users, groups: groups, friends: friends, receipts: receipts, rates: r, clock: c}
 }
 
 // known is everything about the user that the model may refer to.
@@ -137,7 +137,7 @@ func (k *known) input(text, today, currency string) ports.DraftInput {
 
 // Draft asks the provider to read the instructions (and receipt, if any).
 func (s *Service) Draft(ctx context.Context, actor uuid.UUID, req Request) (*Draft, error) {
-	if s.reader == nil {
+	if s.assistant == nil {
 		return nil, errs.AIDisabled("AI features are not enabled on this server.")
 	}
 	req.Text = strings.TrimSpace(req.Text)
@@ -178,7 +178,7 @@ func (s *Service) Draft(ctx context.Context, actor uuid.UUID, req Request) (*Dra
 		}
 	}
 
-	ext, err := s.reader.DraftExpense(ctx, in)
+	ext, err := s.assistant.DraftExpense(ctx, in)
 	if err != nil {
 		return nil, err
 	}
