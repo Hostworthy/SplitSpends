@@ -16,6 +16,7 @@ type Details[T any] struct {
 // List wraps a page of objects.
 type List[T any] struct {
 	Items []T `json:"items"`
+	// Total counts the whole list, not only this page.
 	Total int `json:"total"`
 }
 

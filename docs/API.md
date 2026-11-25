@@ -33,7 +33,7 @@ Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), 
 
 An object the caller may not see answers 404 `NOT_FOUND`, exactly as an id that does not exist, so ids of other people's groups, expenses, comments, categories and people reveal nothing. 403 `FORBIDDEN` is only for objects the caller can see but may not change.
 
-Lists accept `limit` (default 50, max 200) and `offset` (default 0).
+Every list accepts `limit` (max 200) and `offset` (default 0), and `total` counts the whole list. `GET /expenses`, `GET /activity` and `GET /admin/accounts` return 50 items when `limit` is left out. The other lists return all their items when `limit` is left out, as they did before they took one. Limits keep the largest of them in check: a person belongs to at most 1000 groups (archived ones included), an expense holds at most 500 comments and a group at most 20 usable invite links.
 
 Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
@@ -196,16 +196,16 @@ Each account may have up to 1000 people it added by name only (placeholders, fro
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| GET | `/groups` | `?archived=true` | List of `Group` |
-| POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, defaultSplit?, members?: [{ email, name? }] }` | 201 `{ data: Group }`; `defaultSplit` is checked against the members after they are added |
+| GET | `/groups` | `?archived=true&limit=&offset=` | List of `Group`, most recently changed first |
+| POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, defaultSplit?, members?: [{ email, name? }] }` | 201 `{ data: Group }`; `defaultSplit` is checked against the members after they are added. 409 when the caller or someone added is already in 1000 groups |
 | GET | `/groups/{groupId}` | | `{ data: Group }` |
 | PATCH | `/groups/{groupId}` | `{ name?, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, archived?, defaultSplit? }` | `{ data: Group }`; `defaultSplit: null` clears it, leaving it out keeps it |
 | DELETE | `/groups/{groupId}` | | 204; 403 when the caller may not delete it; 409 when not settled |
-| POST | `/groups/{groupId}/members` | `{ email?, name? }` | 201 `{ data: Group }` (name only adds a placeholder) |
+| POST | `/groups/{groupId}/members` | `{ email?, name? }` | 201 `{ data: Group }` (name only adds a placeholder); 409 when that person is already in 1000 groups |
 | DELETE | `/groups/{groupId}/members/{userId}` | | 204; 409 when that member is not settled. A member may remove themselves (leave). 409 when nobody who can sign in would be left (only people added by name remain): delete the group instead |
 | GET | `/groups/{groupId}/balances` | | `{ data: { members: [{ userId, balances: [Balance] }], debts: [Debt] } }` (debts are simplified when `simplifyDebts` is on) |
-| GET | `/groups/{groupId}/export` | | `text/csv` of all expenses and payments |
-| POST | `/groups/{groupId}/invites` | | 201 `{ data: Invite }` with `token` and `url` (shown once). 409 for archived groups |
+| GET | `/groups/{groupId}/export` | | `text/csv` of all expenses and payments, oldest first |
+| POST | `/groups/{groupId}/invites` | | 201 `{ data: Invite }` with `token` and `url` (shown once). 409 for archived groups, and when the group already has 20 usable links (revoke one first) |
 | GET | `/groups/{groupId}/invites` | | List of usable `Invite` (unexpired, created by a current member), without `token` and `url` |
 | DELETE | `/groups/{groupId}/invites/{inviteId}` | | 204; the link stops working |
 
@@ -229,7 +229,7 @@ Any group member can create a link that lets anyone who has it join the group. L
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens, and links whose creator has left the group, alike |
-| POST | `/invites/{token}/accept` | | `{ data: Group }`; adds the caller to the group and records `group.member-joined`. Accepting again, or as a member, returns the group unchanged |
+| POST | `/invites/{token}/accept` | | `{ data: Group }`; adds the caller to the group and records `group.member-joined`. Accepting again, or as a member, returns the group unchanged. 409 when the caller is already in 1000 groups |
 
 People without an account follow the link, request a login code with `inviteToken`, sign in, then accept.
 
@@ -243,8 +243,8 @@ People without an account follow the link, request a login code with `inviteToke
 | PUT | `/expenses/{expenseId}` | same as POST (full replace), plus `updatedAt?` | `{ data: Expense }`; 409 when `updatedAt` is set and the expense has changed since |
 | DELETE | `/expenses/{expenseId}` | | 204 (soft delete); 409 when someone in it has left the group |
 | POST | `/expenses/{expenseId}/restore` | | `{ data: Expense }`; 409 when someone in it has left the group |
-| GET | `/expenses/{expenseId}/comments` | | List of `{ id, expenseId, user: User, body, createdAt }` |
-| POST | `/expenses/{expenseId}/comments` | `{ body }` | 201 `{ data: Comment }` |
+| GET | `/expenses/{expenseId}/comments` | `?limit=&offset=` | List of `{ id, expenseId, user: User, body, createdAt }`, oldest first |
+| POST | `/expenses/{expenseId}/comments` | `{ body }` | 201 `{ data: Comment }`; 409 when the expense already has 500 comments |
 | DELETE | `/comments/{commentId}` | | 204 (author only; 403 for someone else's comment you can see, 404 when you cannot see the expense) |
 | POST | `/payments` | `{ id?, groupId?, fromUserId, toUserId, amount, currency?, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
 
@@ -333,7 +333,7 @@ Deleting hides a category from listings and from new expenses but never rewrites
 
 Rules: runs in one transaction and sends no emails. People with an email resolve to the existing (or a newly invited) user, so their server id may differ from the local id: use the returned `people` map to rewrite local references. People without an email become placeholders that keep the local id. The caller becomes friends with everyone imported. Payments use `kind: "payment"` with one payer and one split (the recipient). Custom categories are created first with their device ids, so expenses can use them; deleted ones are created too and deleted once the expenses are in. A group's `defaultSplit` has its person ids remapped like `memberIds` and must match the group's members (send it only while it still applies). Two people in the bundle who resolve to the same server user (the same email, or your own email) are refused with 422 when both appear in one default split, among one expense's payers or splits, or in one item; as group members they simply join once. Validation errors name the failing item in `field`, for example `expenses[3].total`. Retrying the same import is safe.
 
-Limits: one import may hold at most 1000 people, 200 custom categories, 500 groups and 20,000 expenses. Each account runs one import at a time (409 `CONFLICT` while another is running) and at most 10 an hour (429 `RATE_LIMITED`); the server runs at most two imports at once and answers 429 `RATE_LIMITED` to a third until one ends.
+Limits: one import may hold at most 1000 people, 200 custom categories, 500 groups and 20,000 expenses, and is refused with 409 when it would put someone in more than 1000 groups. Each account runs one import at a time (409 `CONFLICT` while another is running) and at most 10 an hour (429 `RATE_LIMITED`); the server runs at most two imports at once and answers 429 `RATE_LIMITED` to a third until one ends.
 
 ### Administration
 
