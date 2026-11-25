@@ -48,6 +48,13 @@ func (a *API) Routes() *http.ServeMux {
 	// Invite previews are public; limit them per IP so tokens cannot be guessed.
 	inviteLimit := middleware.NewLimiter(30, time.Minute)
 	previews := func(h handler) http.Handler { return middleware.Limit(inviteLimit, a.log, byAddress, a.wrap(h)) }
+	byUser := middleware.ByUser(a.cfg.ProxyHops)
+	// A device imports once, when it connects an account; retries after a
+	// failed import fit easily.
+	importLimit := middleware.NewLimiter(10, time.Hour)
+	imports := func(h handler) http.Handler {
+		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(importLimit, a.log, byUser, a.wrap(h)))
+	}
 	p := platform.Prefix
 
 	mux.Handle("GET /health", public(a.health))
@@ -76,7 +83,7 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("GET "+p+"/friends/{userId}", authed(a.getFriend))
 	mux.Handle("PATCH "+p+"/friends/{userId}", authed(a.inviteFriend))
 	mux.Handle("DELETE "+p+"/friends/{userId}", authed(a.removeFriend))
-	mux.Handle("POST "+p+"/import", authed(a.importBundle))
+	mux.Handle("POST "+p+"/import", imports(a.importBundle))
 
 	mux.Handle("GET "+p+"/groups", authed(a.listGroups))
 	mux.Handle("POST "+p+"/groups", authed(a.createGroup))

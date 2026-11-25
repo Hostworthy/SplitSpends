@@ -61,4 +61,8 @@ ENV ADDR=:8080 WEB_DIR=/srv/web DATA_DIR=/data
 VOLUME ["/data"]
 EXPOSE 8080
 USER nonroot:nonroot
+# The image has no shell or curl, so the binary checks its own /health,
+# which also pings the database.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --start-interval=2s \
+  CMD ["/usr/local/bin/splitspends", "health"]
 ENTRYPOINT ["/usr/local/bin/splitspends"]

@@ -69,6 +69,10 @@ String describe(String kind, JsonMap data, String actor) {
     'expense.updated' => '$actor updated “${str('description')}”$inGroup',
     'expense.deleted' => '$actor deleted “${str('description')}”$inGroup',
     'expense.restored' => '$actor restored “${str('description')}”$inGroup',
+    'expense.stopped' =>
+      group.isEmpty
+          ? '“${str('description')}” stopped repeating because someone in it is no longer connected'
+          : '“${str('description')}” stopped repeating$inGroup because someone in it left the group',
     'payment.created' =>
       '$actor recorded a payment from ${str('fromName')} to ${str('toName')}$inGroup',
     'comment.created' => '$actor commented on “${str('description')}”',

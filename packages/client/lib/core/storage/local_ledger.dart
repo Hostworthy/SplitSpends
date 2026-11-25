@@ -241,13 +241,14 @@ class LocalLedger {
   // --------------------------------------------------------------- recurring
 
   /// Creates due copies of recurring expenses, like the server's
-  /// RunRecurring: the schedule moves to the newest copy. Returns how many
-  /// copies were made.
+  /// RunRecurring: the schedule moves to the newest copy, a series that fell
+  /// behind books at most [catchUp] occurrences, and a group series stops
+  /// once someone in it has left the group. Returns how many copies were
+  /// made.
   Future<int> runRecurring() async {
     final database = await db;
     var created = 0;
-    // Each pass mirrors one server run; repeat until nothing is due so a
-    // device that was off for months catches up.
+    // Each pass mirrors one server run; repeat until nothing is due.
     for (var pass = 0; pass < 120; pass++) {
       final items = [
         for (final e in await expenses(database)) _RecurringRecord(e),
@@ -258,37 +259,65 @@ class LocalLedger {
         for (final step in steps) {
           final src = step.source.raw;
           final at = stamp();
-          final copy = {
-            ...src,
-            'id': newId(),
-            'date': formatDay(step.copyDate),
-            'nextDate': step.copyNext == null
-                ? null
-                : formatDay(step.copyNext!),
-            'createdAt': at,
-            'updatedAt': at,
-            'receiptId': null,
-          };
           await Stores.expenses.record(src['id'] as String).put(txn, {
             ...src,
             'recurrence': 'none',
             'nextDate': null,
             'updatedAt': at,
           });
-          await Stores.expenses.record(copy['id'] as String).put(txn, copy);
-          await record(
-            txn,
-            'expense.created',
-            groupId: copy['groupId'] as String?,
-            expenseId: copy['id'] as String,
-            data: {
-              'description': copy['description'],
-              'amount': copy['total'],
-              'currency': copy['currency'],
-              'recurring': true,
-            },
-          );
-          created++;
+          final groupId = src['groupId'] as String?;
+          // People in an expense outside groups are never removed on the
+          // device, so only group membership can end a series.
+          if (groupId != null) {
+            final g = await Stores.groups.record(groupId).get(txn);
+            final members = g == null ? const <String>{} : memberIds(g).toSet();
+            final involved = [
+              for (final s in (src['shares'] as List).cast<JsonMap>())
+                s['userId'] as String,
+            ];
+            if (!members.containsAll(involved)) {
+              await record(
+                txn,
+                'expense.stopped',
+                groupId: groupId,
+                expenseId: src['id'] as String,
+                data: {
+                  'description': src['description'],
+                  'amount': src['total'],
+                  'currency': src['currency'],
+                  'groupName': g?['name'],
+                },
+              );
+              continue;
+            }
+          }
+          for (final (i, date) in step.copyDates.indexed) {
+            final last = i == step.copyDates.length - 1;
+            final copy = {
+              ...src,
+              'id': newId(),
+              'date': formatDay(date),
+              'recurrence': last ? src['recurrence'] : 'none',
+              'nextDate': last ? formatDay(step.copyNext) : null,
+              'createdAt': at,
+              'updatedAt': at,
+              'receiptId': null,
+            };
+            await Stores.expenses.record(copy['id'] as String).put(txn, copy);
+            await record(
+              txn,
+              'expense.created',
+              groupId: groupId,
+              expenseId: copy['id'] as String,
+              data: {
+                'description': copy['description'],
+                'amount': copy['total'],
+                'currency': copy['currency'],
+                'recurring': true,
+              },
+            );
+            created++;
+          }
         }
       });
     }

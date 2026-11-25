@@ -27,6 +27,10 @@ const (
 	MaxGroups     = 500
 	MaxExpenses   = 20000
 	MaxCategories = category.MaxPerUser
+	// MaxRunning is how many imports the server runs at once. Each holds a
+	// database connection until it ends, so more would starve every other
+	// request.
+	MaxRunning = 2
 )
 
 // Person is someone from the device's address book.
@@ -84,11 +88,12 @@ type Service struct {
 	expenses   *expense.Service
 	categories *category.Service
 	tx         ports.Tx
+	locks      ports.Locker
 }
 
 // NewService builds a Service.
-func NewService(users *user.Service, friends friend.Repository, groups *group.Service, expenses *expense.Service, categories *category.Service, tx ports.Tx) *Service {
-	return &Service{users: users, friends: friends, groups: groups, expenses: expenses, categories: categories, tx: tx}
+func NewService(users *user.Service, friends friend.Repository, groups *group.Service, expenses *expense.Service, categories *category.Service, tx ports.Tx, locks ports.Locker) *Service {
+	return &Service{users: users, friends: friends, groups: groups, expenses: expenses, categories: categories, tx: tx, locks: locks}
 }
 
 // Import copies b into actor's account.
@@ -104,6 +109,9 @@ func (s *Service) Import(ctx context.Context, actor uuid.UUID, b Bundle) (*Resul
 	res := &Result{People: map[uuid.UUID]uuid.UUID{b.Me: actor}}
 	ctx = ports.Quiet(ctx)
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.claim(ctx, actor); err != nil {
+			return err
+		}
 		for i, p := range b.People {
 			id, err := s.person(ctx, me, p)
 			if err != nil {
@@ -149,6 +157,25 @@ func (s *Service) Import(ctx context.Context, actor uuid.UUID, b Bundle) (*Resul
 		return nil, err
 	}
 	return res, nil
+}
+
+// claim lets each person run one import at a time and the server at most
+// MaxRunning. The locks are released when the transaction ends.
+func (s *Service) claim(ctx context.Context, actor uuid.UUID) error {
+	ok, err := s.locks.TryLock(ctx, "import:user:"+actor.String())
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errs.Conflict("An import into your account is already running. Wait for it to finish, then try again.")
+	}
+	for slot := range MaxRunning {
+		ok, err := s.locks.TryLock(ctx, fmt.Sprintf("import:slot:%d", slot))
+		if err != nil || ok {
+			return err
+		}
+	}
+	return errs.RateLimited("The server is busy with other imports. Try again in a minute.")
 }
 
 func (s *Service) person(ctx context.Context, me *user.User, p Person) (uuid.UUID, error) {

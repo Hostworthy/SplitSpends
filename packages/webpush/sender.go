@@ -132,7 +132,7 @@ func recordSize(n int) uint32 {
 	if size > int(wp.MaxRecordSize) {
 		size = int(wp.MaxRecordSize)
 	}
-	return uint32(size)
+	return uint32(size) //nolint:gosec // between 256 and MaxRecordSize
 }
 
 // guarded returns a client that does not follow redirects and refuses to

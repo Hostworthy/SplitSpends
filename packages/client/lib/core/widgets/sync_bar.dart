@@ -141,7 +141,10 @@ class _StuckDialog extends ConsumerWidget {
     final stuck = ref.watch(outboxStuckProvider).value ?? const <OutboxOp>[];
     final sync = ref.read(outboxSyncProvider.notifier);
     ref.listen(outboxStuckProvider, (_, next) {
-      if ((next.value ?? const []).isEmpty) Navigator.pop(context);
+      // Retry closes the dialog itself before the list empties; popping
+      // again then would close the page underneath.
+      final open = ModalRoute.of(context)?.isCurrent ?? false;
+      if (open && (next.value ?? const []).isEmpty) Navigator.pop(context);
     });
     return AlertDialog(
       title: const Text('Not sent yet'),

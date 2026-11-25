@@ -12,6 +12,7 @@ import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
 import 'package:splitspends/features/friends/data/local_friends_repository.dart';
 import 'package:splitspends/features/groups/data/local_groups_repository.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
+import 'package:splitspends_ledger/ledger.dart';
 
 void main() {
   late LocalLedger ledger;
@@ -155,5 +156,75 @@ void main() {
     expect(list.items.first.recurrence, Recurrence.monthly);
     expect(list.items.last.recurrence, Recurrence.none);
     expect(await ledger.runRecurring(), 0);
+  });
+
+  test('a series that fell behind books only the latest weeks', () async {
+    final expenses = LocalExpensesRepository(ledger);
+    final sam = (await LocalFriendsRepository(ledger).add(name: 'Sam')).user.id;
+    await expenses.create(
+      ExpenseInput(
+        description: 'Cleaning',
+        currency: 'EUR',
+        total: 1000,
+        date: '2024-11-26',
+        recurrence: Recurrence.weekly,
+        payers: const [Payer(userId: meId, amount: 1000)],
+        splits: [
+          const SplitEntry(userId: meId),
+          SplitEntry(userId: sam),
+        ],
+      ),
+    );
+    expect(await ledger.runRecurring(), catchUp);
+    final list = await expenses.list(const ExpenseQuery());
+    expect(list.total, catchUp + 1);
+    expect(list.items.first.date, '2026-11-24');
+    expect(
+      list.items.where((e) => e.recurrence != Recurrence.none),
+      hasLength(1),
+    );
+  });
+
+  test('a group series stops once someone in it leaves', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final group = await groups.create(
+      const GroupInput(
+        name: 'Flat',
+        members: [MemberInput(name: 'Sam')],
+      ),
+    );
+    final sam = group.members[1].id;
+    final rent = await expenses.create(
+      ExpenseInput(
+        groupId: group.id,
+        description: 'Rent',
+        currency: 'EUR',
+        total: 1000,
+        date: '2026-11-01',
+        recurrence: Recurrence.monthly,
+        payers: const [Payer(userId: meId, amount: 1000)],
+        splits: [
+          const SplitEntry(userId: meId),
+          SplitEntry(userId: sam),
+        ],
+      ),
+    );
+    await expenses.recordPayment(
+      groupId: group.id,
+      fromUserId: sam,
+      toUserId: meId,
+      amount: 500,
+      currency: 'EUR',
+    );
+    await groups.removeMember(group.id, sam);
+    now = DateTime.utc(2026, 12, 2, 12);
+    expect(await ledger.runRecurring(), 0);
+    expect((await expenses.get(rent.id)).recurrence, Recurrence.none);
+    final feed = await LocalActivityRepository(ledger).list(expenseId: rent.id);
+    expect(
+      feed.items.first.summary,
+      '“Rent” stopped repeating in Flat because someone in it left the group',
+    );
   });
 }

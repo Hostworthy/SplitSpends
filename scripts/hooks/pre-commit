@@ -1,23 +1,48 @@
 #!/usr/bin/env bash
 # Fast checks on staged files. Enable with `make hooks`; skip once with
 # `git commit --no-verify`. `make lint` runs the full set.
+#
+# Each file is read from the index, so a partly staged file is judged by what
+# the commit will contain, not by the working copy. Either formatter may be
+# missing on a machine that works on one side only; CI runs both.
 set -euo pipefail
 
-go_files=$(git diff --cached --name-only --diff-filter=ACM -- '*.go')
-if [ -n "$go_files" ]; then
-  unformatted=$(gofmt -l $go_files)
-  if [ -n "$unformatted" ]; then
-    echo "gofmt needed (run make fmt):"
-    echo "$unformatted"
-    exit 1
-  fi
-fi
+status=0
 
-dart_files=$(git diff --cached --name-only --diff-filter=ACM -- '*.dart' | grep -v '/build/' || true)
-if [ -n "$dart_files" ] && command -v dart >/dev/null; then
-  if ! dart format --output=none --set-exit-if-changed $dart_files >/dev/null; then
-    echo "dart format needed (run make fmt):"
-    dart format --output=none --set-exit-if-changed $dart_files | grep '^Changed' || true
-    exit 1
+# staged prints the added, copied or modified files matching a pathspec,
+# NUL-separated so any file name survives.
+staged() {
+  git diff --cached --name-only -z --diff-filter=ACM -- "$1"
+}
+
+# missing reports a formatter that is not installed, once.
+missing() {
+  echo "$1 not found; skipping its format check (CI runs it)." >&2
+}
+
+while IFS= read -r -d '' file; do
+  if ! command -v gofmt >/dev/null; then
+    missing gofmt
+    break
   fi
-fi
+  # gofmt -l names "<standard input>" when it would change the file.
+  if ! out=$(git show ":$file" | gofmt -l) || [ -n "$out" ]; then
+    echo "gofmt needed (run make fmt): $file"
+    status=1
+  fi
+done < <(staged '*.go')
+
+while IFS= read -r -d '' file; do
+  case $file in */build/*) continue ;; esac
+  if ! command -v dart >/dev/null; then
+    missing dart
+    break
+  fi
+  # --stdin-name lets dart format find the package's language version.
+  if ! git show ":$file" | dart format --output=none --set-exit-if-changed --stdin-name="$file" >/dev/null; then
+    echo "dart format needed (run make fmt): $file"
+    status=1
+  fi
+done < <(staged '*.dart')
+
+exit "$status"

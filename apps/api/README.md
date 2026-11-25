@@ -6,6 +6,7 @@ The Go HTTP server: REST API (`/api/v1`), MCP over HTTP (`/mcp`), background job
 cp apps/api/.env.example apps/api/.env   # or: make setup
 make api                                  # runs on :8080
 make build                                # bin/splitspends and bin/splitspends-mcp
+bin/splitspends health                    # exit 0 when the server on ADDR answers /health
 ```
 
 Settings: [docs/ENVIRONMENT.md](../../docs/ENVIRONMENT.md). API contract: [docs/API.md](../../docs/API.md).

@@ -5,6 +5,7 @@
 - Go 1.26+
 - Flutter 3.50+ (Dart 3.14+)
 - Docker (for the local PostgreSQL), or any PostgreSQL 14+
+- [ShellCheck](https://www.shellcheck.net) for `make lint`
 - Xcode for iOS builds, Android Studio for Android builds
 
 ## First Run
@@ -26,7 +27,7 @@ Migrations are embedded in the binary and applied on start.
 | `make dev` | API plus Flutter web |
 | `make api` / `make web` | One side only |
 | `make check` | `make lint`, `make vuln` and `make test` |
-| `make lint` | gofmt, go vet, golangci-lint, `dart format`, `flutter analyze` on every Dart member, web fallback fonts |
+| `make lint` | gofmt, go vet, golangci-lint, `dart format`, `flutter analyze` on every Dart member, web fallback fonts, shellcheck |
 | `make vuln` | [govulncheck](https://go.dev/doc/security/vuln/) (pinned) on the Go code: fails when code calls a function with a known vulnerability, in a module or the standard library |
 | `make test` | Go tests (including the architecture test), `dart test` for the ledger, `flutter test` for the client |
 | `make fmt` | gofmt, `dart fix --apply` and `dart format` |
@@ -39,10 +40,11 @@ Migrations are embedded in the binary and applied on start.
 
 ## Linting and Formatting
 
-- Go: `gofmt`, `go vet` and [golangci-lint](https://golangci-lint.run) with `.golangci.yml` (the standard set plus checks for closed bodies and rows, error wrapping, contexts on requests, misspellings and wasted assignments). `make lint` runs a pinned release through `go run`, so it is built with this repository's Go version; the first run takes a minute.
+- Go: `gofmt`, `go vet` and [golangci-lint](https://golangci-lint.run) with `.golangci.yml` (the standard set plus checks for closed bodies and rows, error wrapping, contexts on requests, misspellings, wasted assignments and gosec's security checks outside tests). `make lint` runs a pinned release through `go run`, so it is built with this repository's Go version; the first run takes a minute.
 - Dart: every workspace member includes `analysis_options.yaml` at the root on top of its base set: strict casts and raw types, unawaited futures and unclosed streams as errors, final locals, single quotes and more. `dart format` uses the default style.
+- Shell scripts (`scripts/*/*.sh` and the pre-commit hook): [ShellCheck](https://www.shellcheck.net).
 - `.editorconfig` sets UTF-8, LF, final newlines and indentation for every editor.
-- CI runs the same checks: the `backend` job runs gofmt, vet and golangci-lint; the `app` job runs dart format and flutter analyze; the `vuln` job runs govulncheck, also weekly so new advisories show up without a push.
+- CI runs the same checks: the `backend` job runs gofmt, vet, golangci-lint and shellcheck; the `app` job runs dart format and flutter analyze; the `vuln` job runs govulncheck, also weekly so new advisories show up without a push; the `deployment files` job runs `terraform fmt -check` and `terraform validate` on `deploy/aws` and `deploy/gcp`, `docker compose config` on the three Compose files, and parses `render.yaml`.
 - CI, the release workflow and the Docker image run `flutter pub get --enforce-lockfile`, which fails when `pubspec.lock` does not match the pubspec files or a package archive does not match its recorded hash. Commit the updated `pubspec.lock` with every dependency change.
 - Dependabot (`.github/dependabot.yml`) proposes weekly update pull requests for Go modules, pub packages, workflow actions and the Dockerfile base images.
 - The Dockerfile pins its base images by digest and checks the Flutter archive against `FLUTTER_SHA256`. When you change `.flutter-version`, set `FLUTTER_SHA256` to that release's `sha256` from [releases_linux.json](https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json); the image build fails until the two match.
