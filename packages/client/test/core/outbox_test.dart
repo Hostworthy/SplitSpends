@@ -654,6 +654,24 @@ void main() {
       },
     );
 
+    test('an edit waits behind a stuck restore of its expense', () async {
+      await outbox.add('POST', '/expenses/e1/restore', label: 'restore');
+      await queue('e1', method: 'PUT');
+      answer = (request) => request.url.path.endsWith('/restore')
+          ? envelope(500, 'INTERNAL')
+          : http.Response(jsonEncode({'data': null}), 200);
+
+      for (var pass = 0; pass < Outbox.stuckAfter; pass++) {
+        await outbox.flush(server());
+      }
+      expect((await outbox.pending()).first.stuck, isTrue);
+      seen.clear();
+      final result = await outbox.flush(server());
+      expect(seen, isEmpty);
+      expect(result.sent, 0);
+      expect((await outbox.pending()).length, 2);
+    });
+
     test('discard removes one write', () async {
       await queue('e1');
       await queue('e2');
