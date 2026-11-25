@@ -53,6 +53,40 @@ func TestSocialLimit(t *testing.T) {
 	s.call(t, http.MethodPost, friends, ben, platform.Invitee{Name: "Sam"}).want(t, http.StatusCreated)
 }
 
+// TestExpenseLimit checks that creating and editing expenses and recording
+// payments share one budget per signed-in person: the write after
+// expenseLimit in a minute is refused, while someone else can still write
+// and the same person can still import.
+func TestExpenseLimit(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	ben := s.signIn(t, "ben@example.com", "Ben")
+	g := s.group(t, ada.Token, "Trip", "ben@example.com")
+	booked := s.expense(t, ada.Token, g.ID, 1000, ada.User.ID, ada.User.ID, ben.User.ID)
+	edit := platform.ExpenseInput{GroupID: &g.ID, Description: "Groceries", Currency: "EUR", Total: 1200,
+		SplitMethod: "equal", Payers: []platform.Payer{{UserID: ada.User.ID, Amount: 1200}},
+		Splits: []platform.Split{{UserID: ada.User.ID}}}
+	path := platform.Prefix + "/expenses/" + booked.ID
+	s.call(t, http.MethodPut, path, ada.Token, edit).want(t, http.StatusOK)
+	payment := platform.PaymentInput{GroupID: &g.ID, FromUserID: ben.User.ID, ToUserID: ada.User.ID, Amount: 100, Currency: "EUR"}
+	s.call(t, http.MethodPost, platform.Prefix+"/payments", ada.Token, payment).want(t, http.StatusCreated)
+	for range expenseLimit - 3 {
+		s.expense(t, ada.Token, g.ID, 1000, ada.User.ID, ada.User.ID)
+	}
+
+	writes := []request{
+		{http.MethodPost, "/expenses", platform.ExpenseInput{GroupID: &g.ID, Description: "Taxi", Currency: "EUR", Total: 500,
+			SplitMethod: "equal", Payers: []platform.Payer{{UserID: ada.User.ID, Amount: 500}},
+			Splits: []platform.Split{{UserID: ada.User.ID}}}},
+		{http.MethodPut, "/expenses/" + booked.ID, edit},
+		{http.MethodPost, "/payments", payment},
+	}
+	s.refused(t, ada.Token, http.StatusTooManyRequests, "RATE_LIMITED", writes)
+
+	s.expense(t, ben.Token, g.ID, 1000, ben.User.ID, ben.User.ID)
+	s.call(t, http.MethodPost, platform.Prefix+"/import", ada.Token, platform.ImportRequest{MeID: uuid.NewString()}).want(t, http.StatusOK)
+}
+
 // accepting is a push service that takes every message.
 type accepting struct{}
 

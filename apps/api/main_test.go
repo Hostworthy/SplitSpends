@@ -1,10 +1,14 @@
 package main
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap"
 )
 
 func TestProbe(t *testing.T) {
@@ -73,5 +77,30 @@ func TestLoopback(t *testing.T) {
 		if got := loopback(tt.addr); got != tt.want {
 			t.Errorf("loopback(%q) = %q, want %q", tt.addr, got, tt.want)
 		}
+	}
+}
+
+// TestMCPLimit checks that /mcp counts requests per client address before
+// any token check: the request after mcpLimit in a minute is refused, while
+// another address is still served.
+func TestMCPLimit(t *testing.T) {
+	h := mcpHandler(&bootstrap.Config{Addr: ":0"}, slog.New(slog.DiscardHandler))
+	send := func(addr string) int {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("{}"))
+		req.RemoteAddr = addr + ":1234"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for i := range mcpLimit {
+		if code := send("203.0.113.1"); code != http.StatusUnauthorized {
+			t.Fatalf("request %d answered %d, want 401", i+1, code)
+		}
+	}
+	if code := send("203.0.113.1"); code != http.StatusTooManyRequests {
+		t.Fatalf("request over the limit answered %d, want 429", code)
+	}
+	if code := send("203.0.113.2"); code != http.StatusUnauthorized {
+		t.Fatalf("another address answered %d, want 401", code)
 	}
 }

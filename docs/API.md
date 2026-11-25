@@ -264,6 +264,8 @@ A payment is always one person paying another. `PUT /expenses/{id}` on a payment
 
 Someone who has left a group still sees the group's expenses and payments they were part of, with their comments, but only current members may edit, delete, restore or comment on a group's expenses (404 otherwise). Outside groups, everyone in an expense may.
 
+`POST /expenses`, `PUT /expenses/{expenseId}` and `POST /payments` share a budget of 300 requests a minute per account (429 `RATE_LIMITED`), far above what a person or the app replaying its offline queue sends; a queue that reaches it waits and carries on. `POST /import` books its expenses without counting against it.
+
 People leave a group only once they are settled, so a group expense or payment that includes someone who has left can no longer be deleted or restored (409 `CONFLICT`): either would give them a balance in a group they can no longer act in.
 
 ### Reminders
@@ -390,4 +392,4 @@ Administrators and managers get an `approvals` notification (email and push, eac
 
 ## MCP
 
-The MCP server speaks Streamable HTTP at `/mcp` on the same host (send the same `Authorization: Bearer <api token>` header; without it `/mcp` answers 401) and stdio via the `splitspends-mcp` binary. See [MCP.md](MCP.md).
+The MCP server speaks Streamable HTTP at `/mcp` on the same host (send the same `Authorization: Bearer <api token>` header; without it `/mcp` answers 401; each client address may send 300 requests a minute, 429 `RATE_LIMITED` beyond that, and tool calls that create or edit expenses count against the expense budget above) and stdio via the `splitspends-mcp` binary. See [MCP.md](MCP.md).
