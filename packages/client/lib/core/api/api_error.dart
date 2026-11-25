@@ -103,7 +103,9 @@ class ApiError implements Exception {
     409 => 'CONFLICT',
     422 => 'VALIDATION_ERROR',
     429 => 'RATE_LIMITED',
-    503 => 'AI_DISABLED',
+    // Proxies answer these for timeouts and outages; only the API's own
+    // code says which capability is unavailable.
+    502 || 503 || 504 => 'UNAVAILABLE',
     _ => 'INTERNAL',
   };
 

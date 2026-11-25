@@ -135,7 +135,7 @@ func (s *Service) Open(ctx context.Context, actor, id uuid.UUID) (*Receipt, io.R
 // Scan extracts line items with the AI reader.
 func (s *Service) Scan(ctx context.Context, actor, id uuid.UUID, currency string) (*Scan, error) {
 	if s.reader == nil {
-		return nil, errs.Unavailable("AI features are not enabled on this server.")
+		return nil, errs.AIDisabled("AI features are not enabled on this server.")
 	}
 	r, body, err := s.Open(ctx, actor, id)
 	if err != nil {

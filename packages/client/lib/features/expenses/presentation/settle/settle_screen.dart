@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:splitspends/app/refresh.dart';
 import 'package:splitspends/app/routes.dart';
@@ -41,6 +42,10 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
   final _notes = TextEditingController();
   bool _saving = false;
   int _amountVersion = 0;
+
+  /// The payment's id, chosen once: recording again after an error whose
+  /// request may have reached the server cannot record it twice.
+  final String _id = const Uuid().v4();
 
   @override
   void initState() {
@@ -91,6 +96,7 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
       await ref
           .read(expensesRepositoryProvider)
           .recordPayment(
+            id: _id,
             groupId: widget.args.groupId,
             fromUserId: _from!,
             toUserId: _to!,
