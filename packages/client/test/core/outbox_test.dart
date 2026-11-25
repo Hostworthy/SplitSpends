@@ -189,10 +189,10 @@ void main() {
     online = false;
     await repo.delete('e0');
     expect((await repo.restore('e0')).deleted, isFalse);
-    expect([for (final op in await outbox.pending()) op.method], [
-      'DELETE',
-      'POST',
-    ]);
+    expect(
+      [for (final op in await outbox.pending()) op.method],
+      ['DELETE', 'POST'],
+    );
     expect((await repo.get('e0')).deleted, isFalse);
   });
 
