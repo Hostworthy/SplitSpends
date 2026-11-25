@@ -122,10 +122,11 @@ resource "aws_s3_object" "web" {
   source       = "${var.web_dir}/${each.value}"
   etag         = filemd5("${var.web_dir}/${each.value}")
   content_type = lookup(local.content_types, lower(element(split(".", each.value), length(split(".", each.value)) - 1)), "application/octet-stream")
-  cache_control = (
-    can(regex("(^|/)(index\\.html|flutter_service_worker\\.js|version\\.json|manifest\\.json|flutter_bootstrap\\.js)$", each.value))
-    ? "no-cache" : "public, max-age=604800"
-  )
+  # Flutter names its output without a content hash, so everything but fonts
+  # and icons is revalidated on each load and an upgrade reaches browsers at
+  # once. packages/spa applies the same rule when the server hosts the app;
+  # change both together.
+  cache_control = can(regex("^(fonts|icons)/", each.value)) ? "public, max-age=604800" : "no-cache"
 }
 
 # ---------------------------------------------------------------- lambda
