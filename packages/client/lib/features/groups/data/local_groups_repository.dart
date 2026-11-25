@@ -273,7 +273,7 @@ class LocalGroupsRepository implements GroupsRepository {
       final entries = LocalLedger.groupEntries(await _ledger.expenses(txn), id);
       if (!(nets(entries)[userId]?.settled ?? true)) {
         throw const ApiError.conflict(
-          'They need to settle up in this group first.',
+          'That person still has an outstanding balance in this group.',
         );
       }
       final person = (await _ledger.directory(txn))[userId];

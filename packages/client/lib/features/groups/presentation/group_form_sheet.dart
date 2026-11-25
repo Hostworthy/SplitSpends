@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:splitspends/features/groups/presentation/emoji_picker.dart';
 import 'package:splitspends/core/ledger.dart';
@@ -37,6 +38,10 @@ class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
   GroupKind _kind = GroupKind.trip;
   String? _emoji; // null follows the kind
   late String _currency = ref.read(meProvider)?.defaultCurrency ?? 'USD';
+
+  // Chosen once, so pressing Create again after a failure that reached the
+  // server finds the group already made instead of making a second one.
+  final String _id = const Uuid().v4();
   bool _busy = false;
 
   @override
@@ -80,6 +85,7 @@ class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
           .read(groupsRepositoryProvider)
           .create(
             GroupInput(
+              id: _id,
               name: name,
               kind: _kind,
               emoji: _emoji ?? _kind.emoji,

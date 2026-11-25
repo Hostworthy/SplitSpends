@@ -109,7 +109,15 @@ void main() {
     await groups.removeMember(group.id, sam);
     await expectLater(
       groups.removeMember(group.id, alex),
-      throwsA(isA<ApiError>().having((e) => e.status, 'status', 409)),
+      throwsA(
+        isA<ApiError>()
+            .having((e) => e.status, 'status', 409)
+            .having(
+              (e) => e.message,
+              'message',
+              'That person still has an outstanding balance in this group.',
+            ),
+      ),
     );
   });
 
