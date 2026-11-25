@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/paging/paged.dart';
 import 'package:splitspends/features/activity/domain/activity.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/activity/data/providers.dart';
+import 'package:splitspends/features/expenses/data/providers.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 

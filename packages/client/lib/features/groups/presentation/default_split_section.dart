@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/refresh.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/groups/data/providers.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/states.dart';

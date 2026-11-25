@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/refresh.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/friends/data/providers.dart';
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/core/widgets/person_dialog.dart';
 import 'package:splitspends/core/widgets/states.dart';

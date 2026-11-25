@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:uuid/uuid.dart';
 
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/categories/data/providers.dart';
 import 'package:splitspends/core/config/app_config.dart';
 import 'package:splitspends/core/widgets/category_icon.dart';
 import 'package:splitspends/core/widgets/states.dart';

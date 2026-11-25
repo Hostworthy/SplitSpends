@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/core/widgets/skeleton.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/receipts/data/providers.dart';
 
 /// Receipt bytes, fetched with the bearer token.
 final receiptBytesProvider = FutureProvider.family<Uint8List, String>(

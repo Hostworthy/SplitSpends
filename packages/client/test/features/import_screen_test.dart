@@ -7,7 +7,7 @@ import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sembast/sembast_memory.dart';
 
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/sync/data/providers.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/models/json.dart';
 import 'package:splitspends/core/storage/local_db.dart';

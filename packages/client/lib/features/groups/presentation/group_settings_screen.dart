@@ -15,7 +15,7 @@ import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/person_dialog.dart';
 import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/groups/data/providers.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/presentation/default_split_section.dart';
 import 'package:splitspends/features/groups/presentation/emoji_picker.dart';

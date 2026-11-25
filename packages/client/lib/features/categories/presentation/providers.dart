@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/categories/data/providers.dart';
 import 'package:splitspends/core/config/app_config.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/features/categories/domain/catalog.dart';

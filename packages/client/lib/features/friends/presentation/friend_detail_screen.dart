@@ -11,7 +11,7 @@ import 'package:splitspends/core/widgets/balance_text.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
 import 'package:splitspends/features/expenses/presentation/expense_feed_list.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/friends/data/providers.dart';
 import 'package:splitspends/features/friends/domain/friend.dart';
 import 'package:splitspends/features/friends/presentation/add_friend_dialog.dart';
 import 'package:splitspends/features/friends/presentation/providers.dart';

@@ -18,7 +18,7 @@ import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/amount_field.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/states.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/expenses/data/providers.dart';
 import 'package:splitspends/features/expenses/domain/suggestions.dart';
 import 'package:splitspends/features/friends/domain/friend.dart';
 import 'package:splitspends/features/friends/presentation/people.dart';

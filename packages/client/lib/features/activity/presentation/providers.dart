@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/paging/paged.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/activity/data/providers.dart';
 import 'package:splitspends/features/activity/domain/activity.dart';
 
 /// Activity feed; the argument is a group id or `''` for everything.

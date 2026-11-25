@@ -8,7 +8,7 @@ import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/groups/data/providers.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 
 final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
