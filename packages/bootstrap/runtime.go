@@ -198,7 +198,7 @@ func Wire(cfg *Config, a Adapters) *Services {
 	if cfg.RatesURL != "" && reader != nil {
 		source = exchange.New(cfg.RatesURL)
 	}
-	exchangeRates := rates.NewService(repositories.NewRates(db), source, c)
+	exchangeRates := rates.NewService(repositories.NewRates(db), source, c, log)
 	invites := invite.NewService(repositories.NewInvites(db), groups, store.groups, users, tx, c, cfg.BaseURL)
 	reminders := reminder.NewService(reminder.Deps{Repo: repositories.NewReminders(db), Groups: groups, Connections: friends,
 		Users: users, Balances: balances, Activity: act, Notifier: notifier, Quota: quotas, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})

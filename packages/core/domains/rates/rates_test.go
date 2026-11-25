@@ -1,9 +1,11 @@
 package rates
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -149,7 +151,8 @@ func TestServiceCachesAndFallsBack(t *testing.T) {
 	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
 	c := &clock.Fixed{At: now}
 	repo, src := &memRepo{}, &fakeSource{}
-	s := NewService(repo, src, c)
+	var logs bytes.Buffer
+	s := NewService(repo, src, c, slog.New(slog.NewJSONHandler(&logs, nil)))
 
 	got, err := s.Latest(ctx)
 	if err != nil || got == nil || src.calls != 1 {
@@ -168,11 +171,14 @@ func TestServiceCachesAndFallsBack(t *testing.T) {
 	if err != nil || got == nil || src.calls != 2 {
 		t.Fatalf("stale table should be served when the provider fails: %v %v calls=%d", got, err, src.calls)
 	}
+	if !strings.Contains(logs.String(), `"msg":"rates.refresh.failed"`) || !strings.Contains(logs.String(), "provider down") {
+		t.Fatalf("a failed refresh should be logged, got %q", logs.String())
+	}
 	if err := s.Refresh(ctx); err == nil {
 		t.Fatal("Refresh should report the provider error")
 	}
 
-	off := NewService(&memRepo{}, nil, c)
+	off := NewService(&memRepo{}, nil, c, slog.New(slog.DiscardHandler))
 	if off.Enabled() {
 		t.Fatal("nil source should disable rates")
 	}
