@@ -257,6 +257,7 @@ class Me extends User {
     String? timezone,
     NotificationPrefs? notifications,
     bool? gravatar,
+    String? role,
   }) => Me(
     id: id,
     email: email ?? this.email,
@@ -268,7 +269,7 @@ class Me extends User {
     timezone: timezone ?? this.timezone,
     notifications: notifications ?? this.notifications,
     gravatar: gravatar ?? this.gravatar,
-    role: role,
+    role: role ?? this.role,
   );
 }
 
