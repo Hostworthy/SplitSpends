@@ -11,23 +11,21 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Administration tools. The API decides who may use them: managers can
-// list and decide requests, administrators can do everything.
-func (t *tools) register(s *sdk.Server) {
+// admin registers the administration tools. The API decides who may use
+// them: managers can list and decide requests, administrators can do
+// everything.
+func admin(ts *toolset) {
 	readOnly := &sdk.ToolAnnotations{ReadOnlyHint: true}
 	destructive := true
-	add := func(name, desc string, a *sdk.ToolAnnotations) *sdk.Tool {
-		return &sdk.Tool{Name: name, Description: desc, Annotations: a}
-	}
-	sdk.AddTool(s, add("admin_get_signup", "Administrators: the sign-up mode (open, invite, approval or closed) and the allowed list of emails and @domains.", readOnly), t.getSignup)
-	sdk.AddTool(s, add("admin_set_signup", "Administrators: change the sign-up mode and, when given, replace the allowed list. Confirm with the user first.", nil), t.setSignup)
-	sdk.AddTool(s, add("admin_list_requests", "Administrators and managers: people waiting for approval (or already approved or declined).", readOnly), t.listRequests)
-	sdk.AddTool(s, add("admin_decide_request", "Administrators and managers: approve or decline someone waiting to join. Confirm with the user first.", nil), t.decideRequest)
-	sdk.AddTool(s, add("admin_list_accounts", "Administrators: accounts with their role and status, filtered by status or a name or email search.", readOnly), t.listAccounts)
-	sdk.AddTool(s, add("admin_set_role", "Administrators: make an account a user, manager or admin. Confirm with the user first.", nil), t.setRole)
-	sdk.AddTool(s, add("admin_disable_account", "Administrators: disable an account. It is signed out everywhere and its email is removed (only a hash is kept); its name stays on past expenses. Confirm with the user first.",
-		&sdk.ToolAnnotations{DestructiveHint: &destructive}), t.disableAccount)
-	sdk.AddTool(s, add("admin_enable_account", "Administrators: let a disabled account sign in again with its old email.", nil), t.enableAccount)
+	add(ts, "admin_get_signup", "Administrators: the sign-up mode (open, invite, approval or closed) and the allowed list of emails and @domains.", readOnly, (*tools).getSignup)
+	add(ts, "admin_set_signup", "Administrators: change the sign-up mode and, when given, replace the allowed list. Confirm with the user first.", nil, (*tools).setSignup)
+	add(ts, "admin_list_requests", "Administrators and managers: people waiting for approval (or already approved or declined).", readOnly, (*tools).listRequests)
+	add(ts, "admin_decide_request", "Administrators and managers: approve or decline someone waiting to join. Confirm with the user first.", nil, (*tools).decideRequest)
+	add(ts, "admin_list_accounts", "Administrators: accounts with their role and status, filtered by status or a name or email search.", readOnly, (*tools).listAccounts)
+	add(ts, "admin_set_role", "Administrators: make an account a user, manager or admin. Confirm with the user first.", nil, (*tools).setRole)
+	add(ts, "admin_disable_account", "Administrators: disable an account. It is signed out everywhere and its email is removed (only a hash is kept); its name stays on past expenses. Confirm with the user first.",
+		&sdk.ToolAnnotations{DestructiveHint: &destructive}, (*tools).disableAccount)
+	add(ts, "admin_enable_account", "Administrators: let a disabled account sign in again with its old email.", nil, (*tools).enableAccount)
 }
 
 func (t *tools) getSignup(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
@@ -89,7 +87,7 @@ func (t *tools) listRequests(ctx context.Context, _ *sdk.CallToolRequest, in req
 		if name == "" {
 			name = "(no name)"
 		}
-		fmt.Fprintf(&b, "- %s <%s>, %s since %s (id %s)\n", name, r.Email, r.Status, r.RequestedAt[:10], r.ID)
+		fmt.Fprintf(&b, "- %s <%s>, %s since %s (id %s)\n", name, r.Email, r.Status, day(r.RequestedAt), r.ID)
 	}
 	if list.Total > len(list.Items) {
 		fmt.Fprintf(&b, "Showing the newest %d of %d.\n", len(list.Items), list.Total)

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,40 +28,73 @@ Tools starting with admin_ work only for administrators (managers can list and d
 
 // NewServer builds an MCP server bound to one API client.
 func NewServer(c *Client, version string) *sdk.Server {
+	return build(version, slog.Default(), func(*sdk.CallToolRequest) *Client { return c })
+}
+
+// build registers every tool on a new server. client picks the API client
+// for each call.
+func build(version string, log *slog.Logger, client func(*sdk.CallToolRequest) *Client) *sdk.Server {
 	s := sdk.NewServer(&sdk.Implementation{Name: "splitspends", Title: "Split Spends", Version: version}, &sdk.ServerOptions{Instructions: instructions})
-	t := &tools{c: c}
+	ts := &toolset{server: s, client: client, log: log}
 
 	readOnly := &sdk.ToolAnnotations{ReadOnlyHint: true}
-	add := func(name, desc string, annotations *sdk.ToolAnnotations) *sdk.Tool {
-		return &sdk.Tool{Name: name, Description: desc, Annotations: annotations}
-	}
-	sdk.AddTool(s, add("get_overview", "Who the user is, their total balances, groups and friends with balances.", readOnly), t.overview)
-	sdk.AddTool(s, add("list_groups", "List the user's groups with ids, members and the user's balance in each.", readOnly), t.listGroups)
-	sdk.AddTool(s, add("get_group", "Group details: members, every member's balance, suggested settle-up payments and recent expenses.", readOnly), t.getGroup)
-	sdk.AddTool(s, add("list_friends", "List friends with ids, emails and the balance with each.", readOnly), t.listFriends)
-	sdk.AddTool(s, add("list_expenses", "Search expenses and payments, newest first. Filter by group, friend, text or dates.", readOnly), t.listExpenses)
-	sdk.AddTool(s, add("get_expense", "Full details of one expense, including who paid and who owes what.", readOnly), t.getExpense)
-	sdk.AddTool(s, add("list_activity", "Recent activity feed.", readOnly), t.listActivity)
-	sdk.AddTool(s, add("list_categories", "Expense category ids for add_expense: the built-in ones plus the user's own custom categories.", readOnly), t.listCategories)
-	sdk.AddTool(s, add("add_expense", "Add a shared expense. Defaults: paid by the user, split equally between the user and the participants given (or, when a group is given and no participants or split are listed, the group's default split, else every group member equally).", nil), t.addExpense)
-	sdk.AddTool(s, add("record_payment", "Record that one person paid another back (settle up).", nil), t.recordPayment)
-	sdk.AddTool(s, add("remind_to_settle", "Email someone who owes the user money a friendly reminder to settle up, in one group or across everything. At most one reminder per person and group every 24 hours.", nil), t.remind)
+	add(ts, "get_overview", "Who the user is, their total balances, groups and friends with balances.", readOnly, (*tools).overview)
+	add(ts, "list_groups", "List the user's groups with ids, members and the user's balance in each.", readOnly, (*tools).listGroups)
+	add(ts, "get_group", "Group details: members, every member's balance, suggested settle-up payments and recent expenses.", readOnly, (*tools).getGroup)
+	add(ts, "list_friends", "List friends with ids, emails and the balance with each.", readOnly, (*tools).listFriends)
+	add(ts, "list_expenses", "Search expenses and payments, newest first. Filter by group, friend, text or dates.", readOnly, (*tools).listExpenses)
+	add(ts, "get_expense", "Full details of one expense, including who paid and who owes what.", readOnly, (*tools).getExpense)
+	add(ts, "list_activity", "Recent activity feed.", readOnly, (*tools).listActivity)
+	add(ts, "list_categories", "Expense category ids for add_expense: the built-in ones plus the user's own custom categories.", readOnly, (*tools).listCategories)
+	add(ts, "add_expense", "Add a shared expense. Defaults: paid by the user, split equally between the user and the participants given (or, when a group is given and no participants or split are listed, the group's default split, else every group member equally).", nil, (*tools).addExpense)
+	add(ts, "record_payment", "Record that one person paid another back (settle up).", nil, (*tools).recordPayment)
+	add(ts, "remind_to_settle", "Email someone who owes the user money a friendly reminder to settle up, in one group or across everything. At most one reminder per person and group every 24 hours.", nil, (*tools).remind)
 	destructive := true
-	sdk.AddTool(s, add("delete_expense", "Delete an expense or payment. It can be restored from the app.", &sdk.ToolAnnotations{DestructiveHint: &destructive}), t.deleteExpense)
-	t.register(s)
+	add(ts, "delete_expense", "Delete an expense or payment. It can be restored from the app.", &sdk.ToolAnnotations{DestructiveHint: &destructive}, (*tools).deleteExpense)
+	admin(ts)
 	return s
+}
+
+// toolset is what tools are registered with: the server, how a call finds
+// its API client, and where failures are logged.
+type toolset struct {
+	server *sdk.Server
+	client func(*sdk.CallToolRequest) *Client
+	log    *slog.Logger
+}
+
+// add registers a tool whose body runs on tools bound to the caller's
+// client. The SDK runs tool calls on goroutines of its own, outside any
+// HTTP recovery, so a panic is recovered here and becomes a tool error
+// instead of ending the process.
+func add[In any](ts *toolset, name, desc string, annotations *sdk.ToolAnnotations, h func(*tools, context.Context, *sdk.CallToolRequest, In) (*sdk.CallToolResult, any, error)) {
+	tool := &sdk.Tool{Name: name, Description: desc, Annotations: annotations}
+	sdk.AddTool(ts.server, tool, func(ctx context.Context, req *sdk.CallToolRequest, in In) (res *sdk.CallToolResult, out any, err error) {
+		defer func() {
+			if p := recover(); p != nil {
+				ts.log.ErrorContext(ctx, "mcp.tool.panicked", "tool", name, "panic", p, "stack", string(debug.Stack()))
+				res, out, err = fail(errors.New("something went wrong in this tool; the server logged the details"))
+			}
+		}()
+		return h(&tools{c: ts.client(req)}, ctx, req, in)
+	})
 }
 
 // HTTPHandler serves MCP over streamable HTTP. Each request uses the
 // caller's own bearer token against the API at apiBase.
 func HTTPHandler(apiBase, version string, hc *http.Client, log *slog.Logger) http.Handler {
-	return sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
+	return stream(func(r *http.Request) *sdk.Server {
 		token := ""
 		if h := r.Header.Get("Authorization"); len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
 			token = strings.TrimSpace(h[7:])
 		}
-		return NewServer(NewClient(apiBase, token, hc), version)
-	}, &sdk.StreamableHTTPOptions{
+		return build(version, log, func(*sdk.CallToolRequest) *Client { return NewClient(apiBase, token, hc) })
+	}, log)
+}
+
+// stream serves the servers server picks as stateless streamable HTTP.
+func stream(server func(*http.Request) *sdk.Server, log *slog.Logger) http.Handler {
+	return sdk.NewStreamableHTTPHandler(server, &sdk.StreamableHTTPOptions{
 		Stateless:    true,
 		JSONResponse: true,
 		Logger:       log,
@@ -347,7 +381,7 @@ func (t *tools) listActivity(ctx context.Context, _ *sdk.CallToolRequest, in act
 	}
 	var b strings.Builder
 	for _, a := range res.Items {
-		fmt.Fprintf(&b, "- %s %s\n", a.CreatedAt[:10], a.Summary)
+		fmt.Fprintf(&b, "- %s %s\n", day(a.CreatedAt), a.Summary)
 	}
 	return text(b.String()), nil, nil
 }
@@ -581,6 +615,15 @@ func unique(list []string) []string {
 		}
 	}
 	return out
+}
+
+// day is the date part of an RFC 3339 timestamp, or ts itself when it is
+// too short to have one.
+func day(ts string) string {
+	if len(ts) < len("2006-01-02") {
+		return ts
+	}
+	return ts[:len("2006-01-02")]
 }
 
 func email(e *string) string {
