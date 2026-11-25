@@ -32,7 +32,7 @@ Split Spends is self-hosted: there is no central Split Spends service. You (or a
 | [Google Cloud Run](#google-cloud-run) | Free tier, plus database | Medium | Low traffic, scales to zero |
 | [AWS Lambda](#aws-lambda) | Free tier, plus database | Medium | You already use AWS |
 
-Free PostgreSQL databases that work with every option: [Neon](https://neon.tech) (free tier, does not expire) and [Supabase](https://supabase.com) (free tier, pauses after a week without traffic). Use the connection string with `sslmode=require`.
+Free PostgreSQL databases that work with every option: [Neon](https://neon.tech) (free tier, does not expire) and [Supabase](https://supabase.com) (free tier, pauses after a week without traffic). Use the direct connection string (on Neon the host without `-pooler`; on Supabase the session connection, not port 6543) with `sslmode=require`.
 
 Every option needs an email account that can send mail over SMTP (for example Gmail with an app password). See [ENVIRONMENT.md](ENVIRONMENT.md#email).
 

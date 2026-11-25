@@ -69,11 +69,14 @@ type Runtime struct {
 
 // Load connects, migrates and wires every service.
 func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) {
+	if cfg.baseURLDefault {
+		log.Warn("bootstrap.config.base-url.default", "baseUrl", cfg.BaseURL)
+	}
 	pool, err := database.Connect(ctx, cfg.DatabaseURL, cfg.DatabaseConns)
 	if err != nil {
 		return nil, err
 	}
-	if err := database.Migrate(ctx, pool); err != nil {
+	if err := database.Migrate(ctx, pool, log); err != nil {
 		pool.Close()
 		return nil, err
 	}
