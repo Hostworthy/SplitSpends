@@ -91,7 +91,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
 // Activity
 { "id": "uuid", "kind": "expense.created" | "expense.updated" | "expense.deleted" | "expense.restored"
-  | "payment.created" | "comment.created" | "group.created" | "group.updated" | "group.member-added"
+  | "expense.stopped" | "payment.created" | "comment.created" | "group.created" | "group.updated" | "group.member-added"
   | "group.member-removed" | "group.member-joined" | "friend.added" | "reminder.sent",
   "actor": User, "groupId": "uuid" | null, "expenseId": "uuid" | null,
   "summary": "Ada added “Dinner” in Lisbon trip", "data": { ... }, "createdAt": "..." }
@@ -111,6 +111,10 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | `itemized` | omitted | `items[].userIds` share each item evenly; `tax` and `tip` are spread proportionally to each user's item subtotal; `total` must equal items + tax + tip |
 
 `payers` is a list of `{ "userId", "amount" }` whose amounts sum to `total`. Every user in `payers`, `splits` or `items` must be a group member (group expense) or the caller's friend (non-group expense), and the caller must be involved.
+
+`date` runs from `2000-01-01` up to one year after today (422 on `date` otherwise); an update that leaves it out keeps the expense's date.
+
+A recurring expense repeats on its `recurrence`: a background job books each occurrence as a new expense, and the schedule moves to the newest copy, so editing the latest expense edits the series. When a series has fallen behind, only the 12 most recent missed occurrences are booked and older ones are skipped. A series ends instead of repeating once someone in it has left the group (or, outside groups, is no longer connected to the person who created it); that is recorded as `expense.stopped`.
 
 `category` is a built-in id or a custom category id (`custom.<uuid>`). A custom id must be one of the caller's own live categories; an update may also keep the category the expense already has, even when it belongs to another member or was deleted.
 
@@ -340,7 +344,7 @@ Administrators and managers get an `approvals` notification (email and push) for
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
-| POST | `/internal/jobs` | Outside `/api/v1`. Runs recurring expenses and cleanup once. Requires `Authorization: Bearer <JOBS_SECRET>`; only mounted when `JOBS_SECRET` is set. For serverless schedulers |
+| POST | `/internal/jobs` | Outside `/api/v1`. Runs recurring expenses and cleanup once; overlapping runs are safe, each occurrence is booked once. Requires `Authorization: Bearer <JOBS_SECRET>`; only mounted when `JOBS_SECRET` is set. For serverless schedulers |
 
 ## MCP
 

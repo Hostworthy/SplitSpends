@@ -34,6 +34,12 @@ type Repository interface {
 	List(ctx context.Context, f Filter) ([]*Expense, int, error)
 	// Due returns live recurring expenses whose next date is on or before day.
 	Due(ctx context.Context, day time.Time, limit int) ([]*Expense, error)
+	// Claim locks the expense for the current transaction and returns it
+	// while it is still due on day. It returns nil when the expense is no
+	// longer due or another transaction holds it.
+	Claim(ctx context.Context, id uuid.UUID, day time.Time) (*Expense, error)
+	// EndSeries stops the expense from recurring. It changes nothing else.
+	EndSeries(ctx context.Context, id uuid.UUID, at time.Time) error
 }
 
 // Comment is a note on an expense.

@@ -20,8 +20,10 @@ func TestSharedVectors(t *testing.T) {
 	var doc struct {
 		Splits []struct {
 			Name  string
+			Today string
 			Input struct {
 				Total  int64
+				Date   string
 				Method Method
 				Payers []struct {
 					UserID uuid.UUID
@@ -44,14 +46,20 @@ func TestSharedVectors(t *testing.T) {
 	}
 	for _, c := range doc.Splits {
 		in := Input{Description: c.Name, Currency: "USD", Total: c.Input.Total, Method: c.Input.Method,
-			Items: c.Input.Items, Tax: c.Input.Tax, Tip: c.Input.Tip}
+			Date: c.Input.Date, Items: c.Input.Items, Tax: c.Input.Tax, Tip: c.Input.Tip}
 		for _, p := range c.Input.Payers {
 			in.Payers = append(in.Payers, Payer{UserID: p.UserID, Amount: p.Amount})
 		}
 		for _, s := range c.Input.Splits {
 			in.Splits = append(in.Splits, SplitInput{UserID: s.UserID, Value: s.Value})
 		}
-		n, err := Normalize(in, time.Now())
+		today := time.Now()
+		if c.Today != "" {
+			if today, err = time.Parse(time.DateOnly, c.Today); err != nil {
+				t.Fatal(err)
+			}
+		}
+		n, err := Normalize(in, today)
 		if c.Error != "" {
 			de, ok := errs.As(err)
 			if !ok || de.Field != c.Error {
