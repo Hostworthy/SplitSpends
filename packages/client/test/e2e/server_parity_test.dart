@@ -186,7 +186,7 @@ void main() {
     await add(
       ExpenseInput(
         groupId: g.id,
-        description: 'Snacks',
+        description: 'Ferry',
         currency: 'EUR',
         total: 1001,
         date: '2026-11-06',
