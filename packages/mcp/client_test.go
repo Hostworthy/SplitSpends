@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -116,9 +117,10 @@ func writeJSON(w http.ResponseWriter, body string) {
 	_, _ = w.Write([]byte(body))
 }
 
-// config answers /config with USD (two decimals) and JPY (none).
+// config answers /config with USD (two decimals), JPY (none) and KWD
+// (three).
 func config(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, `{"data":{"currencies":[{"code":"USD","exponent":2},{"code":"JPY","exponent":0}]}}`)
+	writeJSON(w, `{"data":{"currencies":[{"code":"USD","exponent":2},{"code":"JPY","exponent":0},{"code":"KWD","exponent":3}]}}`)
 }
 
 func TestMinor(t *testing.T) {
@@ -248,5 +250,79 @@ func TestConfigKeptWhenRefreshFails(t *testing.T) {
 	now = now.Add(configTTL)
 	if got, err := c.minor(context.Background(), "1", "USD"); err != nil || got != 100 {
 		t.Fatalf("a failed refresh should keep the known configuration: %d, %v", got, err)
+	}
+}
+
+func TestFormat(t *testing.T) {
+	_, c := serve(t, config)
+	cases := []struct {
+		amount   int64
+		currency string
+		want     string
+	}{
+		{1250, "USD", "12.50 USD"},
+		{-1250, "USD", "-12.50 USD"},
+		{-5, "usd", "-0.05 USD"},
+		{0, "USD", "0.00 USD"},
+		{100, "JPY", "100 JPY"},
+		{-100, "JPY", "-100 JPY"},
+		{1234, "KWD", "1.234 KWD"},
+		{5, "XXX", "5 XXX (minor units)"},
+	}
+	for _, tc := range cases {
+		if got := c.format(context.Background(), tc.amount, tc.currency); got != tc.want {
+			t.Errorf("format(%d, %s) = %q, want %q", tc.amount, tc.currency, got, tc.want)
+		}
+	}
+}
+
+func TestDoErrors(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{"validation with field", http.StatusUnprocessableEntity, `{"error":"Enter a total above zero.","code":"VALIDATION","field":"total"}`, "Enter a total above zero. (field total)"},
+		{"not found", http.StatusNotFound, `{"error":"Expense not found.","code":"NOT_FOUND"}`, "Expense not found."},
+		{"not JSON", http.StatusBadGateway, `<html>bad gateway</html>`, "request failed with status 502"},
+		{"empty", http.StatusInternalServerError, ``, "request failed with status 500"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			})
+			_, err := c.do(context.Background(), http.MethodGet, "/expenses/e1", nil, nil)
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) || apiErr.Status != tc.status || err.Error() != tc.want {
+				t.Fatalf("got %v, want %d %q", err, tc.status, tc.want)
+			}
+		})
+	}
+}
+
+func TestDoSendsToken(t *testing.T) {
+	var got http.Header
+	_, c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		writeJSON(w, `{"data":{}}`)
+	})
+	if _, err := c.do(context.Background(), http.MethodPost, "/payments", nil, platform.PaymentInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if got.Get("Authorization") != "Bearer ss_test" || got.Get("Content-Type") != "application/json" {
+		t.Fatalf("headers %v", got)
+	}
+	_, anonymous := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		writeJSON(w, `{"data":{}}`)
+	})
+	if _, err := anonymous.with("").do(context.Background(), http.MethodGet, "/me", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["Authorization"]; ok {
+		t.Fatalf("a client without a token must send no Authorization header, sent %q", got.Get("Authorization"))
 	}
 }

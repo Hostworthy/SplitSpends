@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -260,6 +261,212 @@ func BenchmarkHTTPHandlerToolsList(b *testing.B) {
 		h.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			b.Fatalf("status %d: %s", w.Code, w.Body)
+		}
+	}
+}
+
+// writes keeps the body of every write a fake API saw, by method and
+// escaped path, and answers reads like routes.
+type writes struct {
+	mu   sync.Mutex
+	seen map[string]string
+}
+
+func (w *writes) body(key string) (string, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	b, ok := w.seen[key]
+	return b, ok
+}
+
+func (w *writes) keys() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var keys []string
+	for k := range w.seen {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// record starts a fake API answering reads from bodies and keeping writes.
+func record(t *testing.T, bodies map[string]string) (*writes, *Client) {
+	t.Helper()
+	ws := &writes{seen: map[string]string{}}
+	answer := routes(bodies)
+	_, c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			raw, _ := io.ReadAll(r.Body)
+			key := r.Method + " " + strings.TrimPrefix(r.URL.EscapedPath(), platform.Prefix)
+			if r.URL.RawQuery != "" {
+				key += "?" + r.URL.RawQuery
+			}
+			ws.mu.Lock()
+			ws.seen[key] = string(raw)
+			ws.mu.Unlock()
+		}
+		answer(w, r)
+	})
+	return ws, c
+}
+
+// people the fake API knows: Ada (the user, USD) and a group in JPY with
+// Ada, Ben and Cy.
+const (
+	adaMe = `{"data":{"id":"u1","name":"Ada","defaultCurrency":"USD"}}`
+	flat  = `{"data":{"id":"g1","name":"Flat","defaultCurrency":"JPY","members":[{"id":"u1","name":"Ada"},{"id":"u2","name":"Ben"},{"id":"u3","name":"Cy"}],"defaultSplit":%s}}`
+)
+
+func TestAddExpenseBody(t *testing.T) {
+	percent := `{"method":"percent","values":{"u1":"60","u2":"40.0","u3":"0.00"}}`
+	cases := []struct {
+		name   string
+		preset string
+		in     addArgs
+		want   string
+	}{
+		{"equal between friends adds the user once", "null",
+			addArgs{Description: "Lunch", Amount: "12.50", Participants: []string{"u2", "u1", "u2"}},
+			`{"description":"Lunch","currency":"USD","total":1250,"splitMethod":"equal","payers":[{"userId":"u1","amount":1250}],"splits":[{"userId":"u1"},{"userId":"u2"}]}`},
+		{"equal in a group splits between every member", "null",
+			addArgs{Description: "Rice", Amount: "900", GroupID: "g1"},
+			`{"groupId":"g1","description":"Rice","currency":"JPY","total":900,"splitMethod":"equal","payers":[{"userId":"u1","amount":900}],"splits":[{"userId":"u1"},{"userId":"u2"},{"userId":"u3"}]}`},
+		{"group default split leaves out members at zero", percent,
+			addArgs{Description: "Rent", Amount: "1000", GroupID: "g1", PaidBy: "u2"},
+			`{"groupId":"g1","description":"Rent","currency":"JPY","total":1000,"splitMethod":"percent","payers":[{"userId":"u2","amount":1000}],"splits":[{"userId":"u1","value":60},{"userId":"u2","value":40.0}]}`},
+		{"participants override the group default", percent,
+			addArgs{Description: "Rent", Amount: "1000", GroupID: "g1", Participants: []string{"u2", "u3"}},
+			`{"groupId":"g1","description":"Rent","currency":"JPY","total":1000,"splitMethod":"equal","payers":[{"userId":"u1","amount":1000}],"splits":[{"userId":"u2"},{"userId":"u3"}]}`},
+		{"exact values become minor units", "null",
+			addArgs{Description: "Taxi", Amount: "12.50", Currency: "usd", SplitMethod: "Exact", SplitValues: []splitValue{{"u1", "10.25"}, {"u2", " 2.25 "}}},
+			`{"description":"Taxi","currency":"USD","total":1250,"splitMethod":"exact","payers":[{"userId":"u1","amount":1250}],"splits":[{"userId":"u1","value":1025},{"userId":"u2","value":225}]}`},
+		{"shares stay as given", "null",
+			addArgs{Description: "Cabin", Amount: "300", Currency: "KWD", SplitMethod: "shares", SplitValues: []splitValue{{"u1", "1"}, {"u2", "2.5"}}, Date: "2026-11-01", Category: "travel", Notes: "two nights"},
+			`{"description":"Cabin","currency":"KWD","total":300000,"date":"2026-11-01","category":"travel","notes":"two nights","splitMethod":"shares","payers":[{"userId":"u1","amount":300000}],"splits":[{"userId":"u1","value":1},{"userId":"u2","value":2.5}]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ws, c := record(t, map[string]string{"/me": adaMe, "/groups/g1": fmt.Sprintf(flat, tc.preset)})
+			res, _, _ := (&tools{c: c}).addExpense(context.Background(), nil, tc.in)
+			if res.IsError {
+				t.Fatalf("tool error %q", resultText(res))
+			}
+			got, ok := ws.body("POST /expenses")
+			if !ok {
+				t.Fatalf("no expense sent, saw %v", ws.keys())
+			}
+			if got != tc.want+"\n" && got != tc.want {
+				t.Fatalf("body\n got %s\nwant %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAddExpenseRefuses(t *testing.T) {
+	cases := []struct {
+		name string
+		in   addArgs
+		want string
+	}{
+		{"unknown method", addArgs{Description: "Tea", Amount: "3", SplitMethod: "ratio"}, "splitMethod must be"},
+		{"amount with too many decimals", addArgs{Description: "Tea", Amount: "3.555"}, "more decimals"},
+		{"exact value with too many decimals", addArgs{Description: "Tea", Amount: "3", SplitMethod: "exact", SplitValues: []splitValue{{"u1", "1.005"}}}, "more decimals"},
+		{"unknown currency", addArgs{Description: "Tea", Amount: "3", Currency: "XXX"}, "unsupported currency"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ws, c := record(t, map[string]string{"/me": adaMe})
+			res, _, _ := (&tools{c: c}).addExpense(context.Background(), nil, tc.in)
+			if !res.IsError || !strings.Contains(resultText(res), tc.want) {
+				t.Fatalf("want a tool error with %q, got %q", tc.want, resultText(res))
+			}
+			if keys := ws.keys(); len(keys) != 0 {
+				t.Fatalf("nothing must be sent, saw %v", keys)
+			}
+		})
+	}
+}
+
+func TestRecordPaymentCurrency(t *testing.T) {
+	cases := []struct {
+		name string
+		in   paymentArgs
+		want string
+	}{
+		{"explicit", paymentArgs{FromUserID: "u2", ToUserID: "u1", Amount: "1.5", Currency: "kwd", GroupID: "g1"},
+			`{"groupId":"g1","fromUserId":"u2","toUserId":"u1","amount":1500,"currency":"KWD"}`},
+		{"group", paymentArgs{FromUserID: "u2", ToUserID: "u1", Amount: "700", GroupID: "g1", Notes: "cash"},
+			`{"groupId":"g1","fromUserId":"u2","toUserId":"u1","amount":700,"currency":"JPY","notes":"cash"}`},
+		{"user default", paymentArgs{FromUserID: "u1", ToUserID: "u2", Amount: "25"},
+			`{"fromUserId":"u1","toUserId":"u2","amount":2500,"currency":"USD"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ws, c := record(t, map[string]string{"/me": adaMe, "/groups/g1": fmt.Sprintf(flat, "null")})
+			res, _, _ := (&tools{c: c}).recordPayment(context.Background(), nil, tc.in)
+			if res.IsError {
+				t.Fatalf("tool error %q", resultText(res))
+			}
+			if got, _ := ws.body("POST /payments"); strings.TrimSpace(got) != tc.want {
+				t.Fatalf("body\n got %s\nwant %s", got, tc.want)
+			}
+		})
+	}
+	ws, c := record(t, map[string]string{"/me": adaMe})
+	if res, _, _ := (&tools{c: c}).recordPayment(context.Background(), nil, paymentArgs{FromUserID: "u1", ToUserID: "u2", Amount: "1e3"}); !res.IsError {
+		t.Fatalf("an amount that is not a plain decimal must fail, got %q", resultText(res))
+	}
+	if keys := ws.keys(); len(keys) != 0 {
+		t.Fatalf("nothing must be sent, saw %v", keys)
+	}
+}
+
+func TestSignedOutMessage(t *testing.T) {
+	_, c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		writeJSON(w, `{"error":"Sign in again.","code":"UNAUTHORIZED"}`)
+	})
+	res, _, _ := (&tools{c: c}).listGroups(context.Background(), nil, empty{})
+	if !res.IsError || !strings.Contains(resultText(res), "create an API token") {
+		t.Fatalf("got %q", resultText(res))
+	}
+}
+
+func TestIDsStayInOnePathSegment(t *testing.T) {
+	const id = "a/b?c=1#d"
+	const escaped = "a%2Fb%3Fc=1%23d"
+	cases := []struct {
+		call func(*tools) *sdk.CallToolResult
+		want string
+	}{
+		{func(t *tools) *sdk.CallToolResult {
+			res, _, _ := t.deleteExpense(context.Background(), nil, expenseArgs{ExpenseID: id})
+			return res
+		}, "DELETE /expenses/" + escaped},
+		{func(t *tools) *sdk.CallToolResult {
+			res, _, _ := t.setRole(context.Background(), nil, roleArgs{UserID: id, Role: "user"})
+			return res
+		}, "PATCH /admin/accounts/" + escaped},
+		{func(t *tools) *sdk.CallToolResult {
+			res, _, _ := t.disableAccount(context.Background(), nil, accountArgs{UserID: id})
+			return res
+		}, "POST /admin/accounts/" + escaped + "/disable"},
+		{func(t *tools) *sdk.CallToolResult {
+			res, _, _ := t.enableAccount(context.Background(), nil, accountArgs{UserID: id})
+			return res
+		}, "POST /admin/accounts/" + escaped + "/enable"},
+		{func(t *tools) *sdk.CallToolResult {
+			res, _, _ := t.decideRequest(context.Background(), nil, decideArgs{RequestID: id, Decision: "approve"})
+			return res
+		}, "POST /admin/requests/" + escaped + "/approve"},
+	}
+	for _, tc := range cases {
+		ws, c := record(t, nil)
+		if res := tc.call(&tools{c: c}); res.IsError {
+			t.Errorf("%s: tool error %q", tc.want, resultText(res))
+		}
+		if _, ok := ws.body(tc.want); !ok {
+			t.Errorf("want %s, saw %v", tc.want, ws.keys())
 		}
 	}
 }
