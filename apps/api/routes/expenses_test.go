@@ -195,6 +195,17 @@ func TestMalformedIDsNameTheirField(t *testing.T) {
 			People:   []platform.ImportPerson{{ID: local, Name: "Ada"}},
 			Expenses: []platform.ImportExpense{{ExpenseInput: expense(func(in *platform.ExpenseInput) { in.ID = &local; in.Splits[0].UserID = "x" })}}},
 			"expenses[0].splits[0].userId"},
+		{"a payer of a later imported expense", p + "/import", platform.ImportRequest{MeID: local,
+			People: []platform.ImportPerson{{ID: local, Name: "Ada"}},
+			Expenses: []platform.ImportExpense{
+				{ExpenseInput: expense(func(in *platform.ExpenseInput) { in.ID = &local })},
+				{ExpenseInput: expense(func(in *platform.ExpenseInput) { in.ID = &local; in.Payers[0].UserID = "x" })},
+			}},
+			"expenses[1].payers[0].userId"},
+		{"an imported group member", p + "/import", platform.ImportRequest{MeID: local,
+			People: []platform.ImportPerson{{ID: local, Name: "Ada"}},
+			Groups: []platform.ImportGroup{{ID: local}, {ID: local}, {ID: local, MemberIDs: []string{"x"}}}},
+			"groups[2].memberIds[0]"},
 	} {
 		f := s.call(t, http.MethodPost, tc.path, ada.Token, tc.body).want(t, http.StatusUnprocessableEntity).failure(t)
 		if f.Field != tc.field || f.Error != "Invalid id." {
