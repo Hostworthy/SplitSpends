@@ -18,6 +18,9 @@ enum SplitMethod {
     (m) => m.wire == value,
     orElse: () => SplitMethod.equal,
   );
+
+  static bool known(String? value) =>
+      value == null || SplitMethod.values.any((m) => m.wire == value);
 }
 
 enum Recurrence {
@@ -35,6 +38,9 @@ enum Recurrence {
     (r) => r.name == value,
     orElse: () => Recurrence.none,
   );
+
+  static bool known(String? value) =>
+      value == null || Recurrence.values.any((r) => r.name == value);
 }
 
 class Share {
@@ -112,6 +118,8 @@ class Expense {
     this.tip = 0,
     this.receiptId,
     this.recurrence = Recurrence.none,
+    this.unknownMethod,
+    this.unknownRecurrence,
     this.createdBy,
     this.updatedBy,
     this.createdAt,
@@ -145,6 +153,12 @@ class Expense {
     tip: (json['tip'] as num?)?.toInt() ?? 0,
     receiptId: json['receiptId'] as String?,
     recurrence: Recurrence.parse(json['recurrence'] as String?),
+    unknownMethod: SplitMethod.known(json['splitMethod'] as String?)
+        ? null
+        : json['splitMethod'] as String,
+    unknownRecurrence: Recurrence.known(json['recurrence'] as String?)
+        ? null
+        : json['recurrence'] as String,
     createdBy: json['createdBy'] as String?,
     updatedBy: json['updatedBy'] as String?,
     createdAt: json['createdAt'] as String?,
@@ -170,6 +184,13 @@ class Expense {
   final int tip;
   final String? receiptId;
   final Recurrence recurrence;
+
+  /// The wire split method or recurrence when this app does not know it
+  /// (a newer server). [splitMethod] and [recurrence] then hold only a
+  /// fallback, so saving the expense from here would change it.
+  final String? unknownMethod;
+  final String? unknownRecurrence;
+
   final String? createdBy;
   final String? updatedBy;
   final String? createdAt;
@@ -177,6 +198,10 @@ class Expense {
   final bool deleted;
   final int commentCount;
   final int myBalance;
+
+  /// Whether this app can edit the expense without losing how it is split
+  /// or how it repeats.
+  bool get editable => unknownMethod == null && unknownRecurrence == null;
 
   /// Shown from a change still waiting in the outbox, not from the server.
   final bool pending;
@@ -211,6 +236,8 @@ class Expense {
     tip: tip,
     receiptId: receiptId,
     recurrence: recurrence,
+    unknownMethod: unknownMethod,
+    unknownRecurrence: unknownRecurrence,
     createdBy: createdBy,
     updatedBy: updatedBy,
     createdAt: createdAt,
