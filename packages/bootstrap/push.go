@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/mail"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,8 +35,9 @@ func (c *Config) loadPush() error {
 	if !strings.HasPrefix(c.VAPIDSubject, "mailto:") && !strings.HasPrefix(c.VAPIDSubject, "https://") {
 		return fmt.Errorf("bootstrap.config.env.invalid.VAPID_SUBJECT: use a mailto: address or an https:// URL")
 	}
-	c.PushAllowPrivate, _ = strconv.ParseBool(env("PUSH_ALLOW_PRIVATE", "false"))
-	return nil
+	var err error
+	c.PushAllowPrivate, err = flag("PUSH_ALLOW_PRIVATE", false)
+	return err
 }
 
 // defaultSubject is the contact push services see: the public https URL,
