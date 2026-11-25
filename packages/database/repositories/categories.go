@@ -26,9 +26,15 @@ func scanCategory(row pgx.Row) (*category.Category, error) {
 }
 
 func (r *Categories) Create(ctx context.Context, c *category.Category) error {
-	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO categories (owner_id, created_at, updated_at, deleted_at, id, name, icon, group_name)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, c.OwnerID, c.CreatedAt, c.UpdatedAt, c.DeletedAt, c.ID, c.Name, c.Icon, c.Group)
-	return err
+	tag, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO categories (owner_id, created_at, updated_at, deleted_at, id, name, icon, group_name)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`, c.OwnerID, c.CreatedAt, c.UpdatedAt, c.DeletedAt, c.ID, c.Name, c.Icon, c.Group)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errs.Taken()
+	}
+	return nil
 }
 
 func (r *Categories) Get(ctx context.Context, id string) (*category.Category, error) {
