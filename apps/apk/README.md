@@ -29,4 +29,8 @@ Create a keystore with `keytool -genkey -v -keystore upload-keystore.jks -keyalg
 
 ## Network
 
-Servers on your local network may use plain HTTP (`http://192.168.1.20:8080`); the app warns that such a connection is not encrypted. Certificates you install on the phone are trusted, so a homelab with its own certificate authority works over HTTPS. The Android emulator reaches a server on your computer at `http://10.0.2.2:8080`.
+Servers on your local network may use plain HTTP (`http://192.168.1.20:8080`, `http://nas.local:8080`); the app warns that such a connection is not encrypted. For a plain HTTP address outside the local network the app asks before sending your sign-in code, because the code and the session token would travel unencrypted. The app checks this itself: its HTTP client is Dart's, which Android's network security config does not govern. For the same reason it trusts only the certificate authorities that ship with Android, not ones you install on the phone, so a server reached over HTTPS needs a certificate from a public authority (for example Let's Encrypt). The Android emulator reaches a server on your computer at `http://10.0.2.2:8080`.
+
+## Backup
+
+Android Auto Backup is on, so the on-device ledger moves to a new phone with your Google backup. The backup also holds the app's offline copy of server data from connected mode. The session token is encrypted with an Android Keystore key, which is not backed up, so a restored app cannot read it and asks you to sign in again.

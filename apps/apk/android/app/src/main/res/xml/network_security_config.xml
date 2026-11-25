@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- SplitSpends talks to servers people host themselves. Plain HTTP is allowed
-     so a homelab on the local network (http://192.168.x.x:8080) works; the app
-     warns when a server address is not HTTPS. User-installed certificates are
-     trusted so homelabs with their own certificate authority work over HTTPS. -->
+<!-- These rules govern Android's own networking (the platform HTTP stack and
+     web views). The app talks to its server through Dart's HTTP client, which
+     opens its own connections and follows neither rule below: the app itself
+     warns about http:// addresses and asks before using one outside the local
+     network, and Dart trusts only the system certificate authorities, not
+     ones installed on the phone. Plain HTTP and user certificates stay
+     allowed here so links opened in a web view behave as in the browser. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
