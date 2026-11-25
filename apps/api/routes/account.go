@@ -10,7 +10,7 @@ import (
 )
 
 func (a *API) requestCode(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.OTPRequest](r)
+	in, err := decode[platform.OTPRequest](w, r)
 	if err != nil {
 		return err
 	}
@@ -21,7 +21,7 @@ func (a *API) requestCode(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) verifyCode(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.OTPVerify](r)
+	in, err := decode[platform.OTPVerify](w, r)
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func (a *API) getMe(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) patchMe(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.MePatch](r)
+	in, err := decode[platform.MePatch](w, r)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func (a *API) listTokens(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) createToken(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.TokenCreate](r)
+	in, err := decode[platform.TokenCreate](w, r)
 	if err != nil {
 		return err
 	}

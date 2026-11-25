@@ -14,7 +14,7 @@ import (
 const maxImport = 16 << 20
 
 func (a *API) importBundle(w http.ResponseWriter, r *http.Request) error {
-	in, err := decodeLimit[platform.ImportRequest](r, maxImport)
+	in, err := decodeLimit[platform.ImportRequest](w, r, maxImport)
 	if err != nil {
 		return err
 	}

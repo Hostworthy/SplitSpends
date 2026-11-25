@@ -57,11 +57,9 @@ func (a *API) scanReceipt(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	in := platform.ScanRequest{}
-	if r.ContentLength > 0 {
-		if in, err = decode[platform.ScanRequest](r); err != nil {
-			return err
-		}
+	in, err := decodeOptional[platform.ScanRequest](w, r)
+	if err != nil {
+		return err
 	}
 	s, err := a.svc.Receipts.Scan(r.Context(), me(r), id, in.Currency)
 	if err != nil {
@@ -79,7 +77,7 @@ func (a *API) scanReceipt(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) draftExpense(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.DraftRequest](r)
+	in, err := decode[platform.DraftRequest](w, r)
 	if err != nil {
 		return err
 	}

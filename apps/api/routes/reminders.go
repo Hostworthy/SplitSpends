@@ -10,7 +10,7 @@ import (
 )
 
 func (a *API) sendReminder(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.ReminderInput](r)
+	in, err := decode[platform.ReminderInput](w, r)
 	if err != nil {
 		return err
 	}
