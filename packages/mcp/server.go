@@ -463,7 +463,10 @@ func (t *tools) addExpense(ctx context.Context, _ *sdk.CallToolRequest, in addAr
 	case "exact", "percent", "shares":
 		body.SplitMethod = method
 		for _, v := range in.SplitValues {
-			value := v.Value
+			value := strings.TrimSpace(v.Value)
+			if !plain(value) {
+				return fail(fmt.Errorf("the split value %q for %s is not a decimal number such as 60 or 33.5", v.Value, v.UserID))
+			}
 			if method == "exact" {
 				m, err := t.c.minor(ctx, v.Value, currency)
 				if err != nil {

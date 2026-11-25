@@ -113,3 +113,48 @@ func writeJSON(w http.ResponseWriter, body string) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(body))
 }
+
+// config answers /config with USD (two decimals) and JPY (none).
+func config(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, `{"data":{"currencies":[{"code":"USD","exponent":2},{"code":"JPY","exponent":0}]}}`)
+}
+
+func TestMinor(t *testing.T) {
+	_, c := serve(t, config)
+	cases := []struct {
+		amount, currency string
+		want             int64
+		ok               bool
+	}{
+		{"12.50", "USD", 1250, true},
+		{" 12.5 ", "usd", 1250, true},
+		{"0.01", "USD", 1, true},
+		{".5", "USD", 50, true},
+		{"100", "JPY", 100, true},
+		{"12.505", "USD", 0, false},
+		{"1.5", "JPY", 0, false},
+		{"184467440737095516.26", "USD", 0, false},
+		{"92233720368547758.08", "USD", 0, false},
+		{"99999999999999999999", "JPY", 0, false},
+		{"1/2", "USD", 0, false},
+		{"0x1p4", "USD", 0, false},
+		{"0x10", "USD", 0, false},
+		{"010/2", "USD", 0, false},
+		{"1e2", "USD", 0, false},
+		{"1_000", "USD", 0, false},
+		{"-5", "USD", 0, false},
+		{"+5", "USD", 0, false},
+		{"", "USD", 0, false},
+		{".", "USD", 0, false},
+		{"5", "XXX", 0, false},
+	}
+	for _, tc := range cases {
+		got, err := c.minor(context.Background(), tc.amount, tc.currency)
+		if tc.ok && (err != nil || got != tc.want) {
+			t.Errorf("minor(%q, %s) = %d, %v; want %d", tc.amount, tc.currency, got, err, tc.want)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("minor(%q, %s) = %d; want an error", tc.amount, tc.currency, got)
+		}
+	}
+}
