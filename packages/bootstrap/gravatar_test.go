@@ -14,7 +14,9 @@ import (
 // after it is turned on.
 func TestGravatarPreference(t *testing.T) {
 	ctx := context.Background()
-	env := bootstraptest.Open(t, bootstraptest.Options{Now: time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)})
+	cfg := bootstraptest.Defaults()
+	cfg.Gravatar = true
+	env := bootstraptest.Open(t, bootstraptest.Options{Config: cfg, Now: time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)})
 	svc := env.Services
 	login := env.SignIn(t, "ada@example.com", "Ada")
 	if login.User.Gravatar || login.User.Picture(160) != "" {

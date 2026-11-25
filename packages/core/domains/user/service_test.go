@@ -93,7 +93,7 @@ func TestInviteReportsMailFailure(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := memUsers{ada.ID: ada}
 			var logs bytes.Buffer
-			s := NewService(repo, downMail{}, plenty{}, clock.Fixed{At: now}, slog.New(slog.NewJSONHandler(&logs, nil)))
+			s := NewService(repo, downMail{}, plenty{}, clock.Fixed{At: now}, slog.New(slog.NewJSONHandler(&logs, nil)), Settings{})
 			u, err := tc.invite(s, repo)
 			if err != nil || u.Status != StatusInvited {
 				t.Fatalf("the person is invited anyway: %v, %v", u, err)
@@ -105,5 +105,28 @@ func TestInviteReportsMailFailure(t *testing.T) {
 				t.Errorf("the log names the person: %s", &logs)
 			}
 		})
+	}
+}
+
+// TestGravatarFollowsHost checks that nobody can turn their Gravatar picture
+// on, and nobody's picture is shown, while the host has pictures turned off.
+func TestGravatarFollowsHost(t *testing.T) {
+	ctx := context.Background()
+	on := true
+	for _, host := range []bool{false, true} {
+		ada := &User{ID: uuid.New(), Name: "Ada", Email: "ada@example.com", Status: StatusActive}
+		ben := &User{ID: uuid.New(), Name: "Ben", Email: "ben@example.com", Status: StatusActive, Gravatar: true}
+		s := NewService(memUsers{ada.ID: ada, ben.ID: ben}, nil, plenty{}, clock.Fixed{}, slog.New(slog.DiscardHandler),
+			Settings{Gravatar: host})
+		_, err := s.Update(ctx, ada.ID, Patch{Gravatar: &on})
+		if host && err != nil {
+			t.Fatalf("pictures on: turning Gravatar on must work: %v", err)
+		}
+		if e, ok := errs.As(err); !host && (!ok || e.Kind != errs.KindValidation || e.Field != "gravatar" || ada.Gravatar) {
+			t.Fatalf("pictures off: want a validation error on gravatar, got %v", err)
+		}
+		if got := s.Picture(ben, 160); (got != "") == !host {
+			t.Errorf("pictures on = %v: Picture = %q", host, got)
+		}
 	}
 }

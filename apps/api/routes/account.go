@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
-	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/middleware"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 )
@@ -30,7 +29,7 @@ func (a *API) verifyCode(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return details(w, http.StatusOK, platform.LoginResult{Token: login.Token, ExpiresAt: stamp(*login.Session.ExpiresAt),
-		User: toMe(login.User), IsNew: login.IsNew})
+		User: a.toMe(login.User), IsNew: login.IsNew})
 }
 
 func (a *API) logout(w http.ResponseWriter, r *http.Request) error {
@@ -45,16 +44,13 @@ func (a *API) getMe(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusOK, toMe(u))
+	return details(w, http.StatusOK, a.toMe(u))
 }
 
 func (a *API) patchMe(w http.ResponseWriter, r *http.Request) error {
 	in, err := decode[platform.MePatch](w, r)
 	if err != nil {
 		return err
-	}
-	if in.Gravatar != nil && *in.Gravatar && !a.cfg.Gravatar {
-		return errs.Validation("gravatar", "Gravatar pictures are turned off on this server.")
 	}
 	p := user.Patch{Name: in.Name, DefaultCurrency: in.DefaultCurrency, Timezone: in.Timezone, AvatarColor: in.AvatarColor, Gravatar: in.Gravatar}
 	if in.Notifications != nil {
@@ -69,7 +65,7 @@ func (a *API) patchMe(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusOK, toMe(u))
+	return details(w, http.StatusOK, a.toMe(u))
 }
 
 func (a *API) myBalances(w http.ResponseWriter, r *http.Request) error {

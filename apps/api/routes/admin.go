@@ -28,8 +28,8 @@ func toRequest(r *admin.Request) platform.SignupRequest {
 		RequestedAt: stamp(r.RequestedAt), DecidedAt: stampPtr(r.DecidedAt)}
 }
 
-func toAccount(u *user.User) platform.Account {
-	return platform.Account{User: toAccountUser(u), Role: string(u.Role), CreatedAt: stamp(u.CreatedAt)}
+func (a *API) toAccount(u *user.User) platform.Account {
+	return platform.Account{User: a.toAccountUser(u), Role: string(u.Role), CreatedAt: stamp(u.CreatedAt)}
 }
 
 func (a *API) signupSettings(w http.ResponseWriter, r *http.Request) error {
@@ -94,7 +94,7 @@ func (a *API) accounts(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]platform.Account, 0, len(users))
 	for _, u := range users {
-		out = append(out, toAccount(u))
+		out = append(out, a.toAccount(u))
 	}
 	return list(w, out, total)
 }
@@ -112,7 +112,7 @@ func (a *API) setRole(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusOK, toAccount(u))
+	return details(w, http.StatusOK, a.toAccount(u))
 }
 
 func (a *API) disableAccount(w http.ResponseWriter, r *http.Request) error {
@@ -132,5 +132,5 @@ func (a *API) toggleAccount(w http.ResponseWriter, r *http.Request, act func(ctx
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusOK, toAccount(u))
+	return details(w, http.StatusOK, a.toAccount(u))
 }

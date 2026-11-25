@@ -187,7 +187,7 @@ func setup(t *testing.T) *fixture {
 		{UserID: f.ada.ID, Paid: 9000, Owed: 3000}, {UserID: f.ben.ID, Owed: 3000}, {UserID: f.sam.ID, Owed: 3000},
 	}}}}
 	f.svc = NewService(Deps{Repo: memReminders{}, Groups: f.ledger, Connections: links{{f.ada.ID, f.ben.ID}: true},
-		Users: user.NewService(users, nil, memQuota{}, f.clock, slog.New(slog.DiscardHandler)), Balances: balance.NewService(f.ledger),
+		Users: user.NewService(users, nil, memQuota{}, f.clock, slog.New(slog.DiscardHandler), user.Settings{}), Balances: balance.NewService(f.ledger),
 		Activity: activity.NewService(f.feed, f.clock), Notifier: f.mail, Quota: memQuota{}, Tx: noTx{}, Clock: f.clock, BaseURL: "https://split.test"})
 	return f
 }
