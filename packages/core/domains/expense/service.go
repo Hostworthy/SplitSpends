@@ -224,22 +224,48 @@ func (s *Service) record(ctx context.Context, actor uuid.UUID, kind activity.Kin
 }
 
 // existing returns the expense with a client-chosen id when it already
-// exists and the actor may see it, so retried creates are idempotent.
-func (s *Service) existing(ctx context.Context, actor uuid.UUID, id *uuid.UUID) (*Expense, error) {
+// exists and the actor may see it, so retried creates are idempotent. A retry
+// asks for the same kind of expense in the same group; an id used for
+// anything else is a conflict.
+func (s *Service) existing(ctx context.Context, actor uuid.UUID, id *uuid.UUID, kind Kind, groupID *uuid.UUID) (*Expense, error) {
 	if id == nil || *id == uuid.Nil {
 		return nil, nil
 	}
-	e, _, err := s.load(ctx, actor, *id)
-	if err == nil {
-		return e, nil
+	e, err := s.repo.Get(ctx, *id)
+	if errs.Is(err, errs.KindNotFound) {
+		return nil, nil
 	}
-	if !errs.Is(err, errs.KindNotFound) {
+	if err != nil {
 		return nil, err
 	}
-	if _, err := s.repo.Get(ctx, *id); err == nil {
+	if _, _, err := s.visible(ctx, actor, e); err != nil {
+		if errs.Is(err, errs.KindNotFound) {
+			return nil, errs.Conflict("That expense id is already in use.")
+		}
+		return nil, err
+	}
+	if e.Kind != kind || (e.GroupID == nil) != (groupID == nil) || (groupID != nil && *e.GroupID != *groupID) {
 		return nil, errs.Conflict("That expense id is already in use.")
 	}
-	return nil, nil
+	return e, nil
+}
+
+// insert saves a new expense and its activity. When a request with the same
+// client-chosen id saved its expense first, insert returns that one instead;
+// it returns nil when e was saved.
+func (s *Service) insert(ctx context.Context, actor uuid.UUID, e *Expense, g *group.Group, kind activity.Kind, extra map[string]any) (*Expense, error) {
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.repo.Create(ctx, e); err != nil {
+			return err
+		}
+		return s.record(ctx, actor, kind, e, g, extra)
+	})
+	if errs.Is(err, errs.KindConflict) {
+		if prior, err := s.existing(ctx, actor, &e.ID, e.Kind, e.GroupID); prior != nil || err != nil {
+			return prior, err
+		}
+	}
+	return nil, err
 }
 
 func newID(id *uuid.UUID) uuid.UUID {
@@ -272,7 +298,7 @@ func (s *Service) currency(ctx context.Context, actor uuid.UUID, groupID *uuid.U
 
 // Create books a new expense.
 func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expense, error) {
-	if e, err := s.existing(ctx, actor, in.ID); e != nil || err != nil {
+	if e, err := s.existing(ctx, actor, in.ID, KindExpense, in.GroupID); e != nil || err != nil {
 		return e, err
 	}
 	var err error
@@ -293,14 +319,8 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expen
 	}
 	e := &Expense{ID: newID(in.ID), GroupID: in.GroupID, Kind: KindExpense, CreatedBy: actor, CreatedAt: now}
 	s.build(e, n, actor, now)
-	err = s.tx.Do(ctx, func(ctx context.Context) error {
-		if err := s.repo.Create(ctx, e); err != nil {
-			return err
-		}
-		return s.record(ctx, actor, activity.ExpenseCreated, e, g, nil)
-	})
-	if err != nil {
-		return nil, err
+	if prior, err := s.insert(ctx, actor, e, g, activity.ExpenseCreated, nil); prior != nil || err != nil {
+		return prior, err
 	}
 	s.notify(ctx, actor, e, g, false)
 	return e, nil
@@ -439,7 +459,7 @@ type PaymentInput struct {
 
 // RecordPayment books a settle-up payment.
 func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in PaymentInput) (*Expense, error) {
-	if e, err := s.existing(ctx, actor, in.ID); e != nil || err != nil {
+	if e, err := s.existing(ctx, actor, in.ID, KindPayment, in.GroupID); e != nil || err != nil {
 		return e, err
 	}
 	if in.From == in.To || in.From == uuid.Nil || in.To == uuid.Nil {
@@ -478,14 +498,8 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	e := &Expense{ID: newID(in.ID), GroupID: in.GroupID, Kind: KindPayment, CreatedBy: actor, CreatedAt: now}
 	s.build(e, n, actor, now)
 	extra := map[string]any{"fromName": people[in.From].Name, "toName": people[in.To].Name}
-	err = s.tx.Do(ctx, func(ctx context.Context) error {
-		if err := s.repo.Create(ctx, e); err != nil {
-			return err
-		}
-		return s.record(ctx, actor, activity.PaymentCreated, e, g, extra)
-	})
-	if err != nil {
-		return nil, err
+	if prior, err := s.insert(ctx, actor, e, g, activity.PaymentCreated, extra); prior != nil || err != nil {
+		return prior, err
 	}
 	if to := people[in.To]; !ports.IsQuiet(ctx) && to.ID != actor {
 		n, ok := to.Notice(user.PaymentReceived, people[in.From].Name+" paid you "+money.Format(e.Total, e.Currency),

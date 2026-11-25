@@ -26,6 +26,7 @@ type Filter struct {
 
 // Repository persists expenses and their shares.
 type Repository interface {
+	// Create returns errs.Conflict when the id is taken.
 	Create(ctx context.Context, e *Expense) error
 	// Get returns errs.NotFound when missing. Deleted expenses are returned.
 	Get(ctx context.Context, id uuid.UUID) (*Expense, error)
