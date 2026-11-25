@@ -264,3 +264,34 @@ func TestLinksEndWhenTheirCreatorLeaves(t *testing.T) {
 		t.Fatalf("links of current members keep working: %v", err)
 	}
 }
+
+func TestLinksEndWhenTheGroupIsArchived(t *testing.T) {
+	ctx := context.Background()
+	svc, g, ada, c := setup(t)
+	issued, err := svc.Create(ctx, ada.ID, g.g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := svc.Lookup(ctx, issued.Token)
+	if err != nil || hash == "" {
+		t.Fatalf("the link works before archiving: %q %v", hash, err)
+	}
+	g.g.ArchivedAt = &c.at
+
+	if _, err := svc.Preview(ctx, issued.Token); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("preview: %v", err)
+	}
+	if ok, err := svc.Valid(ctx, issued.Token); ok || err != nil {
+		t.Fatalf("a link to an archived group must not be valid: %v", err)
+	}
+	if ok, err := svc.Live(ctx, hash); ok || err != nil {
+		t.Fatalf("a link to an archived group must not let anyone sign up: %v", err)
+	}
+	ben := uuid.New()
+	if _, err := svc.Accept(ctx, ben, issued.Token); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("a link to an archived group cannot be accepted: %v", err)
+	}
+	if g.g.HasMember(ben) {
+		t.Fatal("Ben joined an archived group")
+	}
+}

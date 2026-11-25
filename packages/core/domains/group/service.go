@@ -375,7 +375,8 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 }
 
 // Join adds the actor to a group, for example through an invite link.
-// Joining a group you already belong to changes nothing.
+// Joining a group you already belong to changes nothing; an archived group
+// takes no new members.
 func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) {
 	g, err := s.repo.Get(ctx, id)
 	if err != nil {
@@ -383,6 +384,9 @@ func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) 
 	}
 	if g.HasMember(actor) {
 		return s.view(ctx, actor, g)
+	}
+	if g.ArchivedAt != nil {
+		return nil, errs.Conflict(g.Name + " is archived, so nobody new can join it.")
 	}
 	if len(g.Members) >= MaxMembers {
 		return nil, errs.Conflict(fmt.Sprintf("This group already has %d members, the most a group can have.", MaxMembers))

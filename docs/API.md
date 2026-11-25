@@ -228,7 +228,7 @@ Any group member can create a link that lets anyone who has it join the group. L
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens, and links whose creator has left the group, alike |
+| GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens, links whose creator has left the group and links to archived groups, alike |
 | POST | `/invites/{token}/accept` | | `{ data: Group }`; adds the caller to the group and records `group.member-joined`. Accepting again, or as a member, returns the group unchanged |
 
 People without an account follow the link, request a login code with `inviteToken`, sign in, then accept.

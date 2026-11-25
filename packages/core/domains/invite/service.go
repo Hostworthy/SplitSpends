@@ -119,8 +119,9 @@ func (s *Service) find(ctx context.Context, token string) (*Invite, *group.Group
 }
 
 // usable returns the group inv lets people join, or nil when the link no
-// longer works: it expired, or the person who made it is no longer in the
-// group, so leaving or being removed also ends the links someone shared.
+// longer works: it expired, the group is archived, or the person who made it
+// is no longer in the group, so leaving or being removed also ends the links
+// someone shared.
 func (s *Service) usable(ctx context.Context, inv *Invite) (*group.Group, error) {
 	if inv.Expired(s.clock.Now()) {
 		return nil, nil
@@ -132,7 +133,7 @@ func (s *Service) usable(ctx context.Context, inv *Invite) (*group.Group, error)
 	if err != nil {
 		return nil, err
 	}
-	if !g.HasMember(inv.CreatedBy) {
+	if g.ArchivedAt != nil || !g.HasMember(inv.CreatedBy) {
 		return nil, nil
 	}
 	return g, nil
