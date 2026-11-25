@@ -285,3 +285,61 @@ func TestLastAdminConcurrent(t *testing.T) {
 		}
 	}
 }
+
+// pendingRequest files dan's request to join in approval mode and returns
+// it, with ada as the administrator.
+func pendingRequest(t *testing.T, env *bootstraptest.Env) (*user.User, *admin.Request) {
+	t.Helper()
+	ctx := context.Background()
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User
+	if _, err := svc.Admin.UpdateSettings(ctx, ada.ID, "approval", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Auth.RequestCode(ctx, "dan@else.org", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Auth.Verify(ctx, "dan@else.org", env.Notifier.Code("dan@else.org"), "Dan", "test"); !errs.Is(err, errs.KindPending) {
+		t.Fatalf("dan must wait for approval: %v", err)
+	}
+	pending, err := svc.Admin.Requests(ctx, ada.ID, "")
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("pending = %+v, %v", pending, err)
+	}
+	return ada, pending[0]
+}
+
+func TestApprovalSurvivesModeChange(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada, request := pendingRequest(t, env)
+	if _, err := env.Services.Admin.UpdateSettings(ctx, ada.ID, "invite", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Services.Admin.Approve(ctx, ada.ID, request.ID); err != nil {
+		t.Fatal(err)
+	}
+	if dan := env.SignIn(t, "dan@else.org", "Dan").User; dan.Status != user.StatusActive {
+		t.Fatalf("an approved person must sign in after the mode changed to invite: %+v", dan)
+	}
+}
+
+func TestApproveRefusedWhenClosed(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada, request := pendingRequest(t, env)
+	if _, err := env.Services.Admin.UpdateSettings(ctx, ada.ID, "closed", nil); err != nil {
+		t.Fatal(err)
+	}
+	env.Notifier.Reset()
+	if _, err := env.Services.Admin.Approve(ctx, ada.ID, request.ID); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("approving while sign-up is closed must be refused, got %v", err)
+	}
+	if sent := env.Notifier.Sent(); len(sent) != 0 {
+		t.Fatalf("nobody may be told they can sign in: %+v", sent)
+	}
+	pending, err := env.Services.Admin.Requests(ctx, ada.ID, "")
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("the request must stay pending: %+v %v", pending, err)
+	}
+}

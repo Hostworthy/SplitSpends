@@ -328,7 +328,7 @@ Sign-up modes:
 | Mode | Who can create an account |
 | --- | --- |
 | `open` | Anyone |
-| `invite` | The allowed list, people a member added by email, and holders of a group invite link |
+| `invite` | The allowed list, people a member added by email, holders of a group invite link, and people an administrator or manager approved |
 | `approval` | Anyone can ask: after proving their email with a code, `POST /auth/otp/verify` answers 403 `APPROVAL_PENDING` until an administrator or manager approves them (403 `APPROVAL_DECLINED` once declined). The allowed list and people approved earlier sign in directly. Invited people also wait |
 | `closed` | Nobody new, not even the allowed list |
 
@@ -339,7 +339,7 @@ Existing active accounts always sign in. The allowed list holds addresses and wh
 | GET | `/admin/signup` | | admin: `{ data: { mode, allowed: [], updatedAt } }` |
 | PUT | `/admin/signup` | `{ mode, allowed: [] }` | admin: the saved settings (entries lowercased, `example.com` becomes `@example.com`) |
 | GET | `/admin/requests` | `?status=pending\|approved\|declined` (pending by default) | admin or manager: list of `{ id, email, name, status, requestedAt, decidedAt }` |
-| POST | `/admin/requests/{requestId}/approve` | | admin or manager: the request; the person is emailed and can sign in |
+| POST | `/admin/requests/{requestId}/approve` | | admin or manager: the request; the person is emailed and can sign in. 409 while the sign-up mode is `closed` |
 | POST | `/admin/requests/{requestId}/decline` | | admin or manager: the request |
 | GET | `/admin/accounts` | `?status=active\|invited\|disabled&q=&limit=&offset=` | admin: list of `{ ...User, role, createdAt }` (everyone except people added by name only) |
 | PATCH | `/admin/accounts/{userId}` | `{ role }` | admin: the account |
