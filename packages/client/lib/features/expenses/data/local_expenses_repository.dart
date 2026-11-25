@@ -134,10 +134,15 @@ class LocalExpensesRepository implements ExpensesRepository {
       throw ApiError.validation(error.field, error.message);
     }
     final involved = {for (final s in n.shares) s.userId};
+    // The group of an expense cannot change, so an edit is checked against
+    // the group it was booked in, like on the server.
+    final groupId = existing == null
+        ? input.groupId
+        : existing['groupId'] as String?;
     // Like the server: in a group, members book expenses and payments for
     // each other; outside one, you only book what you take part in.
-    if (input.groupId != null) {
-      final g = await Stores.groups.record(input.groupId!).get(c);
+    if (groupId != null) {
+      final g = await Stores.groups.record(groupId).get(c);
       final members = g == null
           ? const <String>{}
           : LocalLedger.memberIds(g).toSet();
@@ -176,7 +181,7 @@ class LocalExpensesRepository implements ExpensesRepository {
     final next = nextOccurrence(n.recurrence, n.date, day);
     return {
       'id': id,
-      'groupId': input.groupId,
+      'groupId': groupId,
       'kind': kind,
       'description': n.description,
       'category': n.category,
@@ -261,19 +266,35 @@ class LocalExpensesRepository implements ExpensesRepository {
     return get(id);
   }
 
+  /// The group of [e], when [e] is a group expense. People who left a group
+  /// keep seeing the expenses they were part of, but only current members
+  /// change them, since that moves the balances of everyone still in it.
+  Future<JsonMap?> _editable(DatabaseClient c, JsonMap e, String meId) async {
+    final groupId = e['groupId'] as String?;
+    if (groupId == null) return null;
+    final g = await _ledger.group(groupId, c);
+    if (!LocalLedger.memberIds(g).contains(meId)) {
+      throw ApiError.notFound('Expense');
+    }
+    return g;
+  }
+
   @override
   Future<Expense> update(String id, ExpenseInput input) async {
     final db = await _ledger.db;
     await db.transaction((txn) async {
       final old = await _raw(txn, id);
+      await _editable(txn, old, (await _ledger.me(txn)).id);
+      if (LocalLedger.isDeleted(old)) {
+        throw const ApiError.conflict('Restore the expense before editing it.');
+      }
+      // The server lets API clients edit payments, but the app never offers
+      // it, so on the device a payment stays as it was recorded.
       if (old['kind'] == 'payment') {
         throw const ApiError.conflict('Payments cannot be edited.');
       }
       final e = await _build(txn, input, id: id, existing: old);
-      await Stores.expenses.record(id).put(txn, {
-        ...e,
-        'groupId': old['groupId'],
-      });
+      await Stores.expenses.record(id).put(txn, e);
       await _log(txn, 'expense.updated', e);
     });
     return get(id);
@@ -284,6 +305,22 @@ class LocalExpensesRepository implements ExpensesRepository {
     await db.transaction((txn) async {
       final e = await _raw(txn, id);
       final me = await _ledger.me(txn);
+      final g = await _editable(txn, e, me.id);
+      if (LocalLedger.isDeleted(e) == deleted) return;
+      // Leaving requires a settled balance, so deleting or restoring an
+      // expense of someone who has left would give them a balance in a
+      // group they can no longer act in.
+      if (g != null) {
+        final members = LocalLedger.memberIds(g).toSet();
+        if (!(e['shares'] as List).cast<JsonMap>().every(
+          (s) => members.contains(s['userId']),
+        )) {
+          throw ApiError.conflict(
+            'Someone in this expense has left the group, so it cannot be '
+            '${deleted ? 'deleted' : 'restored'}.',
+          );
+        }
+      }
       final next = {
         ...e,
         'deleted': deleted,
