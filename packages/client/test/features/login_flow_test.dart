@@ -49,6 +49,13 @@ class FakeAuthRepository implements AuthRepository {
     String email,
     String code,
   ) async {
+    if (code == '222222') {
+      return LoginResult(
+        token: 'tok',
+        me: Me(id: _me.id, email: _me.email, name: 'Ada'),
+        isNew: false,
+      );
+    }
     if (code == '777777') {
       throw const ApiError(
         status: 403,
@@ -71,6 +78,49 @@ class FakeAuthRepository implements AuthRepository {
     named = name;
     return Me(id: _me.id, email: _me.email, name: name, defaultCurrency: 'EUR');
   }
+}
+
+/// A device whose secure storage refuses to keep the session token.
+class _BrokenTokenStore extends MemoryLocalStore {
+  @override
+  Future<void> writeToken(String? token) async =>
+      throw StateError('keystore unavailable');
+}
+
+/// A device whose database refuses to keep the on-device profile.
+class _FailingLocalSession extends SessionController {
+  @override
+  Future<void> useLocally({
+    required String name,
+    String currency = 'USD',
+  }) async => throw StateError('database unavailable');
+}
+
+/// Pumps the app on the email step of "Connect to a server".
+Future<void> _openLogin(
+  WidgetTester tester,
+  FakeAuthRepository auth, {
+  MemoryLocalStore? store,
+}) async {
+  tester.view.physicalSize = const Size(420, 900);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  await tester.pumpWidget(
+    ProviderScope(
+      retry: (_, _) => null,
+      overrides: [
+        localStoreProvider.overrideWithValue(store ?? MemoryLocalStore()),
+        memoryDatabase(),
+        authRepositoryProvider.overrideWithValue(auth),
+        httpClientProvider.overrideWithValue(_api()),
+      ],
+      child: const SplitSpendsApp(),
+    ),
+  );
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(find.text('Connect'));
+  await tester.tap(find.text('Connect'));
+  await tester.pumpAndSettle();
 }
 
 /// Minimal API for the dashboard after login.
@@ -273,5 +323,82 @@ void main() {
     await tester.tap(find.text('Back to sign in'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('login-email')), findsOneWidget);
+  });
+
+  testWidgets('a server address with an invalid port shows an error', (
+    tester,
+  ) async {
+    final auth = FakeAuthRepository();
+    await _openLogin(tester, auth);
+    await tester.enterText(
+      find.byKey(const Key('login-server')),
+      'https://split.test:80a',
+    );
+    await tester.enterText(
+      find.byKey(const Key('login-email')),
+      'ada@example.com',
+    );
+    await tester.tap(find.byKey(const Key('login-continue')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter a valid server address.'), findsOneWidget);
+    expect(auth.requested, isEmpty);
+  });
+
+  testWidgets('a storage failure after a valid code is shown', (tester) async {
+    final auth = FakeAuthRepository();
+    final store = _BrokenTokenStore();
+    await _openLogin(tester, auth, store: store);
+    await tester.enterText(
+      find.byKey(const Key('login-server')),
+      'http://splitspends.test',
+    );
+    await tester.enterText(
+      find.byKey(const Key('login-email')),
+      'ada@example.com',
+    );
+    await tester.tap(find.byKey(const Key('login-continue')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('otp-field')), '222222');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Check your inbox'), findsOneWidget);
+    expect(find.text('Something went wrong.'), findsOneWidget);
+    expect(store.token, isNull);
+    final field = tester.widget<TextField>(find.byKey(const Key('otp-field')));
+    expect(field.enabled, isTrue);
+  });
+
+  testWidgets('a failing on-device start shows an error and can be retried', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        retry: (_, _) => null,
+        overrides: [
+          localStoreProvider.overrideWithValue(MemoryLocalStore()),
+          memoryDatabase(),
+          sessionProvider.overrideWith(_FailingLocalSession.new),
+        ],
+        child: const SplitSpendsApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('local-name')), 'Grace');
+    await tester.tap(find.byKey(const Key('local-start')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Something went wrong.'), findsOneWidget);
+    final start = tester.widget<FilledButton>(
+      find.byKey(const Key('local-start')),
+    );
+    expect(start.onPressed, isNotNull);
   });
 }
