@@ -14,6 +14,12 @@ import (
 // aiConcurrency is how many AI requests one server instance runs at once.
 const aiConcurrency = 8
 
+// expenseLimit is how many expenses and payments one person may create or
+// edit a minute. Splitting is the costliest write, and the limit stays far
+// above what a person typing, or the app replaying its offline queue, sends;
+// an import books its expenses without these routes.
+const expenseLimit = 300
+
 // Deps are what the API needs from the runtime.
 type Deps struct {
 	Services *bootstrap.Services
@@ -86,6 +92,10 @@ func (a *API) Routes() *http.ServeMux {
 	uploads := func(h handler) http.Handler {
 		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(uploadLimit, a.log, byUser, a.wrap(h)))
 	}
+	writeLimit := middleware.NewLimiter(expenseLimit, time.Minute)
+	writes := func(h handler) http.Handler {
+		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(writeLimit, a.log, byUser, a.wrap(h)))
+	}
 	p := platform.Prefix
 
 	mux.Handle("GET /health", public(a.health))
@@ -132,15 +142,15 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("POST "+p+"/invites/{token}/accept", authed(a.acceptInvite))
 
 	mux.Handle("GET "+p+"/expenses", authed(a.listExpenses))
-	mux.Handle("POST "+p+"/expenses", authed(a.createExpense))
+	mux.Handle("POST "+p+"/expenses", writes(a.createExpense))
 	mux.Handle("GET "+p+"/expenses/{expenseId}", authed(a.getExpense))
-	mux.Handle("PUT "+p+"/expenses/{expenseId}", authed(a.updateExpense))
+	mux.Handle("PUT "+p+"/expenses/{expenseId}", writes(a.updateExpense))
 	mux.Handle("DELETE "+p+"/expenses/{expenseId}", authed(a.deleteExpense))
 	mux.Handle("POST "+p+"/expenses/{expenseId}/restore", authed(a.restoreExpense))
 	mux.Handle("GET "+p+"/expenses/{expenseId}/comments", authed(a.listComments))
 	mux.Handle("POST "+p+"/expenses/{expenseId}/comments", authed(a.addComment))
 	mux.Handle("DELETE "+p+"/comments/{commentId}", authed(a.deleteComment))
-	mux.Handle("POST "+p+"/payments", authed(a.createPayment))
+	mux.Handle("POST "+p+"/payments", writes(a.createPayment))
 	mux.Handle("POST "+p+"/reminders", social(a.sendReminder))
 
 	mux.Handle("GET "+p+"/categories", authed(a.listCategories))
