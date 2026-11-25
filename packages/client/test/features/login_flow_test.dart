@@ -376,6 +376,34 @@ void main() {
     expect(find.byKey(const Key('login-email')), findsOneWidget);
   });
 
+  testWidgets('plain HTTP to a public server asks before sending a code', (
+    tester,
+  ) async {
+    final auth = FakeAuthRepository();
+    await _openLogin(tester, auth);
+    await tester.enterText(
+      find.byKey(const Key('login-server')),
+      'http://203.0.113.5:8080',
+    );
+    await tester.enterText(
+      find.byKey(const Key('login-email')),
+      'ada@example.com',
+    );
+
+    await tester.tap(find.byKey(const Key('login-continue')));
+    await tester.pumpAndSettle();
+    expect(find.text('This server is not encrypted'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(auth.requested, isEmpty);
+
+    await tester.tap(find.byKey(const Key('login-continue')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continue anyway'));
+    await tester.pumpAndSettle();
+    expect(auth.requested, ['http://203.0.113.5:8080|ada@example.com']);
+  });
+
   testWidgets('a server address with an invalid port shows an error', (
     tester,
   ) async {

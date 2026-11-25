@@ -11,4 +11,4 @@ open -a Simulator && flutter run
 flutter build ipa               # needs an Apple developer team for signing
 ```
 
-Set your team and bundle identifier (`dev.splitspends.app` by default) in Xcode under Runner, Signing & Capabilities. Servers on the local network may use plain HTTP; anywhere else use HTTPS.
+Set your team and bundle identifier (`dev.splitspends.app` by default) in Xcode under Runner, Signing & Capabilities. Servers on the local network may use plain HTTP; anywhere else use HTTPS. The app asks before using a plain HTTP address outside the local network: App Transport Security does not cover Dart's HTTP client, so the app checks this itself.
