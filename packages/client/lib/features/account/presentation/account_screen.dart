@@ -77,30 +77,10 @@ class AccountScreen extends ConsumerWidget {
   }
 
   Future<void> _editName(BuildContext context, WidgetRef ref, Me me) async {
-    final controller = TextEditingController(text: me.name);
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Your name'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          onSubmitted: (v) => Navigator.pop(context, v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      builder: (context) => _NameDialog(name: me.name),
     );
-    controller.dispose();
     if (name != null && name.trim().isNotEmpty && context.mounted) {
       await _update(context, ref, name: name.trim());
     }
@@ -419,6 +399,50 @@ class _ThemeColors extends ConsumerWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Asks for your name. It owns its controller, so the field outlives the
+/// dialog's closing animation.
+class _NameDialog extends StatefulWidget {
+  const _NameDialog({required this.name});
+
+  final String name;
+
+  @override
+  State<_NameDialog> createState() => _NameDialogState();
+}
+
+class _NameDialogState extends State<_NameDialog> {
+  late final _controller = TextEditingController(text: widget.name);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Your name'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textCapitalization: TextCapitalization.words,
+        onSubmitted: (v) => Navigator.pop(context, v),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }
