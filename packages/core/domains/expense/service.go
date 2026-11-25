@@ -145,6 +145,12 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 	if !ok {
 		return nil, errs.Validation("splits", "You can only split non-group expenses with friends.")
 	}
+	if ok, err = s.linked(ctx, shares); err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errs.Validation("splits", "Outside a group, everyone who owes money must be friends with the people they owe it to.")
+	}
 	if !slices.ContainsFunc(shares, func(sh Share) bool { return sh.UserID == actor }) {
 		return nil, errs.Validation("splits", "You must be part of an expense outside a group.")
 	}
@@ -172,6 +178,27 @@ func (s *Service) connected(ctx context.Context, actor uuid.UUID, shares []Share
 		ok, err := s.connections.Connected(ctx, actor, sh.UserID)
 		if err != nil || !ok {
 			return false, err
+		}
+	}
+	return true, nil
+}
+
+// linked reports whether everyone who gets money back from an expense
+// outside groups is connected to everyone who owes it, since those are the
+// pairs the expense leaves owing each other.
+func (s *Service) linked(ctx context.Context, shares []Share) (bool, error) {
+	for _, c := range shares {
+		if c.Paid <= c.Owed {
+			continue
+		}
+		for _, d := range shares {
+			if d.Paid >= d.Owed {
+				continue
+			}
+			ok, err := s.connections.Connected(ctx, c.UserID, d.UserID)
+			if err != nil || !ok {
+				return false, err
+			}
 		}
 	}
 	return true, nil
@@ -651,6 +678,10 @@ func (s *Service) repeat(ctx context.Context, id uuid.UUID, today time.Time) (in
 		ok = members(g, src.Shares)
 	} else if ok, err = s.connected(ctx, src.CreatedBy, src.Shares); err != nil {
 		return 0, err
+	} else if ok {
+		if ok, err = s.linked(ctx, src.Shares); err != nil {
+			return 0, err
+		}
 	}
 	// Copies never bill someone who has left the group or is no longer
 	// connected; the series ends and the activity feed says why.
