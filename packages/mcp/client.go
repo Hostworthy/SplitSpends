@@ -287,10 +287,27 @@ func plain(s string) bool {
 
 // minor converts a decimal string such as "12.50" into minor units.
 func (c *Client) minor(ctx context.Context, amount, currency string) (int64, error) {
-	exp, err := c.exponent(ctx, currency)
+	cur, err := c.unit(ctx, currency)
 	if err != nil {
 		return 0, err
 	}
+	return cur.minor(amount)
+}
+
+// unit returns a currency with its minor-unit exponent.
+func (c *Client) unit(ctx context.Context, code string) (unit, error) {
+	exp, err := c.exponent(ctx, code)
+	return unit{code: code, exponent: exp}, err
+}
+
+// unit is a currency and its minor-unit exponent.
+type unit struct {
+	code     string
+	exponent int
+}
+
+// minor converts a decimal string such as "12.50" into minor units.
+func (u unit) minor(amount string) (int64, error) {
 	s := strings.TrimSpace(amount)
 	if !plain(s) {
 		return 0, fmt.Errorf("amount %q is not a decimal number such as 12.50", amount)
@@ -299,9 +316,9 @@ func (c *Client) minor(ctx context.Context, amount, currency string) (int64, err
 	if !ok {
 		return 0, fmt.Errorf("amount %q is not a decimal number such as 12.50", amount)
 	}
-	r.Mul(r, new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(exp)), nil)))
+	r.Mul(r, new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(u.exponent)), nil)))
 	if !r.IsInt() {
-		return 0, fmt.Errorf("amount %q has more decimals than %s allows", amount, currency)
+		return 0, fmt.Errorf("amount %q has more decimals than %s allows", amount, u.code)
 	}
 	if !r.Num().IsInt64() {
 		return 0, fmt.Errorf("amount %q is too large", amount)

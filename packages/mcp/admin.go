@@ -13,10 +13,10 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// admin registers the administration tools. The API decides who may use
+// adminTools registers the administration tools. The API decides who may use
 // them: managers can list and decide requests, administrators can do
 // everything.
-func admin(ts *toolset) {
+func adminTools(ts *toolset) {
 	add(ts, "admin_get_signup", "Sign-up settings", "Administrators: the sign-up mode (open, invite, approval or closed) and the allowed list of emails and @domains.", readOnly, (*tools).getSignup)
 	add(ts, "admin_set_signup", "Change sign-up settings", "Administrators: change the sign-up mode and, when given, replace the allowed list. Confirm with the user first.", govern, (*tools).setSignup)
 	add(ts, "admin_list_requests", "Join requests", "Administrators and managers: people waiting for approval (or already approved or declined).", readOnly, (*tools).listRequests)

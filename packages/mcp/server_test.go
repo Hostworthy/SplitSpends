@@ -544,3 +544,19 @@ func TestUnreachableAPIIsLoggedNotShown(t *testing.T) {
 		t.Fatalf("the detail belongs in the log, got %q", logs.String())
 	}
 }
+
+func TestRecordPaymentNamesGroupMembers(t *testing.T) {
+	bodies := map[string]string{"/me": adaMe, "/groups/g1": fmt.Sprintf(flat, "null")}
+	_, c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusCreated)
+			writeJSON(w, `{"data":{"id":"p1","kind":"payment","date":"2026-11-01","currency":"KWD","total":1500,"shares":[{"userId":"u2","paid":1500},{"userId":"u3","owed":1500}]}}`)
+			return
+		}
+		routes(bodies)(w, r)
+	})
+	res, _, _ := bind(c).recordPayment(context.Background(), nil, paymentArgs{FromUserID: "u2", ToUserID: "u3", Amount: "1.5", Currency: "KWD", GroupID: "g1"})
+	if got := resultText(res); res.IsError || !strings.Contains(got, `"Ben" paid "Cy"`) {
+		t.Fatalf("want both members named, got %q", got)
+	}
+}
