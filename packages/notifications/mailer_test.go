@@ -61,6 +61,47 @@ func TestLoginCodeDoesNotWaitForTheMailServer(t *testing.T) {
 	}
 }
 
+// gated is a mail server that says when it has taken a message, waits for
+// release, and remembers the order it was given messages in.
+type gated struct {
+	taken   chan struct{}
+	release chan struct{}
+	sent    chan string
+}
+
+func (g gated) Send(_ context.Context, to, _, _, _ string) error {
+	g.taken <- struct{}{}
+	<-g.release
+	g.sent <- to
+	return nil
+}
+
+// TestLoginCodeSkipsTheQueue checks that a full queue of notifications
+// neither drops a login code nor holds it back: someone is waiting for it,
+// and it expires in minutes.
+func TestLoginCodeSkipsTheQueue(t *testing.T) {
+	var out bytes.Buffer
+	g := gated{taken: make(chan struct{}, 3), release: make(chan struct{}), sent: make(chan string, 3)}
+	n := &Notifier{sender: g, cfg: Config{AppName: "SplitSpends"}, log: slog.New(slog.NewTextHandler(&out, nil)), drain: time.Minute}
+	n.start(1)
+	n.Notify(context.Background(), ports.Notification{To: "first@example.com", Subject: "Rent"})
+	<-g.taken
+	n.Notify(context.Background(), ports.Notification{To: "second@example.com", Subject: "Rent"})
+	if err := n.LoginCode(context.Background(), "ada@example.com", "123456", 10*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	close(g.release)
+	n.Close()
+	close(g.sent)
+	var order []string
+	for to := range g.sent {
+		order = append(order, to)
+	}
+	if want := "first@example.com ada@example.com second@example.com"; strings.Join(order, " ") != want {
+		t.Fatalf("sent in the order %v, want %s; log: %s", order, want, out.String())
+	}
+}
+
 // recording is a mail server that accepts every message and remembers it.
 type recording struct {
 	mu   sync.Mutex
