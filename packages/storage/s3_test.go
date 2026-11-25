@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 type bucket struct {
 	mu      sync.Mutex
 	objects map[string][]byte
+	types   map[string]string
 }
 
 func (b *bucket) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -32,6 +34,9 @@ func (b *bucket) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		b.objects[r.URL.Path] = data
+		if b.types != nil {
+			b.types[r.URL.Path] = r.Header.Get("Content-Type")
+		}
 		w.Header().Set("ETag", `"etag"`)
 	case http.MethodGet, http.MethodHead:
 		data, ok := b.objects[r.URL.Path]
@@ -57,8 +62,10 @@ func (b *bucket) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func TestS3Contract(t *testing.T) {
-	srv := httptest.NewTLSServer(&bucket{objects: map[string][]byte{}})
+// serve is an S3 store on b.
+func serve(t *testing.T, b *bucket) *S3 {
+	t.Helper()
+	srv := httptest.NewTLSServer(b)
 	t.Cleanup(srv.Close)
 	client, err := minio.New(strings.TrimPrefix(srv.URL, "https://"), &minio.Options{
 		Creds: credentials.NewStaticV4("key", "secret", ""), Secure: true, Region: "us-east-1",
@@ -67,7 +74,23 @@ func TestS3Contract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	storagetest.Run(t, &S3{client: client, bucket: "receipts", prefix: "test/"})
+	return &S3{client: client, bucket: "receipts", prefix: "test/"}
+}
+
+func TestS3Contract(t *testing.T) {
+	storagetest.Run(t, serve(t, &bucket{objects: map[string][]byte{}}))
+}
+
+// TestS3ContentType checks that objects carry the type they were stored
+// with, so the bucket serves them as images.
+func TestS3ContentType(t *testing.T) {
+	b := &bucket{objects: map[string][]byte{}, types: map[string]string{}}
+	if err := serve(t, b).Put(context.Background(), "a.png", []byte("png"), "image/png"); err != nil {
+		t.Fatal(err)
+	}
+	if got := b.types["/receipts/test/a.png"]; got != "image/png" {
+		t.Fatalf("want the object stored as image/png, got %q", got)
+	}
 }
 
 // TestS3Endpoint checks that the scheme of S3_ENDPOINT decides whether the

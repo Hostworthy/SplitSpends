@@ -36,7 +36,7 @@ type Options struct {
 	// Sender delivers Web Push; nil turns push off unless the config has keys.
 	Sender push.Sender
 	// Reader reads receipts and drafts expenses; nil turns AI off.
-	Reader ports.ReceiptReader
+	Reader ports.Assistant
 	// Blobs wraps the store images are kept in, which is on disk; nil
 	// keeps it as it is.
 	Blobs func(ports.BlobStore) ports.BlobStore

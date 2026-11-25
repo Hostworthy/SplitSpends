@@ -211,7 +211,7 @@ func TestBlobs(t *testing.T) {
 
 // drafts is an AI reader that counts the drafts it is asked for.
 type drafts struct {
-	ports.ReceiptReader
+	ports.Assistant
 	calls int
 }
 

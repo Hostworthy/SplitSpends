@@ -92,7 +92,7 @@ func (a *Anthropic) ask(ctx context.Context, system string, content []anthropic.
 	return text.String(), nil
 }
 
-// ReadReceipt implements ports.ReceiptReader.
+// ReadReceipt implements ports.Assistant.
 func (a *Anthropic) ReadReceipt(ctx context.Context, in ports.ReceiptInput) (ports.ReceiptExtract, error) {
 	if err := imageSupported(in.ContentType); err != nil {
 		return ports.ReceiptExtract{}, err
@@ -108,7 +108,7 @@ func (a *Anthropic) ReadReceipt(ctx context.Context, in ports.ReceiptInput) (por
 	return parseReceipt(raw)
 }
 
-// DraftExpense implements ports.ReceiptReader.
+// DraftExpense implements ports.Assistant.
 func (a *Anthropic) DraftExpense(ctx context.Context, in ports.DraftInput) (ports.DraftExtract, error) {
 	content := []anthropic.BetaContentBlockParamUnion{}
 	if len(in.Image) > 0 {

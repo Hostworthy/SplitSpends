@@ -96,7 +96,7 @@ func (o *OpenAICompatible) ask(ctx context.Context, system string, user any, nam
 	return parsed.Choices[0].Message.Content, nil
 }
 
-// ReadReceipt implements ports.ReceiptReader.
+// ReadReceipt implements ports.Assistant.
 func (o *OpenAICompatible) ReadReceipt(ctx context.Context, in ports.ReceiptInput) (ports.ReceiptExtract, error) {
 	if err := imageSupported(in.ContentType); err != nil {
 		return ports.ReceiptExtract{}, err
@@ -113,7 +113,7 @@ func (o *OpenAICompatible) ReadReceipt(ctx context.Context, in ports.ReceiptInpu
 	return parseReceipt(raw)
 }
 
-// DraftExpense implements ports.ReceiptReader.
+// DraftExpense implements ports.Assistant.
 func (o *OpenAICompatible) DraftExpense(ctx context.Context, in ports.DraftInput) (ports.DraftExtract, error) {
 	var user any = instructions(in)
 	if len(in.Image) > 0 {

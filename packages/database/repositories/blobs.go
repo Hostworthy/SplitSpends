@@ -18,12 +18,8 @@ type Blobs struct{ db *database.DB }
 // NewBlobs builds Blobs.
 func NewBlobs(db *database.DB) *Blobs { return &Blobs{db: db} }
 
-func (r *Blobs) Put(ctx context.Context, key string, rd io.Reader) error {
-	data, err := io.ReadAll(rd)
-	if err != nil {
-		return err
-	}
-	_, err = r.db.Q(ctx).Exec(ctx, `INSERT INTO blobs (key, data) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data`, key, data)
+func (r *Blobs) Put(ctx context.Context, key string, data []byte, _ string) error {
+	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO blobs (key, data) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data`, key, data)
 	return err
 }
 

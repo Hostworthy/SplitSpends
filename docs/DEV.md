@@ -63,7 +63,7 @@ apps/                     Runnable apps only
 packages/                 Shared code the apps are built from
   core/                   Go domain centre: entities, services, ports (no infrastructure)
     domains/<context>     user, auth, admin, friend, group, expense, category, balance, activity, receipt, assist, stats, transfer, push, reminder, invite, rates
-    ports                 Interfaces adapters implement (Tx, Notifier, BlobStore, ReceiptReader)
+    ports                 Interfaces adapters implement (Tx, Notifier, BlobStore, Assistant)
     shared                errs, money, clock
   database/               PostgreSQL adapters (pgx) and embedded migrations
   notifications/          SMTP email adapter

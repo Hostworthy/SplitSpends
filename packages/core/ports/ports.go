@@ -64,7 +64,9 @@ type Notification struct {
 // free of the domain, so a missing key is reported with the standard
 // library's fs.ErrNotExist.
 type BlobStore interface {
-	Put(ctx context.Context, key string, r io.Reader) error
+	// Put stores data under key, replacing what was there. Stores that
+	// keep object metadata record contentType with it.
+	Put(ctx context.Context, key string, data []byte, contentType string) error
 	// Open fails with an error matching fs.ErrNotExist when nothing is
 	// stored under key. It finds that out itself, so that the first read
 	// of a returned body does not.
@@ -73,8 +75,10 @@ type BlobStore interface {
 	Delete(ctx context.Context, key string) error
 }
 
-// ReceiptReader turns a receipt image into structured line items.
-type ReceiptReader interface {
+// Assistant is the AI provider. It reads the line items of a receipt image
+// and drafts an expense from the user's own words, with or without a
+// receipt. It only reads and suggests; the domain checks every answer.
+type Assistant interface {
 	ReadReceipt(ctx context.Context, in ReceiptInput) (ReceiptExtract, error)
 	DraftExpense(ctx context.Context, in DraftInput) (DraftExtract, error)
 }

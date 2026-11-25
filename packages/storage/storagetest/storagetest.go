@@ -7,14 +7,13 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"strings"
 	"testing"
 )
 
 // Store is the shape of ports.BlobStore, repeated here so that the storage
 // adapters' tests need nothing outside the standard library.
 type Store interface {
-	Put(ctx context.Context, key string, r io.Reader) error
+	Put(ctx context.Context, key string, data []byte, contentType string) error
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
 	Delete(ctx context.Context, key string) error
 }
@@ -37,7 +36,7 @@ func Run(t *testing.T, store Store) {
 		return string(data), err
 	}
 	for _, data := range []string{"first", "second"} {
-		if err := store.Put(ctx, key, strings.NewReader(data)); err != nil {
+		if err := store.Put(ctx, key, []byte(data), "image/png"); err != nil {
 			t.Fatal(err)
 		}
 		if got, err := read(); err != nil || got != data {

@@ -1,4 +1,4 @@
-// Package ai implements ports.ReceiptReader with Anthropic's Claude API or any
+// Package ai implements ports.Assistant with Anthropic's Claude API or any
 // OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter, LiteLLM and so on).
 package ai
 

@@ -207,7 +207,7 @@ type blobs struct {
 	remove error
 }
 
-func (b *blobs) Put(context.Context, string, io.Reader) error {
+func (b *blobs) Put(context.Context, string, []byte, string) error {
 	b.puts++
 	return b.fail
 }
@@ -330,7 +330,7 @@ func (p *shown) Visible(_ context.Context, id, userID uuid.UUID) (bool, error) {
 
 // reader records the receipts it is asked to read.
 type reader struct {
-	ports.ReceiptReader
+	ports.Assistant
 	calls []ports.ReceiptInput
 }
 
@@ -342,10 +342,9 @@ func (r *reader) ReadReceipt(_ context.Context, in ports.ReceiptInput) (ports.Re
 // stored keeps the bytes of every image put into it.
 type stored map[string][]byte
 
-func (b stored) Put(_ context.Context, key string, r io.Reader) error {
-	data, err := io.ReadAll(r)
+func (b stored) Put(_ context.Context, key string, data []byte, _ string) error {
 	b[key] = data
-	return err
+	return nil
 }
 
 func (b stored) Open(_ context.Context, key string) (io.ReadCloser, error) {
@@ -378,6 +377,7 @@ func TestOpenAndScanNeedAccess(t *testing.T) {
 	for name, call := range map[string]func() error{
 		"open":    func() error { _, _, err := s.Open(ctx, mal, r.ID); return err },
 		"scan":    func() error { _, err := s.Scan(ctx, mal, r.ID, ""); return err },
+		"image":   func() error { _, _, err := s.Image(ctx, mal, r.ID); return err },
 		"unknown": func() error { _, _, err := s.Open(ctx, ada, uuid.New()); return err },
 	} {
 		if err := call(); !errs.Is(err, errs.KindNotFound) {
@@ -386,6 +386,9 @@ func TestOpenAndScanNeedAccess(t *testing.T) {
 	}
 	if len(ai.calls) != 0 {
 		t.Fatalf("nothing may reach the AI reader for someone who cannot see the receipt: %d calls", len(ai.calls))
+	}
+	if data, contentType, err := s.Image(ctx, ada, r.ID); err != nil || len(data) != 100 || contentType != "image/jpeg" {
+		t.Fatalf("the uploader reads the image: %d bytes of %q, %v", len(data), contentType, err)
 	}
 	scan, err := s.Scan(ctx, ada, r.ID, "")
 	if err != nil || scan.Total != 1250 || len(ai.calls) != 1 || len(ai.calls[0].Image) != 100 {
