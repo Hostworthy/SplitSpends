@@ -107,11 +107,7 @@ class SessionController extends AsyncNotifier<Session> {
     if (mode != AppMode.connected || token == null || serverUrl.isEmpty) {
       return Session(mode: mode, serverUrl: serverUrl);
     }
-    final client = ApiClient(
-      serverUrl: serverUrl,
-      token: token,
-      httpClient: ref.read(httpClientProvider),
-    );
+    final client = _client(serverUrl, token);
     final db = await ref.read(databaseProvider.future);
     final account = await Stores.meta.record(_accountKey).get(db) as String?;
     try {
@@ -128,7 +124,7 @@ class SessionController extends AsyncNotifier<Session> {
         // was recorded were made with this same token.
         await _outbox(session).claim();
       }
-      await Stores.meta.record(_accountKey).put(db, me.id);
+      await _remember(me);
       return session;
     } on ApiError catch (error) {
       if (error.isUnauthorized) {
@@ -136,11 +132,18 @@ class SessionController extends AsyncNotifier<Session> {
         await _store.writeToken(null);
         return Session(mode: mode, serverUrl: serverUrl);
       }
-      // Offline: keep the session, the profile loads later.
+      // Offline: keep the session with the profile this device last saw,
+      // so people can add expenses right away.
+      final raw = await Stores.meta.record(_profileKey).get(db);
+      final known = raw == null ? null : Me.fromJson(raw as JsonMap);
+      ref.listen(reachabilityProvider, (was, now) {
+        if (now && was == false) _reload();
+      });
       return Session(
         mode: mode,
         serverUrl: serverUrl,
         token: token,
+        me: known?.id == account ? known : null,
         userId: account,
       );
     }
@@ -148,6 +151,46 @@ class SessionController extends AsyncNotifier<Session> {
 
   /// The signed-in account's id (see [Session.userId]).
   static const _accountKey = 'account';
+
+  /// The signed-in account's last known profile, for offline starts.
+  static const _profileKey = 'accountProfile';
+
+  /// Loads the profile an offline start did not have, once the server is
+  /// reachable again.
+  Future<void> _reload() async {
+    final session = state.value;
+    if (session == null || !session.isConnected || session.me != null) return;
+    final Me me;
+    try {
+      me = await _client(
+        session.serverUrl,
+        session.token!,
+      ).getData('/me', (d) => Me.fromJson(d as JsonMap));
+    } on ApiError {
+      return; // Tried again when the server is next reachable.
+    }
+    final now = state.value;
+    if (now == null || now.token != session.token || now.me != null) return;
+    final known = now.copyWith(me: me);
+    if (now.userId == null) await _outbox(known).claim();
+    await _remember(me);
+    state = AsyncData(known);
+  }
+
+  /// A client for loading the profile; it reads the cached copy offline.
+  ApiClient _client(String serverUrl, String token) => ApiClient(
+    serverUrl: serverUrl,
+    token: token,
+    httpClient: ref.read(httpClientProvider),
+    cache: ref.read(responseCacheProvider),
+  );
+
+  /// Records [me] as the signed-in account and keeps its profile.
+  Future<void> _remember(Me me) async {
+    final db = await ref.read(databaseProvider.future);
+    await Stores.meta.record(_accountKey).put(db, me.id);
+    await Stores.meta.record(_profileKey).put(db, _profileJson(me));
+  }
 
   Outbox _outbox(Session session) =>
       Outbox(() => ref.read(databaseProvider.future), owner: session.owner);
@@ -182,8 +225,7 @@ class SessionController extends AsyncNotifier<Session> {
   /// those of other accounts stay untouched (see [Outbox]).
   Future<void> signIn({required String token, required Me me}) async {
     await ref.read(responseCacheProvider).clear();
-    final db = await ref.read(databaseProvider.future);
-    await Stores.meta.record(_accountKey).put(db, me.id);
+    await _remember(me);
     await _store.writeToken(token);
     await _store.writeAppMode(AppMode.connected.name);
     state = AsyncData(
@@ -200,6 +242,7 @@ class SessionController extends AsyncNotifier<Session> {
   /// Saves profile changes (locally, or after the server accepted them).
   Future<void> updateMe(Me me) async {
     if (_current.isLocal) await _saveLocalProfile(me);
+    if (_current.isConnected) await _remember(me);
     state = AsyncData(_current.copyWith(me: me));
   }
 
@@ -225,6 +268,8 @@ class SessionController extends AsyncNotifier<Session> {
     try {
       await ref.read(responseCacheProvider).clear();
       await _outbox(session).clear();
+      final db = await ref.read(databaseProvider.future);
+      await Stores.meta.record(_profileKey).delete(db);
     } catch (_) {
       // Leftover writes stay bound to this account and are never sent for
       // anyone else; the cache is cleared again on the next sign-in.
@@ -262,12 +307,14 @@ class SessionController extends AsyncNotifier<Session> {
 
   Future<void> _saveLocalProfile(Me me) async {
     final db = await ref.read(databaseProvider.future);
-    await Stores.meta.record('profile').put(db, {
-      ...me.toJson(),
-      'timezone': me.timezone,
-      'notifications': me.notifications.toJson(),
-    });
+    await Stores.meta.record('profile').put(db, _profileJson(me));
   }
+
+  static JsonMap _profileJson(Me me) => {
+    ...me.toJson(),
+    'timezone': me.timezone,
+    'notifications': me.notifications.toJson(),
+  };
 }
 
 /// API client bound to the current server and token. Rebuilds only when the
