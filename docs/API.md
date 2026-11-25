@@ -294,6 +294,8 @@ Deleting hides a category from listings and from new expenses but never rewrites
 | POST | `/receipts/{receiptId}/scan` | `{ currency? }` | `{ data: ReceiptScan }`; 503 `AI_DISABLED` when the host did not configure AI |
 | POST | `/ai/expense-draft` | `{ text?, groupId?, receiptId? }` | `{ data: ExpenseDraft }` in the group's (or your) currency, converted when the receipt is in another one; 503 `AI_DISABLED` when the host did not configure AI, 503 `RATES_UNAVAILABLE` when a conversion is needed but no rate is available |
 
+Every AI request is billed to the host, so `POST /receipts/{receiptId}/scan` and `POST /ai/expense-draft` share a budget per account of `AI_RATE_LIMIT` requests an hour (30 unless the host changed it), and one server runs at most 8 of them at once. Beyond either limit the request answers 429 `RATE_LIMITED` without reaching the provider.
+
 ```jsonc
 // ReceiptScan
 { "merchant": "Cafe Lua", "date": "2026-11-20" | null, "currency": "EUR",

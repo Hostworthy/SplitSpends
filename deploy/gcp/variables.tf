@@ -85,6 +85,8 @@ variable "ai" {
     base_url = optional(string, "")
     # Anthropic only; empty uses the model default.
     effort = optional(string, "")
+    # Requests each person may make per hour (AI_RATE_LIMIT).
+    rate_limit = optional(number, 30)
   })
   default   = {}
   sensitive = true

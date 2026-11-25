@@ -67,6 +67,8 @@ variable "ai" {
     base_url = optional(string, "")
     # Anthropic only. Low keeps receipt scans inside the 30 second gateway limit.
     effort = optional(string, "low")
+    # Requests each person may make per hour (AI_RATE_LIMIT).
+    rate_limit = optional(number, 30)
   })
   default   = {}
   sensitive = true

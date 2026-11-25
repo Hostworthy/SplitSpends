@@ -122,6 +122,7 @@ Split Spends does not run a model. When a provider is configured, the server sen
 | `AI_MODEL` | `claude-opus-5-5` for `anthropic` | Model id. Required for `openai` |
 | `AI_BASE_URL` | empty | For `openai`: the API root before `/chat/completions` (examples below) |
 | `AI_EFFORT` | model default | Anthropic only: `low`, `medium`, `high`, `xhigh`, `max` |
+| `AI_RATE_LIMIT` | `30` | AI requests (receipt scans and expense drafts together) each person may make per hour. Each server instance counts on its own, so with several instances (serverless) a person can make this many on each |
 
 Examples:
 

@@ -574,3 +574,41 @@ func TestSecurityHeaders(t *testing.T) {
 		})
 	}
 }
+
+// TestBound checks that a request is refused while every slot is taken and
+// let through again once one is free.
+func TestBound(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	h := Bound(NewSlots(2), quiet(), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		entered <- struct{}{}
+		<-release
+	}))
+	serve := func() int {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/ai/expense-draft", nil))
+		return rec.Code
+	}
+	codes := make(chan int, 2)
+	for range 2 {
+		go func() { codes <- serve() }()
+		<-entered
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/ai/expense-draft", nil))
+	if rec.Code != http.StatusTooManyRequests || envelope(t, rec).Code != "RATE_LIMITED" {
+		t.Fatalf("a request beyond the slots: got %d %s", rec.Code, rec.Body)
+	}
+	release <- struct{}{}
+	if got := <-codes; got != http.StatusOK {
+		t.Fatalf("a request in a slot: got %d", got)
+	}
+	go func() { codes <- serve() }()
+	<-entered
+	release <- struct{}{}
+	release <- struct{}{}
+	for range 2 {
+		if got := <-codes; got != http.StatusOK {
+			t.Fatalf("a request in a freed slot: got %d", got)
+		}
+	}
+}

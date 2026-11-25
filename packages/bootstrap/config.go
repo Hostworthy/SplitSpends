@@ -46,6 +46,8 @@ type Config struct {
 	AIBaseURL  string
 	AIModel    string
 	AIEffort   string
+	// AIRateLimit is how many AI requests one person may make per hour.
+	AIRateLimit int
 
 	MCPEnabled bool
 	// MCPAdminTools offers the admin_ tools on /mcp.
@@ -251,6 +253,9 @@ func LoadConfig() (*Config, error) {
 		}
 	default:
 		return nil, fmt.Errorf("bootstrap.config.env.invalid.AI_PROVIDER: use anthropic, openai or none")
+	}
+	if c.AIRateLimit, err = strconv.Atoi(env("AI_RATE_LIMIT", "30")); err != nil || c.AIRateLimit < 1 {
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.AI_RATE_LIMIT: use a whole number of requests per person per hour, at least 1")
 	}
 	return c, nil
 }

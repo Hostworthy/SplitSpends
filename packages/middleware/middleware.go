@@ -380,6 +380,27 @@ func Limit(l *Limiter, log *slog.Logger, key Key, next http.Handler) http.Handle
 	})
 }
 
+// Slots bounds how many requests run at once. Like Limiter, it counts per
+// server instance.
+type Slots chan struct{}
+
+// NewSlots allows n requests at once.
+func NewSlots(n int) Slots { return make(Slots, n) }
+
+// Bound runs next in one of s's slots and refuses the request when every slot
+// is taken, so slow upstream calls cannot pile up and hold memory.
+func Bound(s Slots, log *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case s <- struct{}{}:
+			defer func() { <-s }()
+			next.ServeHTTP(w, r)
+		default:
+			WriteError(w, r, log, errs.RateLimited("The server is busy. Try again in a moment."))
+		}
+	})
+}
+
 // ClientIP returns the caller's address. hops is the number of trusted
 // proxies in front of the server, each of which appends the address it was
 // connected from to X-Forwarded-For. Entries further left were written by
