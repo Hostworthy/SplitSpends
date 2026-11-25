@@ -27,7 +27,11 @@ func (a *API) health(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) config(w http.ResponseWriter, r *http.Request) error {
-	cfg := platform.Config{AppName: a.cfg.AppName, AIEnabled: a.svc.Receipts.AIEnabled(), SignupMode: string(a.svc.Auth.Mode(r.Context())),
+	mode, err := a.svc.Auth.Mode(r.Context())
+	if err != nil {
+		return err
+	}
+	cfg := platform.Config{AppName: a.cfg.AppName, AIEnabled: a.svc.Receipts.AIEnabled(), SignupMode: string(mode),
 		PushEnabled: a.svc.Push.Enabled(), VAPIDPublicKey: a.svc.Push.PublicKey(), GravatarEnabled: a.cfg.Gravatar}
 	for _, c := range money.Currencies() {
 		cfg.Currencies = append(cfg.Currencies, platform.Currency{Code: c.Code, Name: c.Name, Symbol: c.Symbol, Exponent: c.Exponent})

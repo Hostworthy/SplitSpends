@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -478,5 +479,21 @@ func TestTokenLimit(t *testing.T) {
 	other := &Principal{UserID: uuid.New(), SessionID: uuid.New(), Kind: KindSession}
 	if _, err := s.CreateToken(ctx, other, "Mine"); err != nil {
 		t.Fatalf("the limit is per person: %v", err)
+	}
+}
+
+// brokenGate fails every lookup, as when the database is down.
+type brokenGate struct{ err error }
+
+func (g brokenGate) Signup(context.Context) (Signup, error)                { return Signup{}, g.err }
+func (g brokenGate) Approved(context.Context, string) (bool, error)        { return false, g.err }
+func (g brokenGate) Request(context.Context, string, string) (bool, error) { return false, g.err }
+
+func TestModeReportsGateErrors(t *testing.T) {
+	s, _, _ := service(SignupOpen)
+	down := errors.New("database is down")
+	s.Use(brokenGate{err: down})
+	if mode, err := s.Mode(context.Background()); !errors.Is(err, down) || mode != "" {
+		t.Fatalf("Mode = %q, %v; want no mode and the error, not the environment's mode", mode, err)
 	}
 }

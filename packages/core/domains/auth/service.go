@@ -59,12 +59,9 @@ func NewService(p Policy, challenges ChallengeRepository, sessions SessionReposi
 func (s *Service) Use(g Gate) { s.gate = g }
 
 // Mode returns the current sign-up mode.
-func (s *Service) Mode(ctx context.Context) SignupMode {
+func (s *Service) Mode(ctx context.Context) (SignupMode, error) {
 	cfg, err := s.signup(ctx)
-	if err != nil {
-		return s.policy.Signup().Mode
-	}
-	return cfg.Mode
+	return cfg.Mode, err
 }
 
 func (s *Service) signup(ctx context.Context) (Signup, error) {
