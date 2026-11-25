@@ -48,9 +48,9 @@ Map<String, String> validateDefaultSplit(
         'Only current members can be part of the default split.',
       );
     }
-    final text = entry.value.trim();
-    final r = Rational.tryParseDecimal(text);
-    if (r == null || !(r * Rational.integer(10000)).isInteger) {
+    final text = trimSpace(entry.value);
+    final r = splitDecimal(text);
+    if (r == null) {
       throw const LedgerError(
         _field,
         'Use plain decimal numbers with at most four decimal places.',

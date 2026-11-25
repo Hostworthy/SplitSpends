@@ -1,5 +1,5 @@
 {
- "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A split may give date (YYYY-MM-DD) and today; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members (error names the failing field); when current is given, effective says whether the saved split still applies to those members.",
+ "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A split may give date (YYYY-MM-DD) and today, and values, the split values stored for each user after trimming; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members (error names the failing field); when current is given, effective says whether the saved split still applies to those members.",
  "splits": [
   {
    "name": "equal three ways",
@@ -1246,6 +1246,218 @@
     "tip": 9223372036854775807
    },
    "error": "tax"
+  },
+  {
+   "name": "shares value longer than 20 characters is refused",
+   "input": {
+    "total": 1000,
+    "method": "shares",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "100000000000000000000"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "1"
+     }
+    ]
+   },
+   "error": "splits"
+  },
+  {
+   "name": "percent in hexadecimal is refused",
+   "input": {
+    "total": 1000,
+    "method": "percent",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "0x32"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "50"
+     }
+    ]
+   },
+   "error": "splits"
+  },
+  {
+   "name": "exact with digit separators is refused",
+   "input": {
+    "total": 2000,
+    "method": "exact",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 2000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "1_000"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "1000"
+     }
+    ]
+   },
+   "error": "splits"
+  },
+  {
+   "name": "shares as a hexadecimal float are refused",
+   "input": {
+    "total": 1000,
+    "method": "shares",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "0x1p4"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "1"
+     }
+    ]
+   },
+   "error": "splits"
+  },
+  {
+   "name": "shares with an exponent are refused",
+   "input": {
+    "total": 1000,
+    "method": "shares",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "1e2"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "1"
+     }
+    ]
+   },
+   "error": "splits"
+  },
+  {
+   "name": "byte order mark is not whitespace",
+   "input": {
+    "total": 1000,
+    "method": "shares",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "\ufeff5"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "1"
+     }
+    ]
+   },
+   "error": "splits"
+  },
+  {
+   "name": "shares accept a trailing point, a leading point and a plus sign",
+   "input": {
+    "total": 1300,
+    "method": "shares",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1300
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": "1."
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": ".5"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000c",
+      "value": "+5"
+     }
+    ]
+   },
+   "owed": {
+    "00000000-0000-0000-0000-00000000000a": 200,
+    "00000000-0000-0000-0000-00000000000b": 100,
+    "00000000-0000-0000-0000-00000000000c": 1000
+   },
+   "values": {
+    "00000000-0000-0000-0000-00000000000a": "1.",
+    "00000000-0000-0000-0000-00000000000b": ".5",
+    "00000000-0000-0000-0000-00000000000c": "+5"
+   }
+  },
+  {
+   "name": "exact values are stored trimmed",
+   "input": {
+    "total": 1000,
+    "method": "exact",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "value": " 600 "
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b",
+      "value": "400\t"
+     }
+    ]
+   },
+   "owed": {
+    "00000000-0000-0000-0000-00000000000a": 600,
+    "00000000-0000-0000-0000-00000000000b": 400
+   },
+   "values": {
+    "00000000-0000-0000-0000-00000000000a": "600",
+    "00000000-0000-0000-0000-00000000000b": "400"
+   }
   }
  ],
  "balances": {
@@ -1890,6 +2102,36 @@
     "00000000-0000-0000-0000-00000000000c"
    ],
    "effective": false
+  },
+  {
+   "name": "values longer than 20 characters are refused",
+   "split": {
+    "method": "shares",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "100000000000000000000",
+     "00000000-0000-0000-0000-00000000000b": "1"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
+  },
+  {
+   "name": "hexadecimal values are refused",
+   "split": {
+    "method": "percent",
+    "values": {
+     "00000000-0000-0000-0000-00000000000a": "0x32",
+     "00000000-0000-0000-0000-00000000000b": "50"
+    }
+   },
+   "members": [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b"
+   ],
+   "error": "defaultSplit"
   }
  ]
 }

@@ -179,6 +179,8 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 		return nil, nil, errs.Validation("splits", fmt.Sprintf("An expense can be split between at most %d people.", MaxPeople))
 	}
 	ids := make([]uuid.UUID, len(in.Splits))
+	// raw holds the trimmed values: what is stored is what was parsed.
+	raw := make([]string, len(in.Splits))
 	seen := make(map[uuid.UUID]bool, len(in.Splits))
 	for i, s := range in.Splits {
 		if s.UserID == uuid.Nil || seen[s.UserID] {
@@ -186,6 +188,7 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 		}
 		seen[s.UserID] = true
 		ids[i] = s.UserID
+		raw[i] = strings.TrimSpace(s.Value)
 	}
 
 	var parts []int64
@@ -197,7 +200,7 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 		parts = make([]int64, len(ids))
 		var sum int64
 		for i, s := range in.Splits {
-			v, err := integer(s.Value, "splits")
+			v, err := integer(raw[i], "splits")
 			if err != nil {
 				return nil, nil, err
 			}
@@ -206,7 +209,7 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 			}
 			parts[i] = v
 			sum += v
-			values[s.UserID] = s.Value
+			values[s.UserID] = raw[i]
 		}
 		if sum != in.Total {
 			return nil, nil, errs.Validation("splits", "Amounts must add up to the total.")
@@ -215,13 +218,13 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 		weights := make([]*big.Rat, len(ids))
 		sum := new(big.Rat)
 		for i, s := range in.Splits {
-			w, err := decimal(s.Value)
-			if err != nil || w.Sign() < 0 {
+			w, ok := money.Decimal(raw[i])
+			if !ok || w.Sign() < 0 {
 				return nil, nil, errs.Validation("splits", "Use positive numbers.")
 			}
 			weights[i] = w
 			sum.Add(sum, w)
-			values[s.UserID] = s.Value
+			values[s.UserID] = raw[i]
 		}
 		if in.Method == MethodPercent && sum.Cmp(big.NewRat(100, 1)) != 0 {
 			return nil, nil, errs.Validation("splits", "Percentages must add up to 100.")
@@ -235,14 +238,14 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 		var sum int64
 		for i, s := range in.Splits {
 			v := int64(0)
-			if strings.TrimSpace(s.Value) != "" {
-				if v, err = integer(s.Value, "splits"); err != nil {
+			if raw[i] != "" {
+				if v, err = integer(raw[i], "splits"); err != nil {
 					return nil, nil, err
 				}
 			}
 			adjust[i] = v
 			sum += v
-			values[s.UserID] = s.Value
+			values[s.UserID] = raw[i]
 		}
 		even := money.Even(in.Total-sum, len(ids))
 		parts = make([]int64, len(ids))
@@ -357,23 +360,9 @@ func merge(paid, owed map[uuid.UUID]int64, values map[uuid.UUID]string) []Share 
 	return shares
 }
 
-func decimal(s string) (*big.Rat, error) {
-	s = strings.TrimSpace(s)
-	r, ok := new(big.Rat).SetString(s)
-	if !ok || s == "" || strings.ContainsAny(s, "/eE") {
-		return nil, errs.Validation("splits", "Use plain decimal numbers.")
-	}
-	// At most 4 decimal places keeps inputs human-sized.
-	scaled := new(big.Rat).Mul(r, big.NewRat(10000, 1))
-	if !scaled.IsInt() {
-		return nil, errs.Validation("splits", "Use at most four decimal places.")
-	}
-	return r, nil
-}
-
 func integer(s, field string) (int64, error) {
-	r, err := decimal(s)
-	if err != nil || !r.IsInt() || !r.Num().IsInt64() {
+	r, ok := money.Decimal(s)
+	if !ok || !r.IsInt() || !r.Num().IsInt64() {
 		return 0, errs.Validation(field, "Amounts must be whole numbers of minor units.")
 	}
 	v := r.Num().Int64()

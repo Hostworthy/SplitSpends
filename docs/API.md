@@ -110,6 +110,8 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | `adjustment` | minor units (may be negative) | Each user owes the adjustment, the rest is split evenly |
 | `itemized` | omitted | `items[].userIds` share each item evenly; `tax` and `tip` are spread proportionally to each user's item subtotal; `total` must equal items + tax + tip |
 
+Split values are plain decimals such as `60`, `-3.5`, `1.` or `.25`: at most 20 characters and four decimal places, without exponents, fractions, base prefixes or digit separators. Surrounding whitespace is trimmed, and the trimmed value is what the expense stores.
+
 `payers` is a list of `{ "userId", "amount" }` whose amounts sum to `total`. Every user in `payers`, `splits` or `items` must be a group member (group expense) or the caller's friend (non-group expense), and the caller must be involved. Outside groups, everyone who ends up owing money must also be connected (friends, or members of a common group) with everyone who ends up getting money back, since the expense leaves those pairs owing each other; otherwise 422 on `splits`. A recurring expense outside groups stops repeating once that no longer holds.
 
 An expense lists at most 200 payers and 200 people in `splits`; an itemized expense has at most 200 items with at most 200 people each (422 on `payers`, `splits` or `items` otherwise).

@@ -58,6 +58,10 @@ void main() {
         (c['owed'] as Map<String, dynamic>).forEach((id, want) {
           expect(got[id] ?? 0, want, reason: '$id owes');
         });
+        final values = {for (final s in n.shares) s.userId: s.value};
+        (c['values'] as Map<String, dynamic>? ?? const {}).forEach((id, want) {
+          expect(values[id], want, reason: '$id value');
+        });
         expect(
           n.shares.map((s) => s.userId).toList(),
           [...n.shares.map((s) => s.userId)]..sort(),

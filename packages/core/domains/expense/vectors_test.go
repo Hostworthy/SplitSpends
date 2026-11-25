@@ -37,8 +37,9 @@ func TestSharedVectors(t *testing.T) {
 				Tax   int64
 				Tip   int64
 			}
-			Owed  map[uuid.UUID]int64
-			Error string
+			Owed   map[uuid.UUID]int64
+			Values map[uuid.UUID]string
+			Error  string
 		}
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -72,12 +73,19 @@ func TestSharedVectors(t *testing.T) {
 			continue
 		}
 		got := map[uuid.UUID]int64{}
+		values := map[uuid.UUID]string{}
 		for _, s := range n.Shares {
 			got[s.UserID] = s.Owed
+			values[s.UserID] = s.Value
 		}
 		for id, want := range c.Owed {
 			if got[id] != want {
 				t.Errorf("%s: %s owes %d, want %d", c.Name, id, got[id], want)
+			}
+		}
+		for id, want := range c.Values {
+			if values[id] != want {
+				t.Errorf("%s: %s value %q, want %q", c.Name, id, values[id], want)
 			}
 		}
 	}

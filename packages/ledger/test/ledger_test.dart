@@ -34,6 +34,28 @@ void main() {
     expect(Rational.tryParseDecimal('.5'), Rational(BigInt.one, BigInt.two));
   });
 
+  test('split values parse like money.Decimal in Go', () {
+    expect(splitDecimal('+5'), Rational.integer(5));
+    expect(splitDecimal('1.'), Rational.integer(1));
+    expect(splitDecimal('9' * decimalLength), isNotNull);
+    for (final bad in [
+      '',
+      ' 5',
+      '0x10',
+      '1_000',
+      '0x1p4',
+      '1e3',
+      '1/2',
+      '1.23456',
+      '\ufeff5',
+      '9' * (decimalLength + 1),
+    ]) {
+      expect(splitDecimal(bad), isNull, reason: bad);
+    }
+    expect(trimSpace('\u0085 5\u3000'), '5');
+    expect(trimSpace('\ufeff5'), '\ufeff5');
+  });
+
   test('normalize validates like the server', () {
     ExpenseRequest req({
       String desc = 'Taxi',

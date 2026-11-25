@@ -258,6 +258,8 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
     );
   }
   final ids = <String>[];
+  // The trimmed values: what is stored is what was parsed.
+  final raw = <String>[];
   final seen = <String>{};
   for (final s in input.splits) {
     if (_isNil(s.userId) || !seen.add(s.userId)) {
@@ -267,6 +269,7 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
       );
     }
     ids.add(s.userId);
+    raw.add(trimSpace(s.value ?? ''));
   }
 
   final values = <String, String>{};
@@ -278,14 +281,14 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
     case 'exact':
       parts = [];
       var sum = 0;
-      for (final s in input.splits) {
-        final v = _integer(s.value ?? '', 'splits');
+      for (var i = 0; i < ids.length; i++) {
+        final v = _integer(raw[i], 'splits');
         if (v < 0) {
           throw const LedgerError('splits', 'Amounts cannot be negative.');
         }
         parts.add(v);
         sum += v;
-        values[s.userId] = s.value ?? '';
+        values[ids[i]] = raw[i];
       }
       if (sum != input.total) {
         throw const LedgerError('splits', 'Amounts must add up to the total.');
@@ -294,19 +297,14 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
     case 'shares':
       final weights = <Rational>[];
       var sum = Rational.zero;
-      for (final s in input.splits) {
-        Rational? w;
-        try {
-          w = _decimal(s.value ?? '');
-        } on LedgerError {
-          w = null;
-        }
+      for (var i = 0; i < ids.length; i++) {
+        final w = splitDecimal(raw[i]);
         if (w == null || w.sign < 0) {
           throw const LedgerError('splits', 'Use positive numbers.');
         }
         weights.add(w);
         sum = sum + w;
-        values[s.userId] = s.value ?? '';
+        values[ids[i]] = raw[i];
       }
       if (input.method == 'percent' && sum != Rational.integer(100)) {
         throw const LedgerError('splits', 'Percentages must add up to 100.');
@@ -321,12 +319,11 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
     case 'adjustment':
       final adjust = <int>[];
       var sum = 0;
-      for (final s in input.splits) {
-        final raw = s.value ?? '';
-        final v = raw.trim().isEmpty ? 0 : _integer(raw, 'splits');
+      for (var i = 0; i < ids.length; i++) {
+        final v = raw[i].isEmpty ? 0 : _integer(raw[i], 'splits');
         adjust.add(v);
         sum += v;
-        values[s.userId] = raw;
+        values[ids[i]] = raw[i];
       }
       final spread = even(input.total - sum, ids.length);
       parts = [];
@@ -462,26 +459,26 @@ List<ShareResult> _merge(
   ];
 }
 
-/// A plain decimal with at most four decimal places (split values).
-Rational _decimal(String input) {
+/// The longest split value accepted: room for a sign, the 13 digits of
+/// [maxTotal], a point and four decimals. Mirrors Go's money.DecimalLength.
+const decimalLength = 20;
+
+/// Parses a split value like Go's money.Decimal: a plain decimal such as
+/// `60`, `-3.5`, `1.` or `.25` with at most [decimalLength] characters and
+/// four decimal places. Returns null for anything else. Trim the input with
+/// [trimSpace] first.
+Rational? splitDecimal(String input) {
+  // Rational.tryParseDecimal trims more than Go does (U+FEFF), so anything
+  // left around the value after trimSpace is refused here.
+  if (input.length > decimalLength || input.trim() != input) return null;
   final r = Rational.tryParseDecimal(input);
-  if (r == null) {
-    throw const LedgerError('splits', 'Use plain decimal numbers.');
-  }
-  if (!(r * Rational.integer(10000)).isInteger) {
-    throw const LedgerError('splits', 'Use at most four decimal places.');
-  }
+  if (r == null || !(r * Rational.integer(10000)).isInteger) return null;
   return r;
 }
 
 int _integer(String input, String field) {
-  Rational r;
-  try {
-    r = _decimal(input);
-  } on LedgerError {
-    throw LedgerError(field, 'Amounts must be whole numbers of minor units.');
-  }
-  if (!r.isInteger || r.numerator.bitLength > 63) {
+  final r = splitDecimal(input);
+  if (r == null || !r.isInteger || r.numerator.bitLength > 63) {
     throw LedgerError(field, 'Amounts must be whole numbers of minor units.');
   }
   final v = r.numerator.toInt();
@@ -490,6 +487,16 @@ int _integer(String input, String field) {
   }
   return v;
 }
+
+/// The characters Go's unicode.IsSpace accepts. Dart's String.trim and
+/// RegExp `\s` use a different set, so the rules name it explicitly.
+const _space =
+    '\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000';
+
+final _edges = RegExp('^[$_space]+|[$_space]+\$');
+
+/// Trims like Go's strings.TrimSpace.
+String trimSpace(String s) => s.replaceAll(_edges, '');
 
 String _collapse(String s) =>
     s.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).join(' ');
