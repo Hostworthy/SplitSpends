@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/Hostworthy/SplitSpends/packages/webpush"
 )
@@ -181,5 +183,56 @@ func TestRegisterKeepsFailures(t *testing.T) {
 	fresh, _, err := env.Services.Push.Register(ctx, ben, device)
 	if err != nil || fresh.Failures != 0 {
 		t.Fatalf("new keys should start over: %+v %v", fresh, err)
+	}
+}
+
+// TestRegisterCapIsAtomic checks the device cap under concurrent
+// registrations, and for devices moved from another account.
+func TestRegisterCapIsAtomic(t *testing.T) {
+	env, _ := pushSetup(t, time.Now())
+	ctx := context.Background()
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
+	p256dh, auth := deviceKeys(t)
+	device := func(endpoint string) push.Input { return push.Input{Endpoint: endpoint, P256dh: p256dh, Auth: auth} }
+
+	const attempts = push.MaxDevices + 15
+	start := make(chan struct{})
+	results := make(chan error, attempts)
+	var wg sync.WaitGroup
+	for i := range attempts {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, _, err := env.Services.Push.Register(ctx, ben, device(fmt.Sprintf("https://push.example.com/%d", i)))
+			results <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	conflicts := 0
+	for err := range results {
+		switch {
+		case errs.Is(err, errs.KindConflict):
+			conflicts++
+		case err != nil:
+			t.Fatal(err)
+		}
+	}
+	devices, err := env.Services.Push.List(ctx, ben)
+	if err != nil || len(devices) != push.MaxDevices || conflicts != attempts-push.MaxDevices {
+		t.Fatalf("want %d devices and %d conflicts, got %d and %d (%v)", push.MaxDevices, attempts-push.MaxDevices, len(devices), conflicts, err)
+	}
+
+	if _, _, err := env.Services.Push.Register(ctx, ada, device("https://push.example.com/ada")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := env.Services.Push.Register(ctx, ben, device("https://push.example.com/ada")); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("moving a device past the cap should conflict, got %v", err)
+	}
+	if _, _, err := env.Services.Push.Register(ctx, ben, device(devices[0].Endpoint)); err != nil {
+		t.Fatalf("refreshing a device at the cap: %v", err)
 	}
 }

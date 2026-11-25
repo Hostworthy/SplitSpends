@@ -24,9 +24,18 @@ type memRepo struct {
 	subs map[uuid.UUID]*Subscription
 }
 
-func (m *memRepo) Save(_ context.Context, s *Subscription) (bool, error) {
+func (m *memRepo) Save(_ context.Context, s *Subscription, limit int) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	others := 0
+	for _, old := range m.subs {
+		if old.UserID == s.UserID && old.Endpoint != s.Endpoint {
+			others++
+		}
+	}
+	if others >= limit {
+		return false, ErrFull
+	}
 	for _, old := range m.subs {
 		if old.Endpoint == s.Endpoint {
 			s.ID, s.CreatedAt = old.ID, old.CreatedAt
@@ -53,22 +62,6 @@ func (m *memRepo) List(_ context.Context, userID uuid.UUID) ([]*Subscription, er
 		}
 	}
 	return out, nil
-}
-
-func (m *memRepo) Count(ctx context.Context, userID uuid.UUID) (int, error) {
-	l, _ := m.List(ctx, userID)
-	return len(l), nil
-}
-
-func (m *memRepo) Exists(_ context.Context, endpoint string) (bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, s := range m.subs {
-		if s.Endpoint == endpoint {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func (m *memRepo) Delete(_ context.Context, userID, id uuid.UUID) error {
@@ -255,6 +248,19 @@ func TestRegisterCapsDevices(t *testing.T) {
 	}
 	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/one-more")); !errs.Is(err, errs.KindConflict) {
 		t.Fatalf("want conflict over the cap, got %v", err)
+	}
+	// Taking over someone else's device counts too.
+	other := uuid.New()
+	if _, _, err := svc.Register(ctx, other, input("https://push.example.com/theirs")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/theirs")); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("want conflict when moving a device over the cap, got %v", err)
+	}
+	// Refreshing a device already counted is fine.
+	mine, _ := svc.List(ctx, me)
+	if _, _, err := svc.Register(ctx, me, input(mine[0].Endpoint)); err != nil {
+		t.Fatalf("refreshing a device at the cap: %v", err)
 	}
 }
 
