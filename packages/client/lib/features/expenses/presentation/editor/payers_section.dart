@@ -27,7 +27,7 @@ class PayersSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final payers = form.payerList;
     final label = !form.multiplePayers
-        ? people.nameOf(form.singlePayer, meId: form.meId)
+        ? people.name(form.singlePayer, meId: form.meId)
         : '${payers.length} people';
     final payer = people[form.singlePayer];
     return Padding(
@@ -111,7 +111,7 @@ class _PayersSheetState extends ConsumerState<_PayersSheet> {
                       ListTile(
                         leading: _avatar(id),
                         title: Text(
-                          widget.people.nameOf(id, meId: form.meId, full: true),
+                          widget.people.name(id, meId: form.meId, full: true),
                         ),
                         trailing: id == form.singlePayer && !form.multiplePayers
                             ? const Icon(Icons.check_rounded)
@@ -125,7 +125,7 @@ class _PayersSheetState extends ConsumerState<_PayersSheet> {
                       ListTile(
                         leading: _avatar(id),
                         title: Text(
-                          widget.people.nameOf(id, meId: form.meId, full: true),
+                          widget.people.name(id, meId: form.meId, full: true),
                         ),
                         trailing: SizedBox(
                           width: 150,
@@ -134,7 +134,7 @@ class _PayersSheetState extends ConsumerState<_PayersSheet> {
                             initial: _amounts[id],
                             semanticLabel: id == form.meId
                                 ? 'Paid by you'
-                                : 'Paid by ${widget.people.nameOf(id, full: true)}',
+                                : 'Paid by ${widget.people.name(id, full: true)}',
                             onChanged: (v) =>
                                 setState(() => _amounts[id] = v ?? 0),
                           ),

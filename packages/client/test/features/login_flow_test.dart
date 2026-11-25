@@ -10,13 +10,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:sembast/sembast.dart';
 
 import 'package:splitspends/app/app.dart';
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/routes.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/storage/local_db.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/auth/data/providers.dart';
 import 'package:splitspends/features/auth/domain/auth_repository.dart';
 
 import '../helpers.dart';

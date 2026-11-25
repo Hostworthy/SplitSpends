@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:splitspends/core/api/api_error.dart';
@@ -77,6 +79,23 @@ void main() {
     expect(e.items.single.userIds, ['u1']);
     expect(e.myBalance, 6000);
     expect(e.editable, isTrue);
+  });
+
+  test('split values stay the text the server sent through an edit', () {
+    final e = Expense.fromJson(
+      jsonDecode(
+        '{"id": "e1", "description": "Rent", "currency": "EUR", '
+        '"total": 9000, "date": "2026-11-20", "splitMethod": "shares", '
+        '"shares": ['
+        '{"userId": "u1", "paid": 9000, "owed": 9000, "value": "0.0000001"}, '
+        '{"userId": "u2", "paid": 0, "owed": 0, '
+        '"value": "12345678901234567890"}]}',
+      ) as Map<String, dynamic>,
+    );
+    final values = {
+      for (final s in ExpenseInput.fromExpense(e).splits) s.userId: s.value,
+    };
+    expect(values, {'u1': '0.0000001', 'u2': '12345678901234567890'});
   });
 
   test('unknown split method is preserved, not turned into equal', () {

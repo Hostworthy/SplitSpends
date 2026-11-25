@@ -36,7 +36,7 @@ func main() {
 	}
 	admin, err := strconv.ParseBool(cmp.Or(os.Getenv("SPLITSPENDS_ADMIN_TOOLS"), "false"))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "mcp.config.env.invalid.SPLITSPENDS_ADMIN_TOOLS: use true or false")
+		fmt.Fprintln(os.Stderr, "mcp.config.env.invalid: SPLITSPENDS_ADMIN_TOOLS: use true or false")
 		os.Exit(2)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

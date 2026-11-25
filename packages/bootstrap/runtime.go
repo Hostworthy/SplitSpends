@@ -165,11 +165,15 @@ func Wire(cfg *Config, a Adapters) *Services {
 	notifier := newFanout(a.Email, p, log, cfg.Serverless)
 	blobs, reader := a.Blobs, a.Reader
 	tx := database.NewTx(db)
-	userRepo := repositories.NewUsers(db)
-	groupRepo := repositories.NewGroups(db)
-	friendRepo := repositories.NewFriends(db)
-	expenseRepo := repositories.NewExpenses(db)
-	receiptRepo := repositories.NewReceipts(db)
+	// The repositories more than one service reads; the others are made
+	// where they are passed.
+	store := struct {
+		users    *repositories.Users
+		groups   *repositories.Groups
+		friends  *repositories.Friends
+		expenses *repositories.Expenses
+		receipts *repositories.Receipts
+	}{repositories.NewUsers(db), repositories.NewGroups(db), repositories.NewFriends(db), repositories.NewExpenses(db), repositories.NewReceipts(db)}
 
 	policy := auth.DefaultPolicy()
 	policy.Secret, policy.Mode, policy.AllowedDomains, policy.AdminEmail = cfg.Secret, cfg.SignupMode, cfg.AllowedDomains, cfg.AdminEmail
@@ -178,36 +182,36 @@ func Wire(cfg *Config, a Adapters) *Services {
 	}
 
 	quotas := repositories.NewQuotas(db)
-	users := user.NewService(userRepo, notifier, quotas, c, log, user.Settings{Gravatar: cfg.Gravatar})
+	users := user.NewService(store.users, notifier, quotas, c, log, user.Settings{Gravatar: cfg.Gravatar})
 	act := activity.NewService(repositories.NewActivities(db), c)
-	balances := balance.NewService(expenseRepo)
-	groups := group.NewService(group.Deps{Repo: groupRepo, Users: users, Balances: balances, Activity: act, Notifier: notifier,
+	balances := balance.NewService(store.expenses)
+	groups := group.NewService(group.Deps{Repo: store.groups, Users: users, Balances: balances, Activity: act, Notifier: notifier,
 		Quota: quotas, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
-	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
-	receipts := receipt.NewService(receiptRepo, blobs, reader, tx, c)
+	friends := friend.NewService(store.friends, users, balances, act, tx, c)
+	receipts := receipt.NewService(store.receipts, blobs, reader, tx, c)
 	categories := category.NewService(repositories.NewCategories(db), c)
-	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groups,
-		Connections: friends, Receipts: receiptRepo, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, Log: log, BaseURL: cfg.BaseURL})
+	expenses := expense.NewService(expense.Deps{Repo: store.expenses, Comments: repositories.NewComments(db), Groups: groups,
+		Connections: friends, Receipts: store.receipts, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, Log: log, BaseURL: cfg.BaseURL})
 	// Rates only convert AI drafts read in another currency, so nothing is
 	// fetched unless AI is on.
 	var source rates.Source
 	if cfg.RatesURL != "" && reader != nil {
 		source = exchange.New(cfg.RatesURL)
 	}
-	fx := rates.NewService(repositories.NewRates(db), source, c)
-	invites := invite.NewService(repositories.NewInvites(db), groups, groupRepo, users, tx, c, cfg.BaseURL)
+	exchangeRates := rates.NewService(repositories.NewRates(db), source, c)
+	invites := invite.NewService(repositories.NewInvites(db), groups, store.groups, users, tx, c, cfg.BaseURL)
 	reminders := reminder.NewService(reminder.Deps{Repo: repositories.NewReminders(db), Groups: groups, Connections: friends,
 		Users: users, Balances: balances, Activity: act, Notifier: notifier, Quota: quotas, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	administration := admin.NewService(admin.Deps{Settings: repositories.NewSignupSettings(db), Requests: repositories.NewSignupRequests(db),
-		Users: userRepo, Accounts: userRepo, Credentials: repositories.NewCredentials(db), Notifier: notifier, Tx: tx, Clock: c, Log: log,
+		Users: store.users, Accounts: store.users, Credentials: repositories.NewCredentials(db), Notifier: notifier, Tx: tx, Clock: c, Log: log,
 		Defaults: policy.Signup(), BaseURL: cfg.BaseURL, AppName: cfg.AppName})
-	authn := auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, invites, notifier, tx, c, log)
-	authn.Use(administration)
-	assistant := assist.NewService(reader, users, groups, friendRepo, receipts, fx, c)
+	authentication := auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), store.users, invites, notifier, tx, c, log)
+	authentication.Use(administration)
+	assistant := assist.NewService(reader, users, groups, store.friends, receipts, exchangeRates, c)
 	statistics := stats.NewService(repositories.NewStats(db), groups, users, categories, c)
-	transfers := transfer.NewService(users, friendRepo, groups, expenses, categories, tx, tx)
+	transfers := transfer.NewService(users, store.friends, groups, expenses, categories, tx, tx)
 	return &Services{
-		Auth:       authn,
+		Auth:       authentication,
 		Users:      users,
 		Friends:    friends,
 		Groups:     groups,
@@ -220,7 +224,7 @@ func Wire(cfg *Config, a Adapters) *Services {
 		Transfer:   transfers,
 		Reminders:  reminders,
 		Invites:    invites,
-		Rates:      fx,
+		Rates:      exchangeRates,
 		Push:       pushes,
 		Categories: categories,
 		Admin:      administration,

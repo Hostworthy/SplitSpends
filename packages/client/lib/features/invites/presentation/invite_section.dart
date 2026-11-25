@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/invites/data/providers.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/utils/dates.dart';

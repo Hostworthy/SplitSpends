@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/account/data/providers.dart';
 import 'package:splitspends/features/account/domain/account_repository.dart';
 import 'package:splitspends/features/account/domain/api_token.dart';
 import 'package:splitspends/features/account/presentation/tokens_screen.dart';

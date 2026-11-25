@@ -2,8 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/router.dart';
-import 'package:splitspends/app/theme.dart';
-import 'package:splitspends/app/theme_settings.dart';
+import 'package:splitspends/core/theme/theme.dart';
+import 'package:splitspends/core/theme/settings.dart';
 import 'package:splitspends/features/push/presentation/providers.dart';
 
 class SplitSpendsApp extends ConsumerWidget {

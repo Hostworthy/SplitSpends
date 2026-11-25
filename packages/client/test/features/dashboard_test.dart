@@ -2,8 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/repositories.dart';
-import 'package:splitspends/app/theme.dart';
+import 'package:splitspends/features/groups/data/providers.dart';
+import 'package:splitspends/core/theme/theme.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/features/dashboard/presentation/dashboard_screen.dart';

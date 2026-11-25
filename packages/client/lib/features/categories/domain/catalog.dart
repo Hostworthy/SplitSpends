@@ -1,7 +1,60 @@
 import 'package:splitspends_ledger/split.dart' show paymentCategory;
 
 import 'package:splitspends/core/config/app_config.dart';
-import 'package:splitspends/core/widgets/category_icon.dart';
+
+/// Icons a custom category may use, by Material Symbols name: the icons of
+/// the built-in categories plus a few general ones. Same list and order as
+/// `category.Icons` on the server.
+const categoryIconNames = [
+  'restaurant',
+  'local_grocery_store',
+  'local_bar',
+  'local_cafe',
+  'home',
+  'bolt',
+  'wifi',
+  'cleaning_services',
+  'chair',
+  'build',
+  'pets',
+  'local_gas_station',
+  'local_parking',
+  'local_taxi',
+  'directions_bus',
+  'directions_car',
+  'flight',
+  'hotel',
+  'attractions',
+  'movie',
+  'sports_esports',
+  'music_note',
+  'sports_soccer',
+  'subscriptions',
+  'checkroom',
+  'redeem',
+  'medical_services',
+  'school',
+  'child_care',
+  'shield',
+  'account_balance',
+  'shopping_bag',
+  'receipt_long',
+  'label',
+  'star',
+  'favorite',
+  'work',
+  'fitness_center',
+  'park',
+  'celebration',
+  'cake',
+  'savings',
+  'devices',
+  'menu_book',
+  'palette',
+  'volunteer_activism',
+  'local_laundry_service',
+  'content_cut',
+];
 
 /// Shown for ids that are not in the catalog, such as a deleted custom
 /// category: its expenses show as General without being rewritten.
@@ -91,7 +144,7 @@ class CategoryDraft {
         message: 'Category names are limited to $maxName characters.',
       );
     }
-    if (!categoryIcons.containsKey(icon)) {
+    if (!categoryIconNames.contains(icon)) {
       return (field: 'icon', message: 'Choose one of the offered icons.');
     }
     if (!groups.contains(group)) {

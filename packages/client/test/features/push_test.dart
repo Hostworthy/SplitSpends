@@ -8,7 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:sembast/sembast_memory.dart';
 
 import 'package:splitspends/app/app.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/push/data/providers.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';

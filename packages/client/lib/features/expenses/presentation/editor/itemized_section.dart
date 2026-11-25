@@ -108,7 +108,7 @@ class ItemizedSection extends ConsumerWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            people.nameOf(e.key, meId: form.meId, full: true),
+                            people.name(e.key, meId: form.meId, full: true),
                           ),
                         ),
                         Text(
@@ -211,7 +211,7 @@ class _ItemCardState extends State<_ItemCard> {
                     avatar: widget.people[id] == null
                         ? null
                         : UserAvatar(user: widget.people[id]!, size: 22),
-                    label: Text(widget.people.nameOf(id, meId: form.meId)),
+                    label: Text(widget.people.name(id, meId: form.meId)),
                     selected: item.userIds.contains(id),
                     showCheckmark: false,
                     onSelected: (v) => form.update(

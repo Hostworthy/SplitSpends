@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/routes.dart';
 import 'package:splitspends/core/api/address.dart';
 import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/auth/data/providers.dart';
 import 'package:splitspends/features/auth/presentation/auth_layout.dart';
 import 'package:splitspends/features/auth/presentation/waiting_changes.dart';
 import 'package:splitspends/features/invites/presentation/providers.dart';

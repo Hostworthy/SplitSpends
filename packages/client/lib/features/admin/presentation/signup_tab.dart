@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/admin/data/providers.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/admin/domain/admin.dart';
 import 'package:splitspends/features/admin/presentation/providers.dart';

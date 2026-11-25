@@ -5,7 +5,7 @@ import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/states.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/expenses/data/providers.dart';
 import 'package:splitspends/features/expenses/presentation/providers.dart';
 
 class CommentsSection extends ConsumerStatefulWidget {

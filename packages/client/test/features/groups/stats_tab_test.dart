@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/groups/data/providers.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/config/local_config.dart';
 import 'package:splitspends/features/groups/domain/group.dart';

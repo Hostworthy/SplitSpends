@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/invites/data/providers.dart';
 import 'package:splitspends/features/invites/domain/invite.dart';
 
 /// Active invite links of a group.

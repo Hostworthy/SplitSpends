@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/theme.dart';
+import 'package:splitspends/core/theme/theme.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/money/money.dart';
@@ -47,7 +47,7 @@ class SharesCard extends ConsumerWidget {
                 leading: people[s.userId] == null
                     ? const CircleAvatar(child: Icon(Icons.person))
                     : UserAvatar(user: people[s.userId]!),
-                title: Text(people.nameOf(s.userId, meId: meId, full: true)),
+                title: Text(people.name(s.userId, meId: meId, full: true)),
                 subtitle: Text(
                   [
                     if (s.paid > 0) 'paid ${money(s.paid)}',
@@ -77,7 +77,7 @@ class SharesCard extends ConsumerWidget {
                   title: Text(item.name),
                   subtitle: Text(
                     item.userIds
-                        .map((id) => people.nameOf(id, meId: meId))
+                        .map((id) => people.name(id, meId: meId))
                         .join(', '),
                   ),
                   trailing: Text(money(item.amount)),

@@ -5,7 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/states.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/account/data/providers.dart';
 import 'package:splitspends/features/account/domain/api_token.dart';
 import 'package:splitspends/features/account/presentation/providers.dart';
 

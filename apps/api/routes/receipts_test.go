@@ -31,7 +31,7 @@ func (rent) DraftExpense(context.Context, ports.DraftInput) (ports.DraftExtract,
 
 // TestDraftUsesGroupDefaultSplit checks that a draft in a group with a
 // percent or shares default split starts with that split and its values,
-// written as JSON numbers however they were entered.
+// written as plain decimal text however they were entered.
 func TestDraftUsesGroupDefaultSplit(t *testing.T) {
 	s := newServer(t, bootstraptest.Options{Reader: rent{}})
 	ada := s.signIn(t, "ada@example.com", "Ada")
@@ -56,7 +56,7 @@ func TestDraftUsesGroupDefaultSplit(t *testing.T) {
 		}
 		want := map[string]string{ada.User.ID: c.wantAda, ben.User.ID: c.wantBen}
 		for _, sp := range d.Splits {
-			if sp.Value == nil || sp.Value.String() != want[sp.UserID] {
+			if sp.Value == nil || *sp.Value != want[sp.UserID] {
 				t.Fatalf("want the default's values %v, got %+v", want, d.Splits)
 			}
 		}
@@ -155,5 +155,40 @@ func TestUnreadableReceiptImage(t *testing.T) {
 	}
 	if ct, cc := res.header.Get("Content-Type"), res.header.Get("Cache-Control"); ct != "application/json; charset=utf-8" || strings.Contains(cc, "max-age") {
 		t.Fatalf("want an uncached JSON error, got Content-Type %q, Cache-Control %q", ct, cc)
+	}
+}
+
+// currencies is an AI reader that remembers the currency each scan asked
+// for.
+type currencies struct {
+	rent
+	asked []string
+}
+
+func (c *currencies) ReadReceipt(_ context.Context, in ports.ReceiptInput) (ports.ReceiptExtract, error) {
+	c.asked = append(c.asked, in.Currency)
+	return ports.ReceiptExtract{Total: "1000"}, nil
+}
+
+// TestScanReadsChunkedBody checks that a scan request sent without a
+// Content-Length, as streaming clients do, still has its currency read.
+func TestScanReadsChunkedBody(t *testing.T) {
+	reader := &currencies{}
+	s := newServer(t, bootstraptest.Options{Reader: reader})
+	ada := s.signIn(t, "ada@example.com", "Ada").Token
+	rc := data[platform.Receipt](t, s.upload(t, platform.Prefix+"/receipts", ada, pixel(t)).want(t, http.StatusCreated))
+
+	req, err := http.NewRequest(http.MethodPost, s.url+platform.Prefix+"/receipts/"+rc.ID+"/scan",
+		io.MultiReader(strings.NewReader(`{"currency":"JPY"}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if req.ContentLength != 0 {
+		t.Fatalf("the request must have no known length, has %d", req.ContentLength)
+	}
+	s.send(t, req, ada).want(t, http.StatusOK)
+	if len(reader.asked) != 1 || reader.asked[0] != "JPY" {
+		t.Fatalf("want one scan in JPY, got %q", reader.asked)
 	}
 }

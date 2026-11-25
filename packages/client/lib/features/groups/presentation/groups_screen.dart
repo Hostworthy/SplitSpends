@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/router.dart';
+import 'package:splitspends/core/widgets/layout.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/presentation/detail/group_detail_screen.dart';

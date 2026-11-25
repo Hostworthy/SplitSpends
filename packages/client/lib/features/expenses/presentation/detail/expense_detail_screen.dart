@@ -6,8 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/refresh.dart';
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/ledger.dart';
+import 'package:splitspends/core/routes.dart';
+import 'package:splitspends/features/expenses/presentation/route_args.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/widgets/back_home_button.dart';
 import 'package:splitspends/core/auth/session.dart';
@@ -18,7 +19,7 @@ import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/features/categories/presentation/category_badge.dart';
 import 'package:splitspends/features/categories/presentation/providers.dart';
 import 'package:splitspends/core/widgets/states.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/expenses/data/providers.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/presentation/detail/comments_section.dart';
 import 'package:splitspends/features/expenses/presentation/detail/history_section.dart';
@@ -173,7 +174,7 @@ class _Header extends ConsumerWidget {
   String? _history(Map<String, User> people, String? meId) {
     final created = Dates.tryParse(expense.createdAt);
     if (created == null) return null;
-    String who(String id) => id == meId ? 'you' : people.nameOf(id, meId: meId);
+    String who(String id) => id == meId ? 'you' : people.name(id, meId: meId);
     final added =
         'Added by ${who(expense.createdBy ?? '')} ${Dates.relative(created)}';
     final updated = Dates.tryParse(expense.updatedAt);

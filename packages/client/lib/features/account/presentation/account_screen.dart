@@ -2,9 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/routes.dart';
-import 'package:splitspends/app/theme.dart';
-import 'package:splitspends/app/theme_settings.dart';
+import 'package:splitspends/core/routes.dart';
+import 'package:splitspends/core/theme/theme.dart';
+import 'package:splitspends/core/theme/settings.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/widgets/avatar.dart';

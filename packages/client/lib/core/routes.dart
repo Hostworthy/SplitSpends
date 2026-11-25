@@ -1,6 +1,5 @@
-import 'package:splitspends/features/expenses/domain/expense.dart';
-
-/// Route paths and typed arguments.
+/// Route paths. Typed arguments live with the feature whose screen takes
+/// them.
 abstract final class Routes {
   static const splash = '/splash';
   static const welcome = '/welcome';
@@ -32,42 +31,4 @@ abstract final class Routes {
   static String join(String token, {String? server}) => server == null
       ? '$joinPrefix/$token'
       : '$joinPrefix/$token?server=${Uri.encodeQueryComponent(server)}';
-}
-
-/// Arguments for the expense editor (`extra` of [Routes.newExpense]).
-class ExpenseEditorArgs {
-  const ExpenseEditorArgs({
-    this.groupId,
-    this.friendId,
-    this.existing,
-    this.draft,
-  });
-
-  final String? groupId;
-  final String? friendId;
-
-  /// Editing an existing expense.
-  final Expense? existing;
-
-  /// Prefill from AI (receipt scan or text draft).
-  final ExpenseInput? draft;
-}
-
-/// Arguments for the settle-up screen.
-class SettleArgs {
-  const SettleArgs({
-    this.groupId,
-    this.fromUserId,
-    this.toUserId,
-    this.amount,
-    this.currency,
-    this.friendId,
-  });
-
-  final String? groupId;
-  final String? fromUserId;
-  final String? toUserId;
-  final int? amount;
-  final String? currency;
-  final String? friendId;
 }

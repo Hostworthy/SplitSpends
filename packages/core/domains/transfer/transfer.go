@@ -147,21 +147,27 @@ func (s *Service) Import(ctx context.Context, actor uuid.UUID, b Bundle) (*Resul
 			}
 			res.Expenses++
 		}
-		for i, c := range b.Categories {
-			if !c.Deleted || c.Input.ID == nil {
-				continue
-			}
-			err := s.categories.Delete(ctx, actor, *c.Input.ID)
-			if err != nil && !errs.Is(err, errs.KindNotFound) {
-				return wrap(err, fmt.Sprintf("categories[%d]", i), name(c.Input.Name))
-			}
-		}
-		return nil
+		return s.retire(ctx, actor, b.Categories)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return res, nil
+}
+
+// retire deletes the categories the bundle marks deleted, once the expenses
+// that used them are in.
+func (s *Service) retire(ctx context.Context, actor uuid.UUID, categories []Category) error {
+	for i, c := range categories {
+		if !c.Deleted || c.Input.ID == nil {
+			continue
+		}
+		err := s.categories.Delete(ctx, actor, *c.Input.ID)
+		if err != nil && !errs.Is(err, errs.KindNotFound) {
+			return wrap(err, fmt.Sprintf("categories[%d]", i), name(c.Input.Name))
+		}
+	}
+	return nil
 }
 
 // claim lets each person run one import at a time and the server at most

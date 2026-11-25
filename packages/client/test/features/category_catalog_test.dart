@@ -59,8 +59,12 @@ void main() {
   test('every built-in icon is offered for custom categories', () {
     for (final c in localConfig.categories) {
       if (c.id == 'payment') continue;
-      expect(categoryIcons.keys, contains(c.icon), reason: c.id);
+      expect(categoryIconNames, contains(c.icon), reason: c.id);
     }
+  });
+
+  test('every offered icon name has an icon to draw', () {
+    expect(categoryIcons.keys, categoryIconNames);
   });
 
   group('CategoryDraft', () {

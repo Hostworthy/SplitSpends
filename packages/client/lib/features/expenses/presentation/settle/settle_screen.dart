@@ -6,8 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:uuid/uuid.dart';
 
-import 'package:splitspends/app/refresh.dart';
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/ledger.dart';
+import 'package:splitspends/features/expenses/presentation/route_args.dart';
 import 'package:splitspends/core/widgets/back_home_button.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
@@ -18,7 +18,7 @@ import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/amount_field.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/states.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/expenses/data/providers.dart';
 import 'package:splitspends/features/expenses/domain/suggestions.dart';
 import 'package:splitspends/features/friends/domain/friend.dart';
 import 'package:splitspends/features/friends/presentation/people.dart';
@@ -345,7 +345,7 @@ class _Suggestions extends ConsumerWidget {
                   _ => null,
                 },
                 label: Text(
-                  '${people.nameOf(d.from, meId: meId)} → ${people.nameOf(d.to, meId: meId)} · '
+                  '${people.name(d.from, meId: meId)} → ${people.name(d.to, meId: meId)} · '
                   '${Money.format(d.amount, config.currency(d.currency))}',
                 ),
                 onPressed: () => onPick(d),
@@ -440,9 +440,7 @@ class _PersonPicker extends ConsumerWidget {
               const SizedBox(height: 8),
               Text(label, style: text.labelMedium),
               Text(
-                id == null
-                    ? 'Choose'
-                    : people.nameOf(id, meId: meId, full: true),
+                id == null ? 'Choose' : people.name(id, meId: meId, full: true),
                 style: text.titleMedium,
                 textAlign: TextAlign.center,
               ),

@@ -28,6 +28,6 @@ func (a *API) sendReminder(w http.ResponseWriter, r *http.Request) error {
 }
 
 func toReminder(rm *reminder.Reminder) platform.Reminder {
-	return platform.Reminder{ID: rm.ID.String(), UserID: rm.ToID.String(), GroupID: idPtr(rm.GroupID),
+	return platform.Reminder{ID: rm.ID.String(), UserID: rm.ToID.String(), GroupID: optionalString(rm.GroupID),
 		Balances: toBalances(rm.Owed), Emailed: rm.Emailed, SentAt: stamp(rm.SentAt)}
 }

@@ -9,7 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:sembast/sembast.dart' hide Finder;
 
 import 'package:splitspends/app/app.dart';
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/routes.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/storage/local_db.dart';

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/shell.dart';
+import 'package:splitspends/core/widgets/logo.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/storage/local_db.dart';

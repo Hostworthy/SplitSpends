@@ -29,7 +29,7 @@ func secrets() error {
 	}
 	parts := strings.SplitN(arn, ":", 7)
 	if len(parts) != 7 || parts[0] != "arn" || parts[2] != "secretsmanager" || parts[3] == "" || parts[5] != "secret" {
-		return fmt.Errorf("bootstrap.config.env.invalid.SECRETS_ARN: use the ARN of a Secrets Manager secret, arn:aws:secretsmanager:<region>:<account>:secret:<name>")
+		return fmt.Errorf("bootstrap.config.env.invalid: SECRETS_ARN: use the ARN of a Secrets Manager secret, arn:aws:secretsmanager:<region>:<account>:secret:<name>")
 	}
 	region := parts[3]
 	value, err := secretValue(arn, region, env("AWS_ENDPOINT_URL_SECRETS_MANAGER", "https://secretsmanager."+region+".amazonaws.com"))

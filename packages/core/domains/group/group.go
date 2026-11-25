@@ -125,14 +125,8 @@ func (g *Group) Apply(p Patch, now time.Time) error {
 		g.Color = strings.ToUpper(*p.Color)
 	}
 	if p.DefaultSplit != nil {
-		if p.DefaultSplit.Method == "" {
-			g.DefaultSplit = nil
-		} else {
-			d, err := p.DefaultSplit.Validate(g.Members)
-			if err != nil {
-				return err
-			}
-			g.DefaultSplit = d
+		if err := g.split(*p.DefaultSplit); err != nil {
+			return err
 		}
 	}
 	if p.Archived != nil {
@@ -143,6 +137,20 @@ func (g *Group) Apply(p Patch, now time.Time) error {
 		}
 	}
 	g.UpdatedAt = now
+	return nil
+}
+
+// split sets the default split, or clears it when d has no method.
+func (g *Group) split(d DefaultSplit) error {
+	if d.Method == "" {
+		g.DefaultSplit = nil
+		return nil
+	}
+	valid, err := d.Validate(g.Members)
+	if err != nil {
+		return err
+	}
+	g.DefaultSplit = valid
 	return nil
 }
 

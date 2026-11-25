@@ -19,7 +19,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/app.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/groups/data/providers.dart';
 import 'package:splitspends/app/router.dart';
 import 'package:splitspends/core/widgets/amount_field.dart';
 import 'package:splitspends/features/groups/domain/group.dart';

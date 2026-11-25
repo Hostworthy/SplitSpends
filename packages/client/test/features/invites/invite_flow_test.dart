@@ -7,7 +7,7 @@ import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/app.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/auth/data/providers.dart';
 import 'package:splitspends/app/router.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';

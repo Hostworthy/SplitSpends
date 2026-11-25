@@ -136,6 +136,13 @@ func (s *Service) decide(ctx context.Context, email, link string) (decision, err
 		}
 		return allow, nil
 	}
+	return s.admit(ctx, email, link, existing != nil)
+}
+
+// admit applies the sign-up mode to email, which has no account that may
+// sign in, once the server has one. listed says someone added the email
+// already, which lets it in under invite mode.
+func (s *Service) admit(ctx context.Context, email, link string, listed bool) (decision, error) {
 	cfg, err := s.signup(ctx)
 	if err != nil {
 		return deny, err
@@ -160,7 +167,7 @@ func (s *Service) decide(ctx context.Context, email, link string) (decision, err
 	// Invite mode: the allowed list, people someone added by email, holders
 	// of a group invite link, and people an administrator or manager
 	// approved, also when they asked to join in approval mode.
-	if cfg.Allows(email) || existing != nil {
+	if cfg.Allows(email) || listed {
 		return allow, nil
 	}
 	if link != "" && s.invites != nil {
@@ -255,13 +262,7 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code, name, userAgent st
 	if err != nil {
 		return nil, err
 	}
-	var c *Challenge
-	for _, x := range live {
-		expected := hashCode(s.policy.Secret, x.ID, email, code)
-		if subtle.ConstantTimeCompare([]byte(expected), []byte(x.CodeHash)) == 1 {
-			c = x
-		}
-	}
+	c := s.match(live, email, code)
 	if c == nil {
 		return nil, invalid
 	}
@@ -283,21 +284,8 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code, name, userAgent st
 		if d, err = s.decide(ctx, email, c.Invite); err != nil || d != allow {
 			return err
 		}
-		u, isNew, err := s.activate(ctx, email, name, now)
-		if err != nil {
-			return err
-		}
-		token, hash, err := newToken("")
-		if err != nil {
-			return err
-		}
-		expires := now.Add(s.policy.SessionTTL)
-		sess := &Session{ID: uuid.New(), UserID: u.ID, Kind: KindSession, TokenHash: hash, UserAgent: truncate(userAgent, 200), ExpiresAt: &expires, CreatedAt: now}
-		if err := s.sessions.Create(ctx, sess); err != nil {
-			return err
-		}
-		login = &Login{Token: token, Session: sess, User: u, IsNew: isNew}
-		return nil
+		login, err = s.open(ctx, email, name, userAgent, now)
+		return err
 	})
 	if err != nil || d == allow {
 		return login, err
@@ -313,6 +301,39 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code, name, userAgent st
 		return nil, errs.Declined("Your request to join was declined. Ask an administrator of this server if you think that is a mistake.")
 	}
 	return nil, errs.Pending("Thanks! Your account is waiting for approval. You can sign in once an administrator or manager approves it.")
+}
+
+// match is the live challenge code was sent with, if any. Every hash is
+// compared in constant time, so the time taken says nothing about which
+// matched.
+func (s *Service) match(live []*Challenge, email, code string) *Challenge {
+	var c *Challenge
+	for _, x := range live {
+		expected := hashCode(s.policy.Secret, x.ID, email, code)
+		if subtle.ConstantTimeCompare([]byte(expected), []byte(x.CodeHash)) == 1 {
+			c = x
+		}
+	}
+	return c
+}
+
+// open signs email in, creating or activating the account, with a new
+// session.
+func (s *Service) open(ctx context.Context, email, name, userAgent string, now time.Time) (*Login, error) {
+	u, isNew, err := s.activate(ctx, email, name, now)
+	if err != nil {
+		return nil, err
+	}
+	token, hash, err := newToken("")
+	if err != nil {
+		return nil, err
+	}
+	expires := now.Add(s.policy.SessionTTL)
+	sess := &Session{ID: uuid.New(), UserID: u.ID, Kind: KindSession, TokenHash: hash, UserAgent: truncate(userAgent, 200), ExpiresAt: &expires, CreatedAt: now}
+	if err := s.sessions.Create(ctx, sess); err != nil {
+		return nil, err
+	}
+	return &Login{Token: token, Session: sess, User: u, IsNew: isNew}, nil
 }
 
 func (s *Service) activate(ctx context.Context, email, name string, now time.Time) (*user.User, bool, error) {

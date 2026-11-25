@@ -3,8 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/routes.dart';
-import 'package:splitspends/app/theme.dart';
+import 'package:splitspends/core/routes.dart';
+import 'package:splitspends/core/theme/theme.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/money/money.dart';
@@ -39,11 +39,11 @@ class ExpenseTile extends ConsumerWidget {
           )
           .userId;
       subtitle =
-          '${people.nameOf(from, meId: meId)} paid ${to == meId ? 'you' : people.nameOf(to, meId: meId)}';
+          '${people.name(from, meId: meId)} paid ${to == meId ? 'you' : people.name(to, meId: meId)}';
     } else {
       final payers = expense.payers;
       final who = payers.length == 1
-          ? people.nameOf(payers.first.userId, meId: meId)
+          ? people.name(payers.first.userId, meId: meId)
           : '${payers.length} people';
       subtitle =
           '$who paid ${Money.format(expense.total, info)}'

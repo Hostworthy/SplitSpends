@@ -271,7 +271,9 @@ class SplitEntry {
   JsonMap toJson() => {'userId': userId, 'value': ?value};
 }
 
-/// Decimal text for a JSON number or string (ints stay exact).
+/// Decimal text for a split value. The API sends strings, which pass
+/// through untouched; numbers from older servers are still read (ints stay
+/// exact).
 String? decimalText(Object? value) {
   if (value == null) return null;
   if (value is int) return '$value';

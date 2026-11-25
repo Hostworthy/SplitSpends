@@ -25,7 +25,7 @@ func toSignupSettings(s *admin.Settings) platform.SignupSettings {
 
 func toRequest(r *admin.Request) platform.SignupRequest {
 	return platform.SignupRequest{ID: r.ID.String(), Email: r.Email, Name: r.Name, Status: string(r.Status),
-		RequestedAt: stamp(r.RequestedAt), DecidedAt: stampPtr(r.DecidedAt)}
+		RequestedAt: stamp(r.RequestedAt), DecidedAt: optionalStamp(r.DecidedAt)}
 }
 
 func (a *API) toAccount(u *user.User) platform.Account {

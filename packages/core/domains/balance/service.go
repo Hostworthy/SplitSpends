@@ -83,25 +83,6 @@ func (s *Service) For(ctx context.Context, me uuid.UUID) (*Sheet, error) {
 	}
 
 	sheet := &Sheet{Friends: map[uuid.UUID]*FriendView{}, Groups: map[uuid.UUID]money.Balances{}, Names: map[uuid.UUID]string{}}
-	friend := func(id uuid.UUID) *FriendView {
-		f, ok := sheet.Friends[id]
-		if !ok {
-			f = &FriendView{Total: money.Balances{}, ByGroup: map[uuid.UUID]money.Balances{}, NonGroup: money.Balances{}}
-			sheet.Friends[id] = f
-		}
-		return f
-	}
-	collect := func(debts []Debt, apply func(other uuid.UUID, currency string, amount int64)) {
-		for _, d := range debts {
-			switch me {
-			case d.To:
-				apply(d.From, d.Currency, d.Amount)
-			case d.From:
-				apply(d.To, d.Currency, -d.Amount)
-			}
-		}
-	}
-
 	for _, g := range groups {
 		sheet.Names[g.ID] = g.Name
 		list := entries[g.ID]
@@ -110,8 +91,8 @@ func (s *Service) For(ctx context.Context, me uuid.UUID) (*Sheet, error) {
 			mine = money.Balances{}
 		}
 		sheet.Groups[g.ID] = mine
-		collect(Debts(list, g.Simplify), func(other uuid.UUID, currency string, amount int64) {
-			f := friend(other)
+		collect(me, Debts(list, g.Simplify), func(other uuid.UUID, currency string, amount int64) {
+			f := sheet.friend(other)
 			b, ok := f.ByGroup[g.ID]
 			if !ok {
 				b = money.Balances{}
@@ -121,12 +102,35 @@ func (s *Service) For(ctx context.Context, me uuid.UUID) (*Sheet, error) {
 			f.Total.Add(currency, amount)
 		})
 	}
-	collect(Pairwise(nonGroup), func(other uuid.UUID, currency string, amount int64) {
-		f := friend(other)
+	collect(me, Pairwise(nonGroup), func(other uuid.UUID, currency string, amount int64) {
+		f := sheet.friend(other)
 		f.NonGroup.Add(currency, amount)
 		f.Total.Add(currency, amount)
 	})
 	return sheet, nil
+}
+
+// friend is the view of id, added empty when the sheet has none yet.
+func (sh *Sheet) friend(id uuid.UUID) *FriendView {
+	f, ok := sh.Friends[id]
+	if !ok {
+		f = &FriendView{Total: money.Balances{}, ByGroup: map[uuid.UUID]money.Balances{}, NonGroup: money.Balances{}}
+		sh.Friends[id] = f
+	}
+	return f
+}
+
+// collect calls apply with each debt between me and someone else, positive
+// when they owe me.
+func collect(me uuid.UUID, debts []Debt, apply func(other uuid.UUID, currency string, amount int64)) {
+	for _, d := range debts {
+		switch me {
+		case d.To:
+			apply(d.From, d.Currency, d.Amount)
+		case d.From:
+			apply(d.To, d.Currency, -d.Amount)
+		}
+	}
 }
 
 // Totals splits a sheet into overall net, what others owe you and what you owe.

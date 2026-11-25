@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/theme.dart';
+import 'package:splitspends/core/theme/theme.dart';
 
 /// The palette as round swatches, each announced by its colour name and
 /// whether it is the chosen one. [selected] and the value passed to

@@ -51,7 +51,13 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 // avatarUrl is set only when the person turned on Gravatar (and the host allows it).
 // It answers 404 when they have no Gravatar, so clients keep the initials as a fallback.
 // An account an administrator disabled shows as "active" to everyone except
-// administrators (/admin/accounts), whose Account shape has "status": "disabled".
+// administrators: only the Account shape below says "disabled".
+
+// Account (a person as administrators see them, GET /admin/accounts)
+{ ...User, "status": "active" | "invited" | "disabled", "role": "user" | "manager" | "admin",
+  "createdAt": "RFC3339" }
+// "invited" with a null email is an account an administrator enabled again
+// that has not signed in since (see Administration).
 
 // Me (User plus private settings). In notifications the top-level switches
 // are email (as before push existed); push has the same keys.
@@ -90,10 +96,11 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
   "description": "Dinner", "category": "food.dining", "currency": "EUR",
   "total": 9000, "date": "2026-11-20", "notes": "",
   "splitMethod": "equal" | "exact" | "percent" | "shares" | "adjustment" | "itemized",
-  "shares": [{ "userId": "uuid", "paid": 9000, "owed": 3000, "value": null | number }],
+  "shares": [{ "userId": "uuid", "paid": 9000, "owed": 3000, "value": null | "33.33" }],
   "items": [{ "name": "Pizza", "amount": 2400, "userIds": ["uuid"] }],   // itemized only
   "tax": 0, "tip": 0,                                                    // itemized only
   "receiptId": "uuid" | null, "recurrence": "none" | "weekly" | "biweekly" | "monthly" | "yearly",
+  "nextDate": "2026-12-20" | null /* recurring only: the date the next copy is booked */,
   "createdBy": "uuid", "updatedBy": "uuid", "createdAt": "...", "updatedAt": "...",
   "deleted": false, "commentCount": 2,
   "myBalance": -3000 /* caller's paid - owed in this expense */ }
@@ -119,7 +126,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | `adjustment` | minor units (may be negative) | Each user owes the adjustment, the rest is split evenly |
 | `itemized` | omitted | `items[].userIds` share each item evenly; `tax` and `tip` are spread proportionally to each user's item subtotal; `total` must equal items + tax + tip |
 
-Split values are plain decimals such as `60`, `-3.5`, `1.` or `.25`: at most 20 characters and four decimal places, without exponents, fractions, base prefixes or digit separators. Surrounding whitespace is trimmed, and the trimmed value is what the expense stores.
+Split values are plain decimals such as `60`, `-3.5`, `1.` or `.25`: at most 20 characters and four decimal places, without exponents, fractions, base prefixes or digit separators. Surrounding whitespace is trimmed, and the trimmed value is what the expense stores. `splits[].value` may be sent as a JSON number or a string; responses (`shares[].value`, draft `splits[].value`) always give it as a string in plain form, `.5` as `"0.5"` and `1.` as `"1"`, so clients never need to read it as a float.
 
 `payers` is a list of `{ "userId", "amount" }` whose amounts sum to `total`. Every user in `payers`, `splits` or `items` must be a group member (group expense) or the caller's friend (non-group expense). Any current member may book a group expense, even one they are not part of; outside groups the caller must be one of the people in it. Outside groups, everyone who ends up owing money must also be connected (friends, or members of a common group) with everyone who ends up getting money back, since the expense leaves those pairs owing each other; otherwise 422 on `splits`. A recurring expense outside groups stops repeating once that no longer holds.
 
@@ -152,7 +159,7 @@ A `percent` or `shares` default applies only while its members are exactly the g
 | Method | Path | Notes |
 | ------ | ---- | ----- |
 | GET | `/health` | **public**, outside `/api/v1`: `{ "ok": true }` |
-| GET | `/config` | **public**: `{ data: { appName, aiEnabled, signupMode: "open" \| "invite" \| "domain", currencies: [{ code, name, symbol, exponent }], categories: [{ id, name, group, icon }], pushEnabled, vapidPublicKey, gravatarEnabled } }`. `vapidPublicKey` is the base64url VAPID key to subscribe with (empty when `pushEnabled` is false) |
+| GET | `/config` | **public**: `{ data: { appName, aiEnabled, signupMode: "open" \| "invite" \| "approval" \| "closed", currencies: [{ code, name, symbol, exponent }], categories: [{ id, name, group, icon }], pushEnabled, vapidPublicKey, gravatarEnabled } }`. `vapidPublicKey` is the base64url VAPID key to subscribe with (empty when `pushEnabled` is false) |
 
 ### Auth
 
@@ -202,7 +209,7 @@ Each account may have up to 1000 people it added by name only (placeholders, fro
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/groups` | `?archived=true&limit=&offset=` | List of `Group`, most recently changed first |
-| POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, defaultSplit?, members?: [{ email, name? }] }` | 201 `{ data: Group }`; `defaultSplit` is checked against the members after they are added. 409 when the caller or someone added is already in 1000 groups |
+| POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, defaultSplit?, members?: [{ email?, name? }] }` | 201 `{ data: Group }` (a member with a name and no email is added as a placeholder); `defaultSplit` is checked against the members after they are added. 409 when the caller or someone added is already in 1000 groups |
 | GET | `/groups/{groupId}` | | `{ data: Group }` |
 | PATCH | `/groups/{groupId}` | `{ name?, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, archived?, defaultSplit? }` | `{ data: Group }`; `defaultSplit: null` clears it, leaving it out keeps it |
 | DELETE | `/groups/{groupId}` | | 204; 403 when the caller may not delete it; 409 when not settled |
@@ -243,7 +250,7 @@ People without an account follow the link, request a login code with `inviteToke
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/expenses` | `?groupId=&friendId=&q=&category=&from=&to=&kind=&includeDeleted=` | List of `Expense`, newest `date` first |
-| POST | `/expenses` | `{ id?, groupId?, description, currency?, total, date, category?, notes?, splitMethod, payers, splits?, items?, tax?, tip?, receiptId?, recurrence? }` | 201 `{ data: Expense }` |
+| POST | `/expenses` | `{ id?, groupId?, description, currency?, total, date?, category?, notes?, splitMethod, payers, splits?, items?, tax?, tip?, receiptId?, recurrence? }` | 201 `{ data: Expense }`. `date` defaults to today in UTC |
 | GET | `/expenses/{expenseId}` | | `{ data: Expense }` |
 | PUT | `/expenses/{expenseId}` | same as POST (full replace), plus `updatedAt?` | `{ data: Expense }`; 409 when `updatedAt` is set and the expense has changed since |
 | DELETE | `/expenses/{expenseId}` | | 204 (soft delete); 409 when someone in it has left the group |
@@ -311,9 +318,9 @@ Every AI request is billed to the host, so `POST /receipts/{receiptId}/scan` and
 // ExpenseDraft: a ready-to-review POST /expenses body (never saved automatically)
 { "groupId": "uuid" | null, "receiptId": "uuid" | null, "description": "Dinner", "currency": "EUR",
   "total": 5000, "date": "2026-11-24", "category": "food.dining",
-  "splitMethod": "equal" | "itemized",
+  "splitMethod": "equal" | "percent" | "shares" | "itemized",
   "payers": [{ "userId": "uuid", "amount": 5000 }],
-  "splits": [{ "userId": "uuid" }],                                    // equal drafts
+  "splits": [{ "userId": "uuid", "value"?: "60" }],                    // value only for a percent or shares default
   "items": [{ "name": "Pasta", "amount": 2000, "userIds": ["uuid"] }],  // itemized drafts
   "tax": 400, "tip": 0,
   "warnings": ["Could not match “Sam” to anyone you know."] }
@@ -342,7 +349,7 @@ Every AI request is billed to the host, so `POST /receipts/{receiptId}/scan` and
 // groups[].defaultSplit is optional; its values are keyed by local person ids
 ```
 
-Rules: runs in one transaction and sends no emails. People with an email resolve to the existing (or a newly invited) user, so their server id may differ from the local id: use the returned `people` map to rewrite local references. People without an email become placeholders that keep the local id. The caller becomes friends with everyone imported. Payments use `kind: "payment"` with one payer and one split (the recipient); an entry without `kind` is an expense, and any other value answers 422 on `expenses[i].kind`. Custom categories are created first with their device ids, so expenses can use them; deleted ones are created too and deleted once the expenses are in. A group's `defaultSplit` has its person ids remapped like `memberIds` and must match the group's members (send it only while it still applies). Two people in the bundle who resolve to the same server user (the same email, or your own email) are refused with 422 when both appear in one default split, among one expense's payers or splits, or in one item; as group members they simply join once. Validation errors name the failing item in `field`, for example `expenses[3].total`. Retrying the same import is safe.
+Rules: runs in one transaction and sends no emails. People with an email resolve to the existing (or a newly invited) user, so their server id may differ from the local id: use the returned `people` map to rewrite local references. People without an email become placeholders that keep the local id. The caller becomes friends with everyone imported. Payments use `kind: "payment"` with one payer and one split (the recipient); an entry without `kind` is an expense, and any other value answers 422 on `expenses[i].kind`. Custom categories are created first with their device ids, so expenses can use them; deleted ones are created too and deleted once the expenses are in. A group's `defaultSplit` has its person ids remapped like `memberIds` and must match the group's members (send it only while it still applies). Two people in the bundle who resolve to the same server user (the same email, or your own email) are refused with 422 when both appear in one default split, among one expense's payers or splits, or in one item; as group members they simply join once. Validation errors name the failing item in `field`, for example `expenses[3].total` or `groups[2].memberIds[0]`, including ids that do not parse. Retrying the same import is safe.
 
 Limits: one import may hold at most 1000 people, 200 custom categories, 500 groups and 20,000 expenses, and is refused with 409 when it would put someone in more than 1000 groups. Each account runs one import at a time (409 `CONFLICT` while another is running) and at most 10 an hour (429 `RATE_LIMITED`); the server runs at most two imports at once and answers 429 `RATE_LIMITED` to a third until one ends.
 
@@ -379,7 +386,7 @@ Administrators and managers get an `approvals` notification (email and push, eac
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
-| POST | `/internal/jobs` | Outside `/api/v1`. Runs recurring expenses and cleanup once; overlapping runs are safe, each occurrence is booked once. Every job runs even when another fails, and a recurring expense that fails is skipped and tried again next run; any failure answers 500 after the rest has run. Requires `Authorization: Bearer <JOBS_SECRET>`; only mounted when `JOBS_SECRET` is set. For serverless schedulers |
+| POST | `/internal/jobs` | Outside `/api/v1`. Runs recurring expenses and cleanup once; overlapping runs are safe, each occurrence is booked once. Every job runs even when another fails, and a recurring expense that fails is skipped and tried again next run; any failure answers 500 after the rest has run. Requires `Authorization: Bearer <JOBS_SECRET>`; only mounted when `JOBS_SECRET` is set. Answers 204 when every job succeeded and 401 `UNAUTHORIZED` for a wrong or missing secret. For serverless schedulers |
 
 ## MCP
 

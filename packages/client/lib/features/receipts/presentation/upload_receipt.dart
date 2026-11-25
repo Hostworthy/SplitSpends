@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/receipts/data/providers.dart';
 import 'package:splitspends/features/receipts/domain/receipt.dart';
 
 /// The device camera and photo library; replaced in tests.

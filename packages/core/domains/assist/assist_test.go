@@ -243,3 +243,84 @@ func TestInputCarriesNoEmails(t *testing.T) {
 		t.Fatalf("the draft input must not carry email addresses: %s", sent)
 	}
 }
+
+func TestChooseGroup(t *testing.T) {
+	k := world()
+	for _, c := range []struct {
+		name string
+		req  Request
+		ext  ports.DraftExtract
+		want *uuid.UUID
+	}{
+		{"none", Request{}, ports.DraftExtract{}, nil},
+		{"the user's pick", Request{GroupID: &trip}, ports.DraftExtract{}, &trip},
+		{"the user's pick over the model's", Request{GroupID: &trip}, ports.DraftExtract{GroupID: other.String()}, &trip},
+		{"the model's pick", Request{}, ports.DraftExtract{GroupID: trip.String()}, &trip},
+		{"a group the user is not in", Request{}, ports.DraftExtract{GroupID: other.String()}, nil},
+		{"not an id", Request{}, ports.DraftExtract{GroupID: "Lisbon trip"}, nil},
+	} {
+		g := chooseGroup(k, c.req, c.ext)
+		switch {
+		case c.want == nil && g != nil:
+			t.Errorf("%s: want no group, got %s", c.name, g.ID)
+		case c.want != nil && (g == nil || g.ID != *c.want):
+			t.Errorf("%s: want %s, got %+v", c.name, *c.want, g)
+		}
+	}
+}
+
+func TestConverter(t *testing.T) {
+	// Rates at the edge of the accepted band, so yen convert to very many
+	// euros: past the largest expense, and past int64 at the far edge.
+	table := func(jpy string) func() *rates.Table {
+		return func() *rates.Table {
+			t, _ := rates.New("USD", map[string]string{"EUR": "1000000000", "JPY": jpy})
+			return &t
+		}
+	}
+	for _, c := range []struct {
+		name    string
+		read    string
+		table   func() *rates.Table
+		amount  string
+		want    int64
+		failure errs.Kind
+	}{
+		{name: "same currency", read: "EUR", table: noRates, amount: "12.50", want: 1250},
+		{name: "no currency read", read: "", table: noRates, amount: "12.50", want: 1250},
+		{name: "unknown currency read", read: "XYZ", table: noRates, amount: "12.50", want: 1250},
+		{name: "converted", read: "JPY", table: eurTable, amount: "1800", want: 960},
+		{name: "unreadable amount", read: "JPY", table: eurTable, amount: "lots", want: 0},
+		{name: "negative amount", read: "EUR", table: noRates, amount: "-3", want: 0},
+		{name: "no rates", read: "JPY", table: noRates, failure: errs.KindNoRates},
+		{name: "beyond the maximum once converted", read: "JPY", table: table("1"), amount: "100", failure: errs.KindValidation},
+		{name: "beyond int64 once converted", read: "JPY", table: table("0.000000001"), amount: "1", failure: errs.KindValidation},
+	} {
+		conv, err := converter(c.read, "EUR", c.table)
+		if c.failure == errs.KindNoRates {
+			if !errs.Is(err, errs.KindNoRates) {
+				t.Errorf("%s: want no rates, got %v", c.name, err)
+			}
+			continue
+		}
+		must(t, err)
+		got, err := conv.amount(c.amount)
+		if c.failure != "" {
+			if !errs.Is(err, c.failure) {
+				t.Errorf("%s: want a %s error, got %d, %v", c.name, c.failure, got, err)
+			}
+			continue
+		}
+		if err != nil || got != c.want {
+			t.Errorf("%s: want %d, got %d, %v", c.name, c.want, got, err)
+		}
+	}
+}
+
+func TestDraftTotalBeyondTheMaximum(t *testing.T) {
+	items := []ports.DraftItem{{Name: "A", Amount: "9000000000"}, {Name: "B", Amount: "9000000000"}}
+	_, err := build(world(), Request{GroupID: &trip}, ports.DraftExtract{Items: items}, "2026-10-06", "USD", noRates)
+	if !errs.Is(err, errs.KindValidation) {
+		t.Fatalf("a total no expense can hold must be refused: %v", err)
+	}
+}
