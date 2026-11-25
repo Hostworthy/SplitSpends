@@ -198,14 +198,14 @@ Each account may have up to 1000 people it added by name only (placeholders, fro
 | GET | `/groups/{groupId}/balances` | | `{ data: { members: [{ userId, balances: [Balance] }], debts: [Debt] } }` (debts are simplified when `simplifyDebts` is on) |
 | GET | `/groups/{groupId}/export` | | `text/csv` of all expenses and payments |
 | POST | `/groups/{groupId}/invites` | | 201 `{ data: Invite }` with `token` and `url` (shown once). 409 for archived groups |
-| GET | `/groups/{groupId}/invites` | | List of active (unexpired) `Invite`, without `token` and `url` |
+| GET | `/groups/{groupId}/invites` | | List of usable `Invite` (unexpired, created by a current member), without `token` and `url` |
 | DELETE | `/groups/{groupId}/invites/{inviteId}` | | 204; the link stops working |
 
 A group has at most 100 members, its creator included. `POST /groups` with more `members` and `POST /groups/{groupId}/members` on a full group answer 422 `VALIDATION_ERROR` on `members`; joining a full group through an invite link answers 409 `CONFLICT`.
 
 ### Invite Links
 
-Any group member can create a link that lets anyone who has it join the group. Links last 14 days and can be used many times until they expire or are revoked. The token is 32 random bytes in base64url; the server stores only its SHA-256 hash. `url` is `BASE_URL/join/<token>`, which opens the web app (QR codes encode it).
+Any group member can create a link that lets anyone who has it join the group. Links last 14 days and can be used many times until they expire or are revoked. A link stops working once the person who created it leaves or is removed from the group, so removing someone also ends the links they shared. The token is 32 random bytes in base64url; the server stores only its SHA-256 hash. `url` is `BASE_URL/join/<token>`, which opens the web app (QR codes encode it).
 
 ```jsonc
 // Invite
@@ -218,7 +218,7 @@ Any group member can create a link that lets anyone who has it join the group. L
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens alike |
+| GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens, and links whose creator has left the group, alike |
 | POST | `/invites/{token}/accept` | | `{ data: Group }`; adds the caller to the group and records `group.member-joined`. Accepting again, or as a member, returns the group unchanged |
 
 People without an account follow the link, request a login code with `inviteToken`, sign in, then accept.
