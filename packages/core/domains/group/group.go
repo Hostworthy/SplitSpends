@@ -34,6 +34,10 @@ func (k Kind) valid() bool {
 // MaxMembers is how many people a group can have, the creator included.
 const MaxMembers = 100
 
+// MaxPerUser is how many groups one person can belong to, archived ones
+// included. Their group list and balances load all of them.
+const MaxPerUser = 1000
+
 var colorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 // Group is a set of people who share expenses.
@@ -165,6 +169,8 @@ type Repository interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	// ForUser lists the user's groups with Members filled.
 	ForUser(ctx context.Context, userID uuid.UUID, archived bool) ([]*Group, error)
+	// Joined counts the groups the user is an active member of.
+	Joined(ctx context.Context, userID uuid.UUID) (int, error)
 	AddMember(ctx context.Context, groupID, userID uuid.UUID, at time.Time) error
 	RemoveMember(ctx context.Context, groupID, userID uuid.UUID, at time.Time) error
 }

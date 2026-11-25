@@ -88,7 +88,7 @@ func TestFormerMemberCannotComment(t *testing.T) {
 	if _, err := svc.Comment(ctx, ben, rent.ID, "Still here"); !errs.Is(err, errs.KindNotFound) {
 		t.Fatalf("a former member must not comment on the group's expenses, got %v", err)
 	}
-	list, err := svc.Comments(ctx, ben, rent.ID)
+	list, _, err := svc.Comments(ctx, ben, rent.ID, 0, 0)
 	if err != nil {
 		t.Fatalf("a former member still reads the comments: %v", err)
 	}

@@ -117,6 +117,27 @@ func page(r *http.Request) (limit, offset int) {
 	return limit, offset
 }
 
+// window is page for lists that returned everything before they took a
+// limit: without one they still do, so clients that send none keep working.
+func window(r *http.Request) (limit, offset int) {
+	limit, offset = page(r)
+	if r.URL.Query().Get("limit") == "" {
+		limit = 0
+	}
+	return limit, offset
+}
+
+// paged writes the page of items that window asks for, with the total.
+func paged[T any](w http.ResponseWriter, r *http.Request, items []T) error {
+	limit, offset := window(r)
+	total := len(items)
+	items = items[min(offset, total):]
+	if limit > 0 && limit < len(items) {
+		items = items[:limit]
+	}
+	return list(w, items, total)
+}
+
 func me(r *http.Request) uuid.UUID {
 	if p := middleware.Principal(r.Context()); p != nil {
 		return p.UserID

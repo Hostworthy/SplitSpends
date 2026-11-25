@@ -61,7 +61,7 @@ func (a *API) signupRequests(w http.ResponseWriter, r *http.Request) error {
 	for _, req := range reqs {
 		out = append(out, toRequest(req))
 	}
-	return list(w, out, len(out))
+	return paged(w, r, out)
 }
 
 func (a *API) approveRequest(w http.ResponseWriter, r *http.Request) error {

@@ -16,6 +16,10 @@ import (
 // TTL is how long a new invite link stays valid.
 const TTL = 14 * 24 * time.Hour
 
+// MaxActive is how many usable links one group can have at a time. Every
+// member sees them all in the group's settings.
+const MaxActive = 20
+
 // Path is where invite links open in the web app, followed by the token.
 const Path = "/join/"
 

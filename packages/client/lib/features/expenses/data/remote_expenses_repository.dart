@@ -55,11 +55,8 @@ class RemoteExpensesRepository implements ExpensesRepository {
   );
 
   @override
-  Future<List<Comment>> comments(String id) async => (await _api.getList(
-    '/expenses/$id/comments',
-    Comment.fromJson,
-    query: {'limit': 200},
-  )).items;
+  Future<List<Comment>> comments(String id) async =>
+      (await _api.getList('/expenses/$id/comments', Comment.fromJson)).items;
 
   @override
   Future<Comment> addComment(String id, String body) => _api.postData(
