@@ -69,3 +69,33 @@ func TestS3Contract(t *testing.T) {
 	}
 	storagetest.Run(t, &S3{client: client, bucket: "receipts", prefix: "test/"})
 }
+
+// TestS3Endpoint checks that the scheme of S3_ENDPOINT decides whether the
+// store uses TLS, so a plain-HTTP MinIO on a local network works.
+func TestS3Endpoint(t *testing.T) {
+	for _, tc := range []struct {
+		endpoint string
+		scheme   string
+		host     string
+	}{
+		{"http://localhost:9000", "http", "localhost:9000"},
+		{"HTTP://minio:9000", "http", "minio:9000"},
+		{"localhost:9000", "https", "localhost:9000"},
+		{"https://account.r2.cloudflarestorage.com", "https", "account.r2.cloudflarestorage.com"},
+		{"", "https", "s3.eu-west-1.amazonaws.com"},
+	} {
+		t.Run(tc.endpoint, func(t *testing.T) {
+			s, err := NewS3(S3Config{Bucket: "receipts", Region: "eu-west-1", Endpoint: tc.endpoint, AccessKey: "key", SecretKey: "secret"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			url := s.client.EndpointURL()
+			if url.Scheme != tc.scheme || url.Host != tc.host {
+				t.Fatalf("endpoint %q became %s://%s, want %s://%s", tc.endpoint, url.Scheme, url.Host, tc.scheme, tc.host)
+			}
+			if s.Secure() != (tc.scheme == "https") {
+				t.Fatalf("Secure() = %v for %s", s.Secure(), tc.scheme)
+			}
+		})
+	}
+}

@@ -94,8 +94,15 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 	var blobs ports.BlobStore
 	switch cfg.BlobStore {
 	case "s3":
-		blobs, err = storage.NewS3(storage.S3Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, Endpoint: cfg.S3Endpoint,
+		var s3 *storage.S3
+		s3, err = storage.NewS3(storage.S3Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, Endpoint: cfg.S3Endpoint,
 			AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey, Prefix: cfg.S3Prefix})
+		if err == nil {
+			blobs = s3
+			if !s3.Secure() {
+				log.Warn("bootstrap.storage.insecure", "endpoint", cfg.S3Endpoint)
+			}
+		}
 	case "postgres":
 		blobs = repositories.NewBlobs(db)
 	default:

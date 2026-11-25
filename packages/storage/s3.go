@@ -17,11 +17,10 @@ import (
 type S3Config struct {
 	Bucket    string
 	Region    string
-	Endpoint  string // host[:port]; defaults to AWS for Region
+	Endpoint  string // [https://|http://]host[:port]; defaults to AWS for Region
 	AccessKey string // optional; falls back to AWS_* env and instance roles
 	SecretKey string
 	Prefix    string
-	Insecure  bool // plain HTTP, for a local MinIO only
 }
 
 // S3 stores blobs in a bucket. Objects stay private; the API streams them
@@ -41,7 +40,12 @@ func NewS3(cfg S3Config) (*S3, error) {
 			endpoint = "s3." + cfg.Region + ".amazonaws.com"
 		}
 	}
-	endpoint = strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
+	// Only an explicit http:// turns TLS off, for a MinIO on a local network.
+	secure := true
+	if scheme, host, ok := strings.Cut(endpoint, "://"); ok {
+		secure = !strings.EqualFold(scheme, "http")
+		endpoint = host
+	}
 	var creds *credentials.Credentials
 	if cfg.AccessKey != "" {
 		creds = credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, "")
@@ -50,7 +54,7 @@ func NewS3(cfg S3Config) (*S3, error) {
 		// or the instance metadata endpoint.
 		creds = credentials.NewChainCredentials([]credentials.Provider{&credentials.EnvAWS{}, &credentials.IAM{}})
 	}
-	client, err := minio.New(endpoint, &minio.Options{Creds: creds, Secure: !cfg.Insecure, Region: cfg.Region})
+	client, err := minio.New(endpoint, &minio.Options{Creds: creds, Secure: secure, Region: cfg.Region})
 	if err != nil {
 		return nil, fmt.Errorf("storage.s3.config.invalid: %w", err)
 	}
@@ -60,6 +64,9 @@ func NewS3(cfg S3Config) (*S3, error) {
 	}
 	return &S3{client: client, bucket: cfg.Bucket, prefix: prefix}, nil
 }
+
+// Secure reports whether the store talks to its endpoint over TLS.
+func (s *S3) Secure() bool { return s.client.EndpointURL().Scheme == "https" }
 
 func (s *S3) Put(ctx context.Context, key string, r io.Reader) error {
 	data, err := io.ReadAll(r)
