@@ -62,7 +62,7 @@ func (l *Local) Open(_ context.Context, key string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return os.Open(p)
+	return os.Open(p) //nolint:gosec // path keeps keys inside the root
 }
 
 func (l *Local) Delete(_ context.Context, key string) error {

@@ -39,7 +39,7 @@ Migrations are embedded in the binary and applied on start.
 
 ## Linting and Formatting
 
-- Go: `gofmt`, `go vet` and [golangci-lint](https://golangci-lint.run) with `.golangci.yml` (the standard set plus checks for closed bodies and rows, error wrapping, contexts on requests, misspellings and wasted assignments). `make lint` runs a pinned release through `go run`, so it is built with this repository's Go version; the first run takes a minute.
+- Go: `gofmt`, `go vet` and [golangci-lint](https://golangci-lint.run) with `.golangci.yml` (the standard set plus checks for closed bodies and rows, error wrapping, contexts on requests, misspellings, wasted assignments and gosec's security checks outside tests). `make lint` runs a pinned release through `go run`, so it is built with this repository's Go version; the first run takes a minute.
 - Dart: every workspace member includes `analysis_options.yaml` at the root on top of its base set: strict casts and raw types, unawaited futures and unclosed streams as errors, final locals, single quotes and more. `dart format` uses the default style.
 - `.editorconfig` sets UTF-8, LF, final newlines and indentation for every editor.
 - CI runs the same checks: the `backend` job runs gofmt, vet and golangci-lint; the `app` job runs dart format and flutter analyze; the `vuln` job runs govulncheck, also weekly so new advisories show up without a push.

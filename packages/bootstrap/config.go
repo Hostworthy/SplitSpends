@@ -158,9 +158,9 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("bootstrap.config.env.invalid.SESSION_TTL_DAYS")
 	}
 	c.SessionTTL = time.Duration(days) * 24 * time.Hour
-	conns, err := strconv.Atoi(env("DATABASE_MAX_CONNS", "10"))
+	conns, err := strconv.ParseInt(env("DATABASE_MAX_CONNS", "10"), 10, 32)
 	if err != nil || conns < 1 {
-		return nil, fmt.Errorf("bootstrap.config.env.invalid.DATABASE_MAX_CONNS")
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.DATABASE_MAX_CONNS: use a whole number from 1 to 2147483647")
 	}
 	c.DatabaseConns = int32(conns)
 	if c.SMTPPort, err = strconv.Atoi(env("SMTP_PORT", "587")); err != nil {

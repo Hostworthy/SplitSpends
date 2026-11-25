@@ -11,6 +11,7 @@ linters:
     - bodyclose # HTTP response bodies are closed
     - copyloopvar
     - errorlint # errors.Is / errors.As instead of == and type switches
+    - gosec # file paths and permissions, integer overflow, TLS and randomness
     - misspell
     - nilerr # returning nil after checking an error
     - noctx # outgoing HTTP requests carry a context
@@ -20,6 +21,9 @@ linters:
     - usestdlibvars # http.MethodGet and friends instead of literals
     - wastedassign
   settings:
+    gosec:
+      excludes:
+        - G104 # unchecked errors: errcheck covers them, with the exclusions below
     errcheck:
       exclude-functions:
         # Best-effort writes to an HTTP client or a closing body.
@@ -31,9 +35,10 @@ linters:
       - comments
       - std-error-handling
     rules:
-      # Tests may ignore errors from setup helpers.
+      # Tests may ignore errors from setup helpers and write fixtures with
+      # ordinary permissions.
       - path: _test\.go
-        linters: [errcheck, bodyclose, noctx]
+        linters: [errcheck, bodyclose, noctx, gosec]
 
 formatters:
   enable:
