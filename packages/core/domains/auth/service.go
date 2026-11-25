@@ -124,8 +124,7 @@ func (s *Service) decide(ctx context.Context, email, link string) (decision, err
 			return allow, nil
 		case existing.Status == user.StatusDisabled:
 			return deny, nil
-		case existing.Email == "" && existing.EmailHash != "":
-			// Re-enabled by an administrator: known by the hash of this email.
+		case existing.Reenabled():
 			return allow, nil
 		}
 	}

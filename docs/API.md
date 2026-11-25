@@ -357,10 +357,10 @@ Existing active accounts always sign in. The allowed list holds addresses and wh
 | GET | `/admin/requests` | `?status=pending\|approved\|declined&limit=&offset=` (pending by default) | admin or manager: list of `{ id, email, name, status, requestedAt, decidedAt }`, newest first |
 | POST | `/admin/requests/{requestId}/approve` | | admin or manager: the request; the person is emailed and can sign in. 409 while the sign-up mode is `closed` |
 | POST | `/admin/requests/{requestId}/decline` | | admin or manager: the request |
-| GET | `/admin/accounts` | `?status=active\|invited\|disabled&q=&limit=&offset=` | admin: list of `{ ...User, role, createdAt }` (everyone except people added by name only) |
+| GET | `/admin/accounts` | `?status=active\|invited\|disabled&q=&limit=&offset=` | admin: list of `{ ...User, role, createdAt }` (everyone except people added by name only). `q` matches part of a name or address; a whole address also finds disabled and re-enabled accounts, which keep only its hash |
 | PATCH | `/admin/accounts/{userId}` | `{ role }` | admin: the account |
 | POST | `/admin/accounts/{userId}/disable` | | admin: removes sessions, API tokens and push devices, deletes the email (keeping its SHA-256 hash so the same address is recognised) and sets `status: "disabled"`. The name stays on shared expenses |
-| POST | `/admin/accounts/{userId}/enable` | | admin: the person signs in again with their old email, which is stored again |
+| POST | `/admin/accounts/{userId}/enable` | | admin: the person signs in again with their old email, whatever the sign-up mode, and the email is stored again. Until then the account is listed as `status: "invited"` without an email |
 
 Administrators and managers get an `approvals` notification (email and push) for a new request, unless another request was already waiting from less than an hour before; a burst of requests sends one notification. At most 500 requests wait at a time: beyond that, signing in as someone new answers 429 `RATE_LIMITED` until administrators decide some. A request nobody decides within 30 days is removed by the cleanup job, and the person can ask again.
 

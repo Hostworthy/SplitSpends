@@ -11,6 +11,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap"
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/admin"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
@@ -538,5 +539,50 @@ func TestJoinRequestsConcurrent(t *testing.T) {
 		if stored != 1 {
 			t.Fatalf("run %d: %d requests stored for one address, want 1", run, stored)
 		}
+	}
+}
+
+// TestReenabledAccount follows an account from disabled to enabled: the
+// administrator finds it by its old address throughout, sees it apart from
+// people who were only invited, and the person signs in even while sign-up
+// is closed.
+func TestReenabledAccount(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User
+	ben := env.SignIn(t, "ben@example.com", "Ben").User
+	if _, err := svc.Groups.Create(ctx, ada.ID, group.CreateInput{Patch: group.Patch{Name: str("Flat")},
+		Members: []group.Invitee{{Email: "cleo@example.com", Name: "Cleo"}}}); err != nil {
+		t.Fatal(err)
+	}
+	find := func(q string) []*user.User {
+		t.Helper()
+		list, _, err := svc.Admin.Accounts(ctx, ada.ID, "", q, 50, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return list
+	}
+	if _, err := svc.Admin.Disable(ctx, ada.ID, ben.ID); err != nil {
+		t.Fatal(err)
+	}
+	if found := find(" Ben@Example.com "); len(found) != 1 || found[0].ID != ben.ID {
+		t.Fatalf("a disabled account must be found by its address: %+v", found)
+	}
+	if _, err := svc.Admin.Enable(ctx, ada.ID, ben.ID); err != nil {
+		t.Fatal(err)
+	}
+	if found := find("ben@example.com"); len(found) != 1 || found[0].ID != ben.ID || !found[0].Reenabled() {
+		t.Fatalf("a re-enabled account must be found by its address and shown as re-enabled: %+v", found)
+	}
+	if cleo := find("cleo@example.com"); len(cleo) != 1 || cleo[0].Status != user.StatusInvited || cleo[0].Reenabled() {
+		t.Fatalf("an invited person is not re-enabled: %+v", cleo)
+	}
+	if _, err := svc.Admin.UpdateSettings(ctx, ada.ID, "closed", nil); err != nil {
+		t.Fatal(err)
+	}
+	if again := env.SignIn(t, "ben@example.com", "").User; again.ID != ben.ID || again.Reenabled() {
+		t.Fatalf("a re-enabled account must sign in while sign-up is closed: %+v", again)
 	}
 }
