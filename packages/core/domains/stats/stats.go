@@ -65,16 +65,21 @@ type Groups interface {
 	Member(ctx context.Context, actor, id uuid.UUID) (*group.Group, error)
 }
 
+// Users reads the caller's profile for their default currency.
+type Users interface {
+	Get(ctx context.Context, id uuid.UUID) (*user.User, error)
+}
+
 // Service validates access and fills defaults.
 type Service struct {
 	repo   Repository
 	groups Groups
-	users  *user.Service
+	users  Users
 	names  Names
 }
 
 // NewService builds a Service.
-func NewService(repo Repository, groups Groups, users *user.Service, names Names) *Service {
+func NewService(repo Repository, groups Groups, users Users, names Names) *Service {
 	return &Service{repo: repo, groups: groups, users: users, names: names}
 }
 

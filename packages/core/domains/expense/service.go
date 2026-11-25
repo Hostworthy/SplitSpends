@@ -38,6 +38,19 @@ type Groups interface {
 	Hold(ctx context.Context, id uuid.UUID) error
 }
 
+// Users reads the people expenses name.
+type Users interface {
+	Get(ctx context.Context, id uuid.UUID) (*user.User, error)
+	List(ctx context.Context, ids []uuid.UUID) ([]*user.User, error)
+	// Index is List keyed by id; ids that do not exist are missing.
+	Index(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*user.User, error)
+}
+
+// Recorder adds to the activity feed.
+type Recorder interface {
+	Record(ctx context.Context, a activity.Activity) error
+}
+
 // Service implements expense, payment and comment use cases.
 type Service struct {
 	repo        Repository
@@ -46,8 +59,8 @@ type Service struct {
 	connections Connections
 	receipts    Receipts
 	catalog     Catalog
-	users       *user.Service
-	activity    *activity.Service
+	users       Users
+	activity    Recorder
 	notifier    ports.Notifier
 	tx          ports.Tx
 	clock       clock.Clock
@@ -62,8 +75,8 @@ type Deps struct {
 	Connections Connections
 	Receipts    Receipts
 	Catalog     Catalog
-	Users       *user.Service
-	Activity    *activity.Service
+	Users       Users
+	Activity    Recorder
 	Notifier    ports.Notifier
 	Tx          ports.Tx
 	Clock       clock.Clock
