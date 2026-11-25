@@ -105,13 +105,55 @@ func Observe(log *slog.Logger, next http.Handler) http.Handler {
 	})
 }
 
-// Security sets conservative response headers.
-func Security(next http.Handler) http.Handler {
+// apiPolicy lets a response load nothing: JSON and stored files need no
+// scripts, styles or frames.
+const apiPolicy = "default-src 'none'; frame-ancestors 'none'"
+
+// Security sets conservative response headers. Every response gets
+// apiPolicy; Web replaces it for the pages of the web app. secure adds
+// Strict-Transport-Security, for servers whose public URL is https.
+func Security(secure bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", apiPolicy)
+		h.Set("Permissions-Policy", "camera=(self), microphone=(), geolocation=()")
+		if secure {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Web sets the Content-Security-Policy of the Flutter web app, which the
+// server hosts itself (CanvasKit included), so scripts come only from the
+// same origin; 'wasm-unsafe-eval' lets CanvasKit compile its WebAssembly and
+// Flutter injects inline styles. The app can be pointed at another server
+// that the person types in, and loads Gravatar pictures with fetch, so
+// connect-src allows any https origin, and plain http too when the server
+// itself is reached over http.
+func Web(secure bool, next http.Handler) http.Handler {
+	connect := "'self' https:"
+	if !secure {
+		connect += " http:"
+	}
+	policy := strings.Join([]string{
+		"default-src 'self'",
+		"script-src 'self' 'wasm-unsafe-eval'",
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data: blob: https://gravatar.com https://*.gravatar.com",
+		"font-src 'self' data:",
+		"connect-src " + connect,
+		"worker-src 'self' blob:",
+		"object-src 'none'",
+		"base-uri 'self'",
+		"form-action 'self'",
+		"frame-ancestors 'none'",
+	}, "; ")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", policy)
 		next.ServeHTTP(w, r)
 	})
 }

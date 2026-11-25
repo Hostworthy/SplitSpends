@@ -161,8 +161,8 @@ A `percent` or `shares` default applies only while its members are exactly the g
 | PATCH | `/me` | `{ name?, defaultCurrency?, timezone?, avatarColor?, gravatar?, notifications? }` | `{ data: Me }`. In `notifications`, an omitted `reminders` keeps its current value. `gravatar: true` needs an email and `gravatarEnabled` on the server |
 | GET | `/me/balances` | | `{ data: { balances: [Balance], owed: [Balance], owing: [Balance] } }` totals across everything |
 | GET | `/me/tokens` | | List of `{ id, name, createdAt, lastUsedAt }` |
-| POST | `/me/tokens` | `{ name }` | 201 `{ data: { id, name, token, createdAt } }` (token shown once) |
-| DELETE | `/me/tokens/{tokenId}` | | 204 |
+| POST | `/me/tokens` | `{ name }` | 201 `{ data: { id, name, token, createdAt } }` (token shown once). Needs a signed-in session: an API token gets 403 `FORBIDDEN`. An account holds at most 20 tokens; the 21st is 422 `VALIDATION_ERROR` on `name` |
+| DELETE | `/me/tokens/{tokenId}` | | 204. Needs a signed-in session: an API token gets 403 `FORBIDDEN` |
 | GET | `/me/push-subscriptions` | | List of PushSubscription, newest first |
 | POST | `/me/push-subscriptions` | `{ endpoint, keys: { p256dh, auth }, platform?: "web" \| "unifiedpush", label? }` | 201 `{ data: PushSubscription }`, or 200 when the endpoint was already registered (refreshed) |
 | DELETE | `/me/push-subscriptions/{subscriptionId}` | | 204 |

@@ -3,8 +3,9 @@
 {$DOMAIN} {
 	encode zstd gzip
 	reverse_proxy app:8080
+	# ">" replaces the header the app sends, adding includeSubDomains.
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		>Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		-Server
 	}
 }

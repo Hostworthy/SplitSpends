@@ -98,7 +98,7 @@ func (a *API) createToken(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	t, err := a.svc.Auth.CreateToken(r.Context(), me(r), in.Name)
+	t, err := a.svc.Auth.CreateToken(r.Context(), middleware.Principal(r.Context()), in.Name)
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func (a *API) deleteToken(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := a.svc.Auth.RevokeToken(r.Context(), me(r), id); err != nil {
+	if err := a.svc.Auth.RevokeToken(r.Context(), middleware.Principal(r.Context()), id); err != nil {
 		return err
 	}
 	return noContent(w)

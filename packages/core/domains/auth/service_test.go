@@ -74,8 +74,23 @@ func (m *memSessions) Delete(_ context.Context, id uuid.UUID) error {
 	}
 	return nil
 }
-func (m *memSessions) ListTokens(context.Context, uuid.UUID) ([]*Session, error) { return nil, nil }
-func (m *memSessions) DeleteToken(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
+func (m *memSessions) Lock(context.Context, uuid.UUID) error { return nil }
+func (m *memSessions) ListTokens(_ context.Context, userID uuid.UUID) ([]*Session, error) {
+	var list []*Session
+	for _, s := range m.byHash {
+		if s.UserID == userID && s.Kind == KindToken {
+			list = append(list, s)
+		}
+	}
+	return list, nil
+}
+func (m *memSessions) DeleteToken(_ context.Context, userID, id uuid.UUID) (bool, error) {
+	for h, s := range m.byHash {
+		if s.ID == id && s.UserID == userID && s.Kind == KindToken {
+			delete(m.byHash, h)
+			return true, nil
+		}
+	}
 	return false, nil
 }
 func (m *memSessions) DeleteExpired(context.Context, time.Time) error { return nil }
@@ -421,5 +436,47 @@ func TestBootstrapRestrictedToAdminEmail(t *testing.T) {
 	login, err = s.Verify(ctx, "stranger@example.com", sent["stranger@example.com"], "", "")
 	if err != nil || login.User.Role != user.RoleUser {
 		t.Fatalf("later accounts are not administrators: %+v %v", login, err)
+	}
+}
+
+func TestTokenCannotMintTokens(t *testing.T) {
+	ctx := context.Background()
+	s, _, _ := service(SignupOpen)
+	userID := uuid.New()
+	session := &Principal{UserID: userID, SessionID: uuid.New(), Kind: KindSession}
+	issued, err := s.CreateToken(ctx, session, "MCP")
+	if err != nil {
+		t.Fatalf("a signed-in session may create a token: %v", err)
+	}
+	p, err := s.Authenticate(ctx, issued.Token)
+	if err != nil || p.Kind != KindToken {
+		t.Fatalf("authenticate the token: %+v %v", p, err)
+	}
+	if _, err := s.CreateToken(ctx, p, "Another"); !errs.Is(err, errs.KindForbidden) {
+		t.Fatalf("an API token may not create tokens, got %v", err)
+	}
+	if err := s.RevokeToken(ctx, p, issued.Session.ID); !errs.Is(err, errs.KindForbidden) {
+		t.Fatalf("an API token may not revoke tokens, got %v", err)
+	}
+	if err := s.RevokeToken(ctx, session, issued.Session.ID); err != nil {
+		t.Fatalf("a signed-in session may revoke a token: %v", err)
+	}
+}
+
+func TestTokenLimit(t *testing.T) {
+	ctx := context.Background()
+	s, _, _ := service(SignupOpen)
+	p := &Principal{UserID: uuid.New(), SessionID: uuid.New(), Kind: KindSession}
+	for i := range MaxTokens {
+		if _, err := s.CreateToken(ctx, p, fmt.Sprintf("Token %d", i+1)); err != nil {
+			t.Fatalf("token %d: %v", i+1, err)
+		}
+	}
+	if _, err := s.CreateToken(ctx, p, "One too many"); !errs.Is(err, errs.KindValidation) {
+		t.Fatalf("token %d must be refused, got %v", MaxTokens+1, err)
+	}
+	other := &Principal{UserID: uuid.New(), SessionID: uuid.New(), Kind: KindSession}
+	if _, err := s.CreateToken(ctx, other, "Mine"); err != nil {
+		t.Fatalf("the limit is per person: %v", err)
 	}
 }

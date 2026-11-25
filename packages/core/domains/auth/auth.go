@@ -27,6 +27,9 @@ const (
 // and secret scanners.
 const TokenPrefix = "ss_"
 
+// MaxTokens is how many API tokens one account may hold at a time.
+const MaxTokens = 20
+
 // Challenge is a pending one-time login code.
 type Challenge struct {
 	ID    uuid.UUID

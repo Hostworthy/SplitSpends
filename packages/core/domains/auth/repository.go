@@ -33,6 +33,9 @@ type SessionRepository interface {
 	FindByHash(ctx context.Context, hash string) (*Session, error)
 	Touch(ctx context.Context, id uuid.UUID, at time.Time) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	// Lock holds the API tokens of userID until the transaction ends, so
+	// that concurrent requests to create one count each other.
+	Lock(ctx context.Context, userID uuid.UUID) error
 	ListTokens(ctx context.Context, userID uuid.UUID) ([]*Session, error)
 	DeleteToken(ctx context.Context, userID, id uuid.UUID) (bool, error)
 	DeleteExpired(ctx context.Context, now time.Time) error
