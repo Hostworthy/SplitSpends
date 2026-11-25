@@ -13,7 +13,6 @@ import (
 
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
-	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 	"github.com/google/uuid"
 )
@@ -107,19 +106,24 @@ func TestExportPages(t *testing.T) {
 	}
 }
 
-// failingPages reads expenses from the database but fails the read with
-// number fail, counting from one.
+// failingPages serves one page of expenses each time a group is read from
+// the start, and fails read number fail, counting from one. Export uses
+// nothing else of the repository.
 type failingPages struct {
-	*repositories.Expenses
+	expense.Repository
+	page        []*expense.Expense
 	calls, fail int
 }
 
-func (f *failingPages) After(ctx context.Context, groupID uuid.UUID, last *expense.Expense, limit int) ([]*expense.Expense, error) {
+func (f *failingPages) After(_ context.Context, _ uuid.UUID, last *expense.Expense, _ int) ([]*expense.Expense, error) {
 	f.calls++
 	if f.calls == f.fail {
 		return nil, errors.New("connection lost")
 	}
-	return f.Expenses.After(ctx, groupID, last, limit)
+	if last != nil {
+		return nil, nil
+	}
+	return f.page, nil
 }
 
 // TestExportFailureAbortsDownload checks that an export which fails after
@@ -131,19 +135,15 @@ func TestExportFailureAbortsDownload(t *testing.T) {
 	g := s.group(t, ada.Token, "Flat")
 	groupID, adaID := uuid.MustParse(g.ID), uuid.MustParse(ada.User.ID)
 	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := range expense.ExportPage + 1 {
-		_, err := s.Services.Expenses.Create(context.Background(), adaID, expense.Input{GroupID: &groupID,
-			Description: fmt.Sprintf("Item %d", i), Currency: "EUR", Total: 1000, Date: start.AddDate(0, 0, i).Format(time.DateOnly),
-			Method: expense.MethodEqual, Payers: []expense.Payer{{UserID: adaID, Amount: 1000}},
-			Splits: []expense.SplitInput{{UserID: adaID}}})
-		if err != nil {
-			t.Fatal(err)
-		}
+	repo := &failingPages{fail: 4}
+	for i := range expense.ExportPage {
+		repo.page = append(repo.page, &expense.Expense{ID: uuid.New(), GroupID: &groupID, Date: start.AddDate(0, 0, i),
+			Description: fmt.Sprintf("Item %d", i), Kind: expense.KindExpense, Currency: "EUR", Total: 1000,
+			Shares: []expense.Share{{UserID: adaID, Paid: 1000, Owed: 1000}}})
 	}
 	// Two reads find the columns; the second page of rows fails after the
 	// first page was written out.
-	s.Services.Expenses = expense.NewService(expense.Deps{Repo: &failingPages{Expenses: repositories.NewExpenses(s.DB), fail: 4},
-		Groups: s.Services.Groups, Users: s.Services.Users})
+	s.Services.Expenses = expense.NewService(expense.Deps{Repo: repo, Groups: s.Services.Groups, Users: s.Services.Users})
 
 	req := s.request(t, http.MethodGet, platform.Prefix+"/groups/"+g.ID+"/export", nil)
 	req.Header.Set("Authorization", "Bearer "+ada.Token)
