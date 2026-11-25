@@ -298,6 +298,8 @@ Deleting hides a category from listings and from new expenses but never rewrites
 
 A receipt that no expense uses (deleted expenses count, since they can be restored) is removed by the cleanup job a day after its upload, image and all; attach it to an expense before then.
 
+Anyone who can see an expense can read its receipt, but only the person who uploaded a receipt may put it on an expense (`receiptId`); otherwise the request answers 422 `VALIDATION_ERROR` on `receiptId`. Editing an expense that already has someone else's receipt keeps it.
+
 Every AI request is billed to the host, so `POST /receipts/{receiptId}/scan` and `POST /ai/expense-draft` share a budget per account of `AI_RATE_LIMIT` requests an hour (30 unless the host changed it), and one server runs at most 8 of them at once. Beyond either limit the request answers 429 `RATE_LIMITED` without reaching the provider.
 
 ```jsonc

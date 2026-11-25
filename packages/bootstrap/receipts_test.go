@@ -10,9 +10,11 @@ import (
 
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
+	"github.com/google/uuid"
 )
 
 // TestReceiptCleanup checks that the jobs remove a receipt no expense has
@@ -65,5 +67,61 @@ func TestReceiptCleanup(t *testing.T) {
 			t.Fatalf("receipt %s must stay: %v", kept.ID, err)
 		}
 		_ = body.Close()
+	}
+}
+
+// TestReceiptAttach checks that only the uploader may put a receipt on an
+// expense, while everyone who sees the expense sees the receipt and may edit
+// the expense without losing it.
+func TestReceiptAttach(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	svc, repo := env.Services, repositories.NewReceipts(env.DB)
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+	r, err := svc.Receipts.Upload(ctx, ada, png)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bread := func(groupID uuid.UUID, receiptID *uuid.UUID, payer, other uuid.UUID) expense.Input {
+		return expense.Input{GroupID: &groupID, Description: "Bread", Currency: "EUR", Total: 300, Date: "2026-03-15",
+			Method: expense.MethodEqual, ReceiptID: receiptID,
+			Payers: []expense.Payer{{UserID: payer, Amount: 300}}, Splits: []expense.SplitInput{{UserID: payer}, {UserID: other}}}
+	}
+	e, err := svc.Expenses.Create(ctx, ada, bread(g.ID, &r.ID, ada, ben))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if owned, err := repo.Owned(ctx, r.ID, ben); err != nil || owned {
+		t.Fatalf("Ben did not upload the receipt: owned %v, %v", owned, err)
+	}
+	if visible, err := repo.Visible(ctx, r.ID, ben); err != nil || !visible {
+		t.Fatalf("Ben sees the receipt on the group's expense: visible %v, %v", visible, err)
+	}
+
+	name := "Trip"
+	trip, err := svc.Groups.Create(ctx, ben, group.CreateInput{Patch: group.Patch{Name: &name},
+		Members: []group.Invitee{{Email: "mal@example.com", Name: "Mal"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mal := trip.Members[0]
+	if mal == ben {
+		mal = trip.Members[1]
+	}
+	_, err = svc.Expenses.Create(ctx, ben, bread(trip.ID, &r.ID, ben, mal))
+	var invalid *errs.Error
+	if !errors.As(err, &invalid) || invalid.Kind != errs.KindValidation || invalid.Field != "receiptId" {
+		t.Fatalf("Ben may not share Ada's receipt with another group, got %v", err)
+	}
+
+	edit := bread(g.ID, &r.ID, ada, ben)
+	edit.Description = "Bread and butter"
+	updated, err := svc.Expenses.Update(ctx, ben, e.ID, edit)
+	if err != nil {
+		t.Fatalf("Ben edits the expense and keeps its receipt: %v", err)
+	}
+	if updated.ReceiptID == nil || *updated.ReceiptID != r.ID {
+		t.Fatalf("the receipt must stay on the expense, got %v", updated.ReceiptID)
 	}
 }

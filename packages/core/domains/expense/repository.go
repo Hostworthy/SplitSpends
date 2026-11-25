@@ -73,6 +73,7 @@ type CommentRepository interface {
 
 // Receipts checks that a receipt may be attached by a user.
 type Receipts interface {
+	// Owned reports whether userID uploaded the receipt.
 	Owned(ctx context.Context, receiptID, userID uuid.UUID) (bool, error)
 }
 

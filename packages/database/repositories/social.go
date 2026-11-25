@@ -248,15 +248,17 @@ func (r *Receipts) Get(ctx context.Context, id uuid.UUID) (*receipt.Receipt, err
 
 func (r *Receipts) Owned(ctx context.Context, id, userID uuid.UUID) (bool, error) {
 	var ok bool
+	err := r.db.Q(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM receipts WHERE id=$1 AND uploaded_by=$2)`, id, userID).Scan(&ok)
+	return ok, err
+}
+
+func (r *Receipts) Visible(ctx context.Context, id, userID uuid.UUID) (bool, error) {
+	var ok bool
 	err := r.db.Q(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM receipts WHERE id=$1 AND uploaded_by=$2)
 		OR EXISTS (SELECT 1 FROM expenses e WHERE e.receipt_id=$1 AND (
 			EXISTS (SELECT 1 FROM expense_shares s WHERE s.expense_id=e.id AND s.user_id=$2)
 			OR EXISTS (SELECT 1 FROM group_members m WHERE m.group_id=e.group_id AND m.user_id=$2 AND m.left_at IS NULL)))`, id, userID).Scan(&ok)
 	return ok, err
-}
-
-func (r *Receipts) Visible(ctx context.Context, id, userID uuid.UUID) (bool, error) {
-	return r.Owned(ctx, id, userID)
 }
 
 func (r *Receipts) Pending(ctx context.Context, userID uuid.UUID) (int, int64, error) {
