@@ -17,7 +17,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 )
 
-// rent is an AI reader that reads every request as rent of 1000 in the
+// rent is an AI assistant that reads every request as rent of 1000 in the
 // group's currency, naming nobody.
 type rent struct{}
 
@@ -33,7 +33,7 @@ func (rent) DraftExpense(context.Context, ports.DraftInput) (ports.DraftExtract,
 // percent or shares default split starts with that split and its values,
 // written as plain decimal text however they were entered.
 func TestDraftUsesGroupDefaultSplit(t *testing.T) {
-	s := newServer(t, bootstraptest.Options{Reader: rent{}})
+	s := newServer(t, bootstraptest.Options{Assistant: rent{}})
 	ada := s.signIn(t, "ada@example.com", "Ada")
 	ben := s.signIn(t, "ben@example.com", "Ben")
 	g := s.group(t, ada.Token, "Flat", "ben@example.com")
@@ -158,7 +158,7 @@ func TestUnreadableReceiptImage(t *testing.T) {
 	}
 }
 
-// currencies is an AI reader that remembers the currency each scan asked
+// currencies is an AI assistant that remembers the currency each scan asked
 // for.
 type currencies struct {
 	rent
@@ -173,8 +173,8 @@ func (c *currencies) ReadReceipt(_ context.Context, in ports.ReceiptInput) (port
 // TestScanReadsChunkedBody checks that a scan request sent without a
 // Content-Length, as streaming clients do, still has its currency read.
 func TestScanReadsChunkedBody(t *testing.T) {
-	reader := &currencies{}
-	s := newServer(t, bootstraptest.Options{Reader: reader})
+	assistant := &currencies{}
+	s := newServer(t, bootstraptest.Options{Assistant: assistant})
 	ada := s.signIn(t, "ada@example.com", "Ada").Token
 	rc := data[platform.Receipt](t, s.upload(t, platform.Prefix+"/receipts", ada, pixel(t)).want(t, http.StatusCreated))
 
@@ -188,7 +188,7 @@ func TestScanReadsChunkedBody(t *testing.T) {
 		t.Fatalf("the request must have no known length, has %d", req.ContentLength)
 	}
 	s.send(t, req, ada).want(t, http.StatusOK)
-	if len(reader.asked) != 1 || reader.asked[0] != "JPY" {
-		t.Fatalf("want one scan in JPY, got %q", reader.asked)
+	if len(assistant.asked) != 1 || assistant.asked[0] != "JPY" {
+		t.Fatalf("want one scan in JPY, got %q", assistant.asked)
 	}
 }

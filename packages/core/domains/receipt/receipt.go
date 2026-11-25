@@ -105,16 +105,16 @@ type ScanItem struct {
 
 // Service handles uploads and scans.
 type Service struct {
-	repo   Repository
-	blobs  ports.BlobStore
-	reader ports.Assistant
-	tx     ports.Tx
-	clock  clock.Clock
+	repo      Repository
+	blobs     ports.BlobStore
+	assistant ports.Assistant
+	tx        ports.Tx
+	clock     clock.Clock
 }
 
-// NewService builds a Service. reader may be nil when AI is disabled.
-func NewService(repo Repository, blobs ports.BlobStore, reader ports.Assistant, tx ports.Tx, c clock.Clock) *Service {
-	return &Service{repo: repo, blobs: blobs, reader: reader, tx: tx, clock: c}
+// NewService builds a Service. assistant may be nil when AI is disabled.
+func NewService(repo Repository, blobs ports.BlobStore, assistant ports.Assistant, tx ports.Tx, c clock.Clock) *Service {
+	return &Service{repo: repo, blobs: blobs, assistant: assistant, tx: tx, clock: c}
 }
 
 // Readable returns a validation error unless AI providers can read the
@@ -127,7 +127,7 @@ func (r *Receipt) Readable() error {
 }
 
 // AIEnabled reports whether scanning is available.
-func (s *Service) AIEnabled() bool { return s.reader != nil }
+func (s *Service) AIEnabled() bool { return s.assistant != nil }
 
 // Upload stores an image after sniffing its real type.
 func (s *Service) Upload(ctx context.Context, actor uuid.UUID, data []byte) (*Receipt, error) {
@@ -264,9 +264,9 @@ func (s *Service) Image(ctx context.Context, actor, id uuid.UUID) (*Receipt, []b
 	return r, data, nil
 }
 
-// Scan extracts line items with the AI reader.
+// Scan extracts line items with the AI assistant.
 func (s *Service) Scan(ctx context.Context, actor, id uuid.UUID, currency string) (*Scan, error) {
-	if s.reader == nil {
+	if s.assistant == nil {
 		return nil, errs.AIDisabled("AI features are not enabled on this server.")
 	}
 	// The hint goes into the provider's instructions, so only a known code
@@ -282,7 +282,7 @@ func (s *Service) Scan(ctx context.Context, actor, id uuid.UUID, currency string
 	if err != nil {
 		return nil, err
 	}
-	ext, err := s.reader.ReadReceipt(ctx, ports.ReceiptInput{Image: data, ContentType: r.ContentType, Currency: currency, Categories: expense.CategoryIDs()})
+	ext, err := s.assistant.ReadReceipt(ctx, ports.ReceiptInput{Image: data, ContentType: r.ContentType, Currency: currency, Categories: expense.CategoryIDs()})
 	if err != nil {
 		return nil, err
 	}

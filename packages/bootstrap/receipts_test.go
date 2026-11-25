@@ -255,7 +255,7 @@ func TestBlobs(t *testing.T) {
 	storagetest.Run(t, repositories.NewBlobs(env.DB))
 }
 
-// drafts is an AI reader that counts the drafts it is asked for.
+// drafts is an AI assistant that counts the drafts it is asked for.
 type drafts struct {
 	ports.Assistant
 	calls int
@@ -271,8 +271,8 @@ func (d *drafts) DraftExpense(context.Context, ports.DraftInput) (ports.DraftExt
 // group or the receipt reaches the AI provider.
 func TestDraftNeedsMembership(t *testing.T) {
 	ctx := context.Background()
-	reader := &drafts{}
-	env := bootstraptest.Open(t, bootstraptest.Options{Reader: reader})
+	assistant := &drafts{}
+	env := bootstraptest.Open(t, bootstraptest.Options{Assistant: assistant})
 	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
 	mal := env.SignIn(t, "mal@example.com", "Mal").User.ID
 	name := "Flat"
@@ -292,11 +292,11 @@ func TestDraftNeedsMembership(t *testing.T) {
 			t.Errorf("%+v: want not found, got %v", req, err)
 		}
 	}
-	if reader.calls != 0 {
-		t.Fatalf("nothing may reach the AI provider: %d drafts", reader.calls)
+	if assistant.calls != 0 {
+		t.Fatalf("nothing may reach the AI provider: %d drafts", assistant.calls)
 	}
-	if _, err := env.Services.Assist.Draft(ctx, ada, assist.Request{Text: "bread 3", GroupID: &g.ID, ReceiptID: &r.ID}); err != nil || reader.calls != 1 {
-		t.Fatalf("Ada drafts in her own group with her receipt: %v, %d drafts", err, reader.calls)
+	if _, err := env.Services.Assist.Draft(ctx, ada, assist.Request{Text: "bread 3", GroupID: &g.ID, ReceiptID: &r.ID}); err != nil || assistant.calls != 1 {
+		t.Fatalf("Ada drafts in her own group with her receipt: %v, %d drafts", err, assistant.calls)
 	}
 }
 
@@ -305,7 +305,7 @@ func TestDraftNeedsMembership(t *testing.T) {
 // attach it, so the draft can be saved as it is.
 func TestDraftKeepsOnlyOwnReceipt(t *testing.T) {
 	ctx := context.Background()
-	env := bootstraptest.Open(t, bootstraptest.Options{Reader: &drafts{}})
+	env := bootstraptest.Open(t, bootstraptest.Options{Assistant: &drafts{}})
 	svc := env.Services
 	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
 	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
@@ -347,8 +347,8 @@ func TestDraftKeepsOnlyOwnReceipt(t *testing.T) {
 // provider is asked.
 func TestDraftNeedsReadableImage(t *testing.T) {
 	ctx := context.Background()
-	reader := &drafts{}
-	env := bootstraptest.Open(t, bootstraptest.Options{Reader: reader})
+	assistant := &drafts{}
+	env := bootstraptest.Open(t, bootstraptest.Options{Assistant: assistant})
 	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
 	heic := append([]byte("\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic"), make([]byte, 64)...)
 	r, err := env.Services.Receipts.Upload(ctx, ada, heic)
@@ -359,7 +359,7 @@ func TestDraftNeedsReadableImage(t *testing.T) {
 	if e, ok := errs.As(err); !ok || e.Kind != errs.KindValidation || e.Field != "file" {
 		t.Fatalf("want a validation error on file, got %v", err)
 	}
-	if reader.calls != 0 {
-		t.Fatalf("a HEIC receipt must not reach the AI provider: %d drafts", reader.calls)
+	if assistant.calls != 0 {
+		t.Fatalf("a HEIC receipt must not reach the AI provider: %d drafts", assistant.calls)
 	}
 }

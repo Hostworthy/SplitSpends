@@ -36,8 +36,8 @@ type Options struct {
 	Now time.Time
 	// Sender delivers Web Push and holds its key; nil turns push off.
 	Sender push.Sender
-	// Reader reads receipts and drafts expenses; nil turns AI off.
-	Reader ports.Assistant
+	// Assistant reads receipts and drafts expenses; nil turns AI off.
+	Assistant ports.Assistant
 	// Blobs wraps the store images are kept in, which is on disk; nil
 	// keeps it as it is.
 	Blobs func(ports.BlobStore) ports.BlobStore
@@ -124,7 +124,7 @@ func Open(t testing.TB, o Options) *Env {
 	if o.Subscriptions != nil {
 		subscriptions = o.Subscriptions(subscriptions)
 	}
-	env.Services = bootstrap.Wire(cfg, bootstrap.Adapters{DB: env.DB, Email: env.Notifier, Blobs: blobs, Reader: o.Reader,
+	env.Services = bootstrap.Wire(cfg, bootstrap.Adapters{DB: env.DB, Email: env.Notifier, Blobs: blobs, Assistant: o.Assistant,
 		Push: o.Sender, Subscriptions: subscriptions, Clock: env.Clock})
 	return env
 }
