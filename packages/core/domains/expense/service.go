@@ -724,32 +724,49 @@ func (s *Service) DeleteComment(ctx context.Context, actor, id uuid.UUID) error 
 	return s.comments.Delete(ctx, id)
 }
 
-// RunRecurring creates due copies of recurring expenses. The schedule moves
-// to the newest copy so editing the latest expense edits the series. A series
-// that fails is skipped, so it never holds up the others; it stays due and is
-// tried again on the next run. The error joins a *Skipped for each one.
-func (s *Service) RunRecurring(ctx context.Context) (int, error) {
+// Batch is how many due series one RunRecurring pass takes on.
+const Batch = 100
+
+// Pass is what one RunRecurring pass did.
+type Pass struct {
+	// Series is how many due series it booked copies of or ended. While it
+	// is above zero, more series may be due.
+	Series int
+	// Copies is how many expenses it booked.
+	Copies int
+}
+
+// RunRecurring creates due copies of up to Batch recurring expenses. The
+// schedule moves to the newest copy so editing the latest expense edits the
+// series. A series that fails is skipped, so it never holds up the others; it
+// stays due and is tried again on the next run. The error joins a *Skipped
+// for each one.
+func (s *Service) RunRecurring(ctx context.Context) (Pass, error) {
 	today := clock.Today(s.clock)
-	due, err := s.repo.Due(ctx, today, 100)
+	due, err := s.repo.Due(ctx, today, Batch)
 	if err != nil {
-		return 0, err
+		return Pass{}, err
 	}
-	created := 0
+	var pass Pass
 	var skipped []error
 	for _, d := range due {
 		var n int
+		var done bool
 		err := s.tx.Do(ctx, func(ctx context.Context) error {
 			var err error
-			n, err = s.repeat(ctx, d, today)
+			n, done, err = s.repeat(ctx, d, today)
 			return err
 		})
 		if err != nil {
 			skipped = append(skipped, &Skipped{ID: d.ID, Err: err})
 			continue
 		}
-		created += n
+		if done {
+			pass.Series++
+		}
+		pass.Copies += n
 	}
-	return created, errors.Join(skipped...)
+	return pass, errors.Join(skipped...)
 }
 
 // Skipped is a recurring expense RunRecurring could not repeat.
@@ -763,47 +780,48 @@ func (s *Skipped) Error() string { return "expense.recurring.skipped: " + s.Err.
 func (s *Skipped) Unwrap() error { return s.Err }
 
 // repeat books the missed occurrences of one series inside the caller's
-// transaction and returns how many it booked. The row is claimed first, so
+// transaction and returns how many it booked, and whether it booked or ended
+// the series rather than leaving it to another runner or a deleted group. The row is claimed first, so
 // runners working at the same time book each occurrence once, and the copies
 // come from the stored row, so an edit saved after Due read it is kept. The
 // group is held before the claim, like lock does, so its members stay as
 // checked until the copies are saved.
-func (s *Service) repeat(ctx context.Context, due *Expense, today time.Time) (int, error) {
+func (s *Service) repeat(ctx context.Context, due *Expense, today time.Time) (int, bool, error) {
 	if due.GroupID != nil {
 		if err := s.groups.Hold(ctx, *due.GroupID); err != nil {
 			// A deleted group took its expenses with it.
 			if errs.Is(err, errs.KindNotFound) {
-				return 0, nil
+				return 0, false, nil
 			}
-			return 0, err
+			return 0, false, err
 		}
 	}
 	src, err := s.repo.Claim(ctx, due.ID, today)
 	if err != nil || src == nil {
-		return 0, err
+		return 0, false, err
 	}
 	now := s.clock.Now()
 	if err := s.repo.EndSeries(ctx, src.ID, now); err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	var g *group.Group
 	var ok bool
 	if src.GroupID != nil {
 		if g, err = s.groups.Lookup(ctx, *src.GroupID); err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		ok = members(g, src.Shares)
 	} else if ok, err = s.connected(ctx, src.CreatedBy, src.Shares); err != nil {
-		return 0, err
+		return 0, false, err
 	} else if ok {
 		if ok, err = s.linked(ctx, src.Shares); err != nil {
-			return 0, err
+			return 0, false, err
 		}
 	}
 	// Copies never bill someone who has left the group or is no longer
 	// connected; the series ends and the activity feed says why.
 	if !ok {
-		return 0, s.record(ctx, src.CreatedBy, activity.ExpenseStopped, src, g, nil)
+		return 0, true, s.record(ctx, src.CreatedBy, activity.ExpenseStopped, src, g, nil)
 	}
 	day := src.AnchorDay
 	if day == 0 {
@@ -819,13 +837,13 @@ func (s *Service) repeat(ctx context.Context, due *Expense, today time.Time) (in
 			c.Recurrence, c.NextDate, c.AnchorDay = src.Recurrence, &next, day
 		}
 		if err := s.repo.Create(ctx, &c); err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		if err := s.record(ctx, c.CreatedBy, activity.ExpenseCreated, &c, g, map[string]any{"recurring": true}); err != nil {
-			return 0, err
+			return 0, false, err
 		}
 	}
-	return len(dates), nil
+	return len(dates), true, nil
 }
 
 func truncate(s string, n int) string {

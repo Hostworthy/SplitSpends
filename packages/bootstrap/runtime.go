@@ -276,23 +276,25 @@ func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 	return errors.Join(recurring, sessions, invites, requests, receipts, quotas)
 }
 
-// passes bounds the recurring passes of one run; each books up to 100 series.
+// passes bounds the recurring passes of one run; each takes on up to
+// expense.Batch series.
 const passes = 50
 
-// recurring runs passes until nothing is due, logging each series that
-// failed.
+// recurring runs passes until one books or ends no series, logging each
+// series that failed. A pass that only ended series goes on, since more
+// may be due behind them.
 func (rt *Runtime) recurring(ctx context.Context) error {
 	var failed []error
 	for pass := 1; ; pass++ {
-		n, err := rt.Services.Expenses.RunRecurring(ctx)
+		done, err := rt.Services.Expenses.RunRecurring(ctx)
 		if err != nil {
 			failed = append(failed, err)
 			rt.failed(err)
 		}
-		if n > 0 {
-			rt.Log.Info("jobs.recurring.created", "count", n)
+		if done.Copies > 0 {
+			rt.Log.Info("jobs.recurring.created", "count", done.Copies)
 		}
-		if n == 0 {
+		if done.Series == 0 {
 			break
 		}
 		if pass == passes {
