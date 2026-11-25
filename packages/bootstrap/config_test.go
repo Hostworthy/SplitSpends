@@ -40,3 +40,33 @@ func TestTrustProxy(t *testing.T) {
 		}
 	}
 }
+
+// TestDatabaseConns rejects pool sizes that do not fit the driver's int32
+// instead of letting them wrap around.
+func TestDatabaseConns(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
+	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	for _, tc := range []struct {
+		value string
+		want  int32
+	}{
+		{"1", 1},
+		{"10", 10},
+		{"2147483647", 2147483647},
+	} {
+		t.Setenv("DATABASE_MAX_CONNS", tc.value)
+		c, err := bootstrap.LoadConfig()
+		if err != nil {
+			t.Fatalf("%q: %v", tc.value, err)
+		}
+		if c.DatabaseConns != tc.want {
+			t.Errorf("%q: want %d connections, got %d", tc.value, tc.want, c.DatabaseConns)
+		}
+	}
+	for _, value := range []string{"0", "-1", "ten", "2147483648", "4294967306"} {
+		t.Setenv("DATABASE_MAX_CONNS", value)
+		if _, err := bootstrap.LoadConfig(); err == nil || !strings.Contains(err.Error(), "DATABASE_MAX_CONNS") {
+			t.Errorf("%q: want a DATABASE_MAX_CONNS error, got %v", value, err)
+		}
+	}
+}

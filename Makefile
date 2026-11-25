@@ -16,6 +16,8 @@ BIN ?= bin
 EXE ?= $(shell go env GOEXE)
 GOLANGCI ?= GOTOOLCHAIN=go$(GO_VERSION) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
 GOVULNCHECK ?= GOTOOLCHAIN=go$(GO_VERSION) go run golang.org/x/vuln/cmd/govulncheck@v1.10.0
+# Shell scripts that shellcheck covers in `make lint` and CI.
+SHELL_SCRIPTS := $(wildcard scripts/*/*.sh) scripts/hooks/pre-commit
 
 help:
 	@echo "Targets:"
@@ -24,7 +26,7 @@ help:
 	@echo "  api               Run only the API (apps/api)"
 	@echo "  web               Run only the web app (apps/web) against the local API"
 	@echo "  check             lint, vuln and test"
-	@echo "  lint              gofmt, go vet, golangci-lint, dart format, flutter analyze, fonts"
+	@echo "  lint              gofmt, go vet, golangci-lint, dart format, flutter analyze, fonts, shellcheck"
 	@echo "  vuln              Known vulnerabilities in Go code and the standard library"
 	@echo "  fmt               Format Go and Dart and apply Dart fixes"
 	@echo "  hooks             Run quick format checks before every commit"
@@ -72,6 +74,7 @@ lint:
 	dart format --output=none --set-exit-if-changed $(DART_MEMBERS)
 	for d in $(DART_MEMBERS); do (cd $$d && flutter analyze) || exit 1; done
 	scripts/fonts/fallback.sh check
+	shellcheck $(SHELL_SCRIPTS)
 
 vuln:
 	$(GOVULNCHECK) ./...

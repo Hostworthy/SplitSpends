@@ -13,7 +13,7 @@ The server reads everything from the environment. Invalid or missing required va
 | `APP_NAME` | `Split Spends` | Name shown in emails and the app |
 | `WEB_DIR` | empty | Directory with the Flutter web build; the Docker image sets `/srv/web` |
 | `DATA_DIR` | `./data` | Where receipt images are stored |
-| `DATABASE_MAX_CONNS` | `10` | Connection pool size |
+| `DATABASE_MAX_CONNS` | `10` | Connection pool size, from 1 to 2147483647 |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `LOG_FORMAT` | `json` | `json` or `text` |
 | `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API from elsewhere, or `*` |
