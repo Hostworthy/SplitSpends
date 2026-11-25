@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
@@ -14,7 +12,7 @@ import 'package:splitspends/features/categories/presentation/category_picker.dar
 import 'package:splitspends/features/categories/presentation/providers.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/presentation/editor/expense_form.dart';
-import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/receipts/presentation/upload_receipt.dart';
 
 /// Description, category, amount, date, repeat, notes, receipt.
 class DetailsSection extends ConsumerStatefulWidget {
@@ -75,19 +73,18 @@ class _DetailsSectionState extends ConsumerState<DetailsSection> {
         ),
       ),
     );
-    if (source == null) return;
-    final file = await ImagePicker().pickImage(
-      source: source,
-      maxWidth: 2400,
-      imageQuality: 85,
-    );
-    if (file == null) return;
-    setState(() => _uploading = true);
+    if (source == null || !mounted) return;
     try {
-      final Uint8List bytes = await file.readAsBytes();
-      final receipt = await ref
-          .read(receiptsRepositoryProvider)
-          .upload(bytes, file.name, file.mimeType ?? 'image/jpeg');
+      final receipt = await uploadReceipt(
+        ref,
+        source,
+        onPicked: (_) {
+          if (mounted) setState(() => _uploading = true);
+        },
+      );
+      // The form is disposed with the editor, so leave it alone once this
+      // section is gone.
+      if (receipt == null || !mounted) return;
       form.update(() => form.receiptId = receipt.id);
     } catch (error) {
       if (mounted) showError(context, error);

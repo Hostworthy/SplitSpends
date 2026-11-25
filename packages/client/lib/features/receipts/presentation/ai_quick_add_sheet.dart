@@ -60,9 +60,10 @@ class _AiQuickAddSheetState extends ConsumerState<_AiQuickAddSheet> {
           extra: ExpenseEditorArgs(groupId: draft.groupId, draft: draft),
         ),
       );
-    } on ApiError catch (error) {
+    } catch (error) {
+      if (!mounted) return;
       setState(
-        () => _error = error.isAiDisabled
+        () => _error = error is ApiError && error.isAiDisabled
             ? 'AI is not enabled on this server.'
             : describeError(error),
       );

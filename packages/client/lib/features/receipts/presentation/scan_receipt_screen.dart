@@ -9,6 +9,7 @@ import 'package:splitspends/core/widgets/back_home_button.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/features/receipts/presentation/upload_receipt.dart';
 
 enum _Step { pick, uploading, reading, failed }
 
@@ -36,26 +37,21 @@ class _ScanReceiptScreenState extends ConsumerState<ScanReceiptScreen> {
   }
 
   Future<void> _pick(ImageSource source) async {
-    final file = await ImagePicker().pickImage(
-      source: source,
-      maxWidth: 2400,
-      imageQuality: 85,
-    );
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    setState(() {
-      _image = bytes;
-      _step = _Step.uploading;
-      _error = null;
-    });
     final repo = ref.read(receiptsRepositoryProvider);
     try {
-      final receipt = await repo.upload(
-        bytes,
-        file.name,
-        file.mimeType ?? 'image/jpeg',
+      final receipt = await uploadReceipt(
+        ref,
+        source,
+        onPicked: (bytes) {
+          if (!mounted) return;
+          setState(() {
+            _image = bytes;
+            _step = _Step.uploading;
+            _error = null;
+          });
+        },
       );
-      if (!mounted) return;
+      if (receipt == null || !mounted) return;
       setState(() => _step = _Step.reading);
       final draft = await repo.draft(
         _instructions.text.trim(),
@@ -70,10 +66,11 @@ class _ScanReceiptScreenState extends ConsumerState<ScanReceiptScreen> {
           draft: draft,
         ),
       );
-    } on ApiError catch (error) {
+    } catch (error) {
+      if (!mounted) return;
       setState(() {
         _step = _Step.failed;
-        _error = error.isAiDisabled
+        _error = error is ApiError && error.isAiDisabled
             ? 'AI receipt scanning is not enabled on this server.'
             : describeError(error);
       });
