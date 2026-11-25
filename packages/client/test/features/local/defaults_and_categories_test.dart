@@ -29,6 +29,49 @@ void main() {
   Matcher validation(String field) =>
       isA<ApiError>().having((e) => e.field, 'field', field);
 
+  test('a malformed custom id is rejected like the server', () async {
+    final categories = LocalCategoriesRepository(ledger);
+    for (final id in ['climbing', 'custom.1', 'general']) {
+      await expectLater(
+        categories.create(CategoryInput(id: id, name: 'Climbing')),
+        throwsA(
+          isA<ApiError>()
+              .having((e) => e.field, 'field', 'id')
+              .having(
+                (e) => e.message,
+                'message',
+                'Custom category ids look like custom.<uuid>.',
+              ),
+        ),
+        reason: id,
+      );
+    }
+    final made = await categories.create(
+      const CategoryInput(
+        id: ' CUSTOM.11111111-1111-4111-8111-11111111111A ',
+        name: 'Climbing',
+      ),
+    );
+    expect(made.id, 'custom.11111111-1111-4111-8111-11111111111a');
+  });
+
+  test('blank icon uses the default', () async {
+    final categories = LocalCategoriesRepository(ledger);
+    final made = await categories.create(
+      const CategoryInput(name: 'Climbing', icon: '', group: ' '),
+    );
+    expect(made.icon, 'label');
+    expect(made.group, 'Other');
+    final edited = await categories.update(
+      made.id,
+      const CategoryInput(icon: 'fitness_center'),
+    );
+    expect(
+      (await categories.update(edited.id, const CategoryInput(icon: ''))).icon,
+      'label',
+    );
+  });
+
   test('default split: 60/40 rent, stale after a join, cleared', () async {
     final groups = LocalGroupsRepository(ledger);
     var flat = await groups.create(

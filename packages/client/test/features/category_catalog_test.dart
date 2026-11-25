@@ -68,23 +68,62 @@ void main() {
 
     test('names are 1 to 40 characters, collapsed', () {
       final draft = CategoryDraft(name: '   ');
-      expect(draft.problem(groups), 'Give the category a name');
+      expect(draft.problem(groups)?.message, 'Give the category a name.');
       draft.name = '  Board   games ';
       expect(draft.problem(groups), isNull);
       expect(draft.cleanName, 'Board games');
       draft.name = 'x' * 41;
-      expect(draft.problem(groups), contains('40 characters'));
+      expect(draft.problem(groups)?.message, contains('40 characters'));
     });
 
     test('icon and group must be offered ones', () {
       expect(
-        CategoryDraft(name: 'A', icon: 'rocket').problem(groups),
-        'Choose an icon',
+        CategoryDraft(name: 'A', icon: 'rocket').problem(groups)?.message,
+        'Choose one of the offered icons.',
       );
       expect(
-        CategoryDraft(name: 'A', group: 'Hobbies').problem(groups),
-        'Choose a group',
+        CategoryDraft(name: 'A', group: 'Hobbies').problem(groups)?.message,
+        'Choose one of the category groups.',
       );
+    });
+
+    test('problems carry the API field', () {
+      expect(CategoryDraft().problem(groups), (
+        field: 'name',
+        message: 'Give the category a name.',
+      ));
+      expect(CategoryDraft(name: 'x' * 41).problem(groups), (
+        field: 'name',
+        message: 'Category names are limited to 40 characters.',
+      ));
+      expect(
+        CategoryDraft(name: 'A', icon: 'rocket').problem(groups)?.field,
+        'icon',
+      );
+      expect(
+        CategoryDraft(name: 'A', group: 'Hobbies').problem(groups)?.field,
+        'group',
+      );
+    });
+
+    test('a blank icon or group is the default', () {
+      final draft = CategoryDraft(name: 'A', icon: ' ', group: '');
+      expect(draft.icon, 'label');
+      expect(draft.group, 'Other');
+      expect(draft.problem(groups), isNull);
+    });
+
+    test('custom ids look like custom.<uuid>', () {
+      expect(customId.hasMatch(mine.id), isTrue);
+      for (final id in [
+        'custom.',
+        'custom.nope',
+        'custom.11111111111141118111111111111111',
+        'custom.11111111-1111-4111-8111-11111111111A',
+        'food.11111111-1111-4111-8111-111111111111',
+      ]) {
+        expect(customId.hasMatch(id), isFalse, reason: id);
+      }
     });
   });
 }
