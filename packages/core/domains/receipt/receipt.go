@@ -71,7 +71,9 @@ type Repository interface {
 	// Owned reports whether userID uploaded the receipt.
 	Owned(ctx context.Context, id, userID uuid.UUID) (bool, error)
 	// Pending counts the receipts userID uploaded that no expense uses,
-	// including deleted expenses, and their total size in bytes.
+	// including deleted expenses, and their total size in bytes. Inside a
+	// transaction it holds userID until the transaction ends, so concurrent
+	// uploads by the same person count each other.
 	Pending(ctx context.Context, userID uuid.UUID) (count int, size int64, err error)
 	// Stale lists up to limit receipts created before cutoff that no
 	// expense uses, including deleted expenses.
@@ -140,19 +142,24 @@ func (s *Service) Upload(ctx context.Context, actor uuid.UUID, data []byte) (*Re
 	if !ok {
 		return nil, errs.Validation("file", "Upload a JPEG, PNG, WebP or HEIC image.")
 	}
-	count, size, err := s.repo.Pending(ctx, actor)
-	if err != nil {
-		return nil, err
-	}
-	if count >= MaxPending || size+int64(len(data)) > MaxPendingSize {
-		return nil, errs.Conflict("You have too many receipts that are not on an expense yet. Add them to expenses, or try again tomorrow.")
-	}
 	now := s.clock.Now()
 	r := &Receipt{ID: uuid.New(), UploadedBy: actor, ContentType: ct, Size: int64(len(data)), CreatedAt: now}
 	r.StorageKey = "receipts/" + now.Format("2006/01") + "/" + r.ID.String() + "." + ext
 	// The row comes first so that Cleanup finds the image even when storing
 	// it fails halfway or the server stops before the row is removed again.
-	if err := s.repo.Create(ctx, r); err != nil {
+	// It is written in the transaction that counted the waiting receipts,
+	// so two uploads at once cannot both take the last place.
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		count, size, err := s.repo.Pending(ctx, actor)
+		if err != nil {
+			return err
+		}
+		if count >= MaxPending || size+int64(len(data)) > MaxPendingSize {
+			return errs.Conflict("You have too many receipts that are not on an expense yet. Add them to expenses, or try again tomorrow.")
+		}
+		return s.repo.Create(ctx, r)
+	})
+	if err != nil {
 		return nil, err
 	}
 	if err := s.blobs.Put(ctx, r.StorageKey, data, r.ContentType); err != nil {

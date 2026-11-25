@@ -260,9 +260,13 @@ func (r *Receipts) Visible(ctx context.Context, id, userID uuid.UUID) (bool, err
 }
 
 func (r *Receipts) Pending(ctx context.Context, userID uuid.UUID) (int, int64, error) {
+	q := r.db.Q(ctx)
+	if _, err := q.Exec(ctx, `SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE`, userID); err != nil {
+		return 0, 0, err
+	}
 	var count int
 	var size int64
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*), COALESCE(sum(size), 0) FROM receipts rc
+	err := q.QueryRow(ctx, `SELECT count(*), COALESCE(sum(size), 0) FROM receipts rc
 		WHERE rc.uploaded_by=$1 AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.receipt_id=rc.id)`, userID).Scan(&count, &size)
 	return count, size, err
 }

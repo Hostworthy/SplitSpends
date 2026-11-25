@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/packages/database"
 	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/Hostworthy/SplitSpends/packages/storage/storagetest"
 	"github.com/google/uuid"
@@ -201,6 +203,50 @@ func TestReceiptAccess(t *testing.T) {
 	}
 	check("deleted expense", shared, map[string]uuid.UUID{"Ada": ada, "Ben": ben}, true)
 	check("deleted expense", shared, map[string]uuid.UUID{"Cy": cy, "Mal": mal}, false)
+}
+
+// uploading is the receipt repository with a hook that runs right before a
+// receipt row is written.
+type uploading struct {
+	*repositories.Receipts
+	before func()
+}
+
+func (u uploading) Create(ctx context.Context, r *receipt.Receipt) error {
+	u.before()
+	return u.Receipts.Create(ctx, r)
+}
+
+func TestUploadQuotaIsAtomic(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+	for range receipt.MaxPending - 1 {
+		if _, err := env.Services.Receipts.Upload(ctx, ada, png); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One place is left. Right before it is taken, another upload arrives.
+	other := make(chan error, 1)
+	var once sync.Once
+	repo := uploading{repositories.NewReceipts(env.DB), func() {
+		once.Do(func() {
+			meanwhile(t, env, func() {
+				_, err := env.Services.Receipts.Upload(ctx, ada, png)
+				other <- err
+			})
+		})
+	}}
+	svc := receipt.NewService(repo, repositories.NewBlobs(env.DB), nil, database.NewTx(env.DB), env.Clock)
+	_, err := svc.Upload(ctx, ada, png)
+	late := <-other
+	if (err == nil) == (late == nil) {
+		t.Fatalf("exactly one upload may take the last place, got %v and %v", err, late)
+	}
+	if n, _, err := repositories.NewReceipts(env.DB).Pending(ctx, ada); err != nil || n != receipt.MaxPending {
+		t.Fatalf("want %d receipts waiting for an expense, got %d, %v", receipt.MaxPending, n, err)
+	}
 }
 
 // TestBlobs checks the PostgreSQL blob store keeps the blob store contract.
