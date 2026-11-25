@@ -56,6 +56,14 @@ func NewClient(base, token string, hc *http.Client) *Client {
 	return &Client{base: strings.TrimRight(base, "/"), token: token, http: &client, settings: &settings{now: time.Now}}
 }
 
+// with returns a client that calls the same API with token, sharing the
+// HTTP client and the cached configuration.
+func (c *Client) with(token string) *Client {
+	copied := *c
+	copied.token = token
+	return &copied
+}
+
 // APIError is a failed API call.
 type APIError struct {
 	Status int

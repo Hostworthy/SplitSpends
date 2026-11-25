@@ -372,4 +372,4 @@ Administrators and managers get an `approvals` notification (email and push) for
 
 ## MCP
 
-The MCP server speaks Streamable HTTP at `/mcp` on the same host (send the same `Authorization: Bearer <api token>` header) and stdio via the `splitspends-mcp` binary. See [MCP.md](MCP.md).
+The MCP server speaks Streamable HTTP at `/mcp` on the same host (send the same `Authorization: Bearer <api token>` header; without it `/mcp` answers 401) and stdio via the `splitspends-mcp` binary. See [MCP.md](MCP.md).
