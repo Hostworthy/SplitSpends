@@ -34,12 +34,13 @@ class ImportService {
   /// Where the data went on its last upload; cleared with the local copy.
   static const _uploadedKey = 'importedTo';
 
-  static ({String server, DateTime at})? _uploaded(Object? raw) {
+  static ({String server, DateTime at, String? user})? _uploaded(Object? raw) {
     if (raw is! Map) return null;
     final server = raw['serverUrl'];
     final at = DateTime.tryParse('${raw['at']}');
     if (server is! String || at == null) return null;
-    return (server: server, at: at);
+    final user = raw['userId'];
+    return (server: server, at: at, user: user is String ? user : null);
   }
 
   Future<JsonMap> payload() async {
@@ -99,16 +100,19 @@ class ImportService {
         await Stores.activity.record(a['id'] as String).put(txn, a);
       }
       final profile = await Stores.meta.record('profile').get(txn) as JsonMap?;
-      if (profile != null) {
-        final id = profile['id'] as String;
+      // The server maps the device owner to the account that received the
+      // upload.
+      final account = map[profile?['id']];
+      if (profile != null && account != null) {
         await Stores.meta.record('profile').put(txn, {
           ...profile,
-          'id': map[id] ?? id,
+          'id': account,
         });
       }
       await Stores.meta.record(_uploadedKey).put(txn, {
         'serverUrl': serverUrl,
         'at': _ledger.stamp(),
+        'userId': ?account,
       });
     });
   }
