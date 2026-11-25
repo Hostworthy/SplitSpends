@@ -1,6 +1,7 @@
 package transfer
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -52,5 +53,32 @@ func TestRemapExpenseRejectsCollidingPeople(t *testing.T) {
 		if de, ok := errs.As(err); !ok || de.Kind != errs.KindValidation || de.Field != field {
 			t.Errorf("%s: want a validation error on %s, got %v", field, field, err)
 		}
+	}
+}
+
+// TestWrapNamesTheItem checks that a domain error from one item of an
+// import names that item in its field and message, and that other errors
+// pass through unchanged.
+func TestWrapNamesTheItem(t *testing.T) {
+	cases := []struct {
+		name, path, label, field, message string
+		err                               error
+	}{
+		{"field and label", "expenses[3]", "Rent", "expenses[3].total", "“Rent”: Must be positive.", errs.Validation("total", "Must be positive.")},
+		{"no field", "groups[0]", "Flat", "groups[0]", "“Flat”: Taken.", errs.Conflict("Taken.")},
+		{"no label", "people[1]", "", "people[1].email", "Invalid email.", errs.Validation("email", "Invalid email.")},
+	}
+	for _, c := range cases {
+		de, ok := errs.As(wrap(c.err, c.path, c.label))
+		if !ok || de.Field != c.field || de.Message != c.message {
+			t.Errorf("%s: want %s %q, got %+v", c.name, c.field, c.message, de)
+		}
+		if orig, _ := errs.As(c.err); de.Kind != orig.Kind {
+			t.Errorf("%s: the kind must stay %s, got %s", c.name, orig.Kind, de.Kind)
+		}
+	}
+	plain := errors.New("database.down")
+	if got := wrap(plain, "people[0]", "Sam"); !errors.Is(got, plain) || got.Error() != plain.Error() {
+		t.Errorf("other errors must pass through, got %v", got)
 	}
 }
