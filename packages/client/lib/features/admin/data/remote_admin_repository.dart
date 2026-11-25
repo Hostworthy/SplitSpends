@@ -24,7 +24,7 @@ class RemoteAdminRepository implements AdminRepository {
       (await _api.getList(
         '/admin/requests',
         SignupRequest.fromJson,
-        query: {'status': status},
+        query: {'limit': 200, 'status': status},
       )).items;
 
   @override

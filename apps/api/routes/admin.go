@@ -53,7 +53,8 @@ func (a *API) updateSignupSettings(w http.ResponseWriter, r *http.Request) error
 }
 
 func (a *API) signupRequests(w http.ResponseWriter, r *http.Request) error {
-	reqs, err := a.svc.Admin.Requests(r.Context(), me(r), r.URL.Query().Get("status"))
+	limit, offset := page(r)
+	reqs, total, err := a.svc.Admin.Requests(r.Context(), me(r), r.URL.Query().Get("status"), limit, offset)
 	if err != nil {
 		return err
 	}
@@ -61,7 +62,7 @@ func (a *API) signupRequests(w http.ResponseWriter, r *http.Request) error {
 	for _, req := range reqs {
 		out = append(out, toRequest(req))
 	}
-	return list(w, out, len(out))
+	return list(w, out, total)
 }
 
 func (a *API) approveRequest(w http.ResponseWriter, r *http.Request) error {

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
@@ -55,6 +56,11 @@ func (s *Service) Approved(ctx context.Context, email string) (bool, error) {
 	return r != nil && r.Status == StatusApproved, err
 }
 
+// announceEvery spaces the notices about new requests: staff hear about a
+// request unless another one already waited from less than this ago, so a
+// burst of requests sends one notice instead of one each.
+const announceEvery = time.Hour
+
 // Request files (or refreshes) a request to join and tells administrators
 // and managers about new ones. It reports whether email was declined.
 func (s *Service) Request(ctx context.Context, email, name string) (bool, error) {
@@ -68,15 +74,25 @@ func (s *Service) Request(ctx context.Context, email, name string) (bool, error)
 	case r != nil && r.Status == StatusPending:
 		return false, nil
 	}
+	latest, pending, err := s.d.Requests.List(ctx, StatusPending, 1, 0)
+	if err != nil {
+		return false, err
+	}
+	if pending >= MaxPending {
+		return false, errs.RateLimited("Too many people are waiting to join right now. Try again in a few days.")
+	}
 	name = strings.TrimSpace(name)
 	if len([]rune(name)) > 80 {
 		name = string([]rune(name)[:80])
 	}
-	r = &Request{ID: uuid.New(), Email: email, Name: name, Status: StatusPending, RequestedAt: s.d.Clock.Now()}
+	now := s.d.Clock.Now()
+	r = &Request{ID: uuid.New(), Email: email, Name: name, Status: StatusPending, RequestedAt: now}
 	if err := s.d.Requests.Save(ctx, r); err != nil {
 		return false, err
 	}
-	s.announce(ctx, r)
+	if len(latest) == 0 || !now.Before(latest[0].RequestedAt.Add(announceEvery)) {
+		s.announce(ctx, r)
+	}
 	return false, nil
 }
 
@@ -142,10 +158,11 @@ func (s *Service) UpdateSettings(ctx context.Context, actor uuid.UUID, mode stri
 	return st, s.d.Settings.Save(ctx, st)
 }
 
-// Requests lists requests with status (pending when empty).
-func (s *Service) Requests(ctx context.Context, actor uuid.UUID, status string) ([]*Request, error) {
+// Requests lists a page of requests with status (pending when empty) and
+// how many there are in all.
+func (s *Service) Requests(ctx context.Context, actor uuid.UUID, status string, limit, offset int) ([]*Request, int, error) {
 	if _, err := s.actor(ctx, actor, true); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	st := Status(status)
 	switch st {
@@ -153,9 +170,17 @@ func (s *Service) Requests(ctx context.Context, actor uuid.UUID, status string) 
 		st = StatusPending
 	case StatusPending, StatusApproved, StatusDeclined:
 	default:
-		return nil, errs.Validation("status", "Use pending, approved or declined.")
+		return nil, 0, errs.Validation("status", "Use pending, approved or declined.")
 	}
-	return s.d.Requests.List(ctx, st)
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	return s.d.Requests.List(ctx, st, limit, max(offset, 0))
+}
+
+// Cleanup removes requests that waited longer than PendingTTL.
+func (s *Service) Cleanup(ctx context.Context) error {
+	return s.d.Requests.Expire(ctx, s.d.Clock.Now().Add(-PendingTTL))
 }
 
 // Approve lets the person sign in and emails them. Approvals count in

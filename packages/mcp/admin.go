@@ -72,7 +72,7 @@ type requestsArgs struct {
 }
 
 func (t *tools) listRequests(ctx context.Context, _ *sdk.CallToolRequest, in requestsArgs) (*sdk.CallToolResult, any, error) {
-	q := url.Values{}
+	q := url.Values{"limit": {"200"}}
 	if in.Status != "" {
 		q.Set("status", in.Status)
 	}
@@ -90,6 +90,9 @@ func (t *tools) listRequests(ctx context.Context, _ *sdk.CallToolRequest, in req
 			name = "(no name)"
 		}
 		fmt.Fprintf(&b, "- %s <%s>, %s since %s (id %s)\n", name, r.Email, r.Status, r.RequestedAt[:10], r.ID)
+	}
+	if list.Total > len(list.Items) {
+		fmt.Fprintf(&b, "Showing the newest %d of %d.\n", len(list.Items), list.Total)
 	}
 	return text(b.String()), nil, nil
 }

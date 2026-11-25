@@ -2,10 +2,12 @@ package bootstrap_test
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap"
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/admin"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
@@ -88,7 +90,7 @@ func TestAdministration(t *testing.T) {
 	if _, err := svc.Admin.UpdateSettings(ctx, ben.ID, "open", nil); !errs.Is(err, errs.KindForbidden) {
 		t.Fatalf("managers cannot change settings: %v", err)
 	}
-	pending, err := svc.Admin.Requests(ctx, ben.ID, "")
+	pending, _, err := svc.Admin.Requests(ctx, ben.ID, "", 50, 0)
 	must(err)
 	if len(pending) != 1 || pending[0].Email != "dan@else.org" || pending[0].Name != "Dan" {
 		t.Fatalf("pending = %+v", pending)
@@ -109,7 +111,7 @@ func TestAdministration(t *testing.T) {
 	if _, _, err := login("eve@else.org", "Eve"); !errs.Is(err, errs.KindPending) {
 		t.Fatal(err)
 	}
-	pending, _ = svc.Admin.Requests(ctx, ada.ID, "pending")
+	pending, _, _ = svc.Admin.Requests(ctx, ada.ID, "pending", 50, 0)
 	if _, err := svc.Admin.Decline(ctx, ada.ID, pending[0].ID); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +165,7 @@ func TestAdministration(t *testing.T) {
 			t.Fatalf("%s still holds a disabled account's address %d times", table, left)
 		}
 	}
-	approved, err := svc.Admin.Requests(ctx, ada.ID, "approved")
+	approved, _, err := svc.Admin.Requests(ctx, ada.ID, "approved", 50, 0)
 	must(err)
 	for _, r := range approved {
 		if r.Email == "dan@else.org" {
@@ -302,7 +304,7 @@ func pendingRequest(t *testing.T, env *bootstraptest.Env) (*user.User, *admin.Re
 	if _, err := svc.Auth.Verify(ctx, "dan@else.org", env.Notifier.Code("dan@else.org"), "Dan", "test"); !errs.Is(err, errs.KindPending) {
 		t.Fatalf("dan must wait for approval: %v", err)
 	}
-	pending, err := svc.Admin.Requests(ctx, ada.ID, "")
+	pending, _, err := svc.Admin.Requests(ctx, ada.ID, "", 50, 0)
 	if err != nil || len(pending) != 1 {
 		t.Fatalf("pending = %+v, %v", pending, err)
 	}
@@ -338,8 +340,104 @@ func TestApproveRefusedWhenClosed(t *testing.T) {
 	if sent := env.Notifier.Sent(); len(sent) != 0 {
 		t.Fatalf("nobody may be told they can sign in: %+v", sent)
 	}
-	pending, err := env.Services.Admin.Requests(ctx, ada.ID, "")
+	pending, _, err := env.Services.Admin.Requests(ctx, ada.ID, "", 50, 0)
 	if err != nil || len(pending) != 1 {
 		t.Fatalf("the request must stay pending: %+v %v", pending, err)
+	}
+}
+
+// ask files a request to join for email in approval mode.
+func ask(t *testing.T, env *bootstraptest.Env, email string) {
+	t.Helper()
+	ctx := context.Background()
+	if err := env.Services.Auth.RequestCode(ctx, email, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Services.Auth.Verify(ctx, email, env.Notifier.Code(email), "", "test"); !errs.Is(err, errs.KindPending) {
+		t.Fatalf("%s must wait for approval: %v", email, err)
+	}
+}
+
+func TestJoinRequestsNotifyStaffOnce(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User
+	if _, err := env.Services.Admin.UpdateSettings(ctx, ada.ID, "approval", nil); err != nil {
+		t.Fatal(err)
+	}
+	env.Notifier.Reset()
+	for _, email := range []string{"dan@else.org", "eve@else.org", "fay@else.org"} {
+		ask(t, env, email)
+		env.Clock.Add(time.Minute)
+	}
+	if got := env.Notifier.Subjects("ada@example.com"); len(got) != 1 {
+		t.Fatalf("staff must hear once about requests filed together, got %q", got)
+	}
+	env.Clock.Add(time.Hour)
+	ask(t, env, "gus@else.org")
+	if got := env.Notifier.Subjects("ada@example.com"); len(got) != 2 {
+		t.Fatalf("staff must hear about a request filed an hour after the last, got %q", got)
+	}
+}
+
+// fillRequests stores n pending requests filed a second apart, the newest
+// at the clock's time.
+func fillRequests(t *testing.T, env *bootstraptest.Env, n int) {
+	t.Helper()
+	if _, err := env.DB.Pool.Exec(context.Background(), `INSERT INTO signup_requests (id, email, name, status, requested_at)
+		SELECT gen_random_uuid(), 'person' || i || '@else.org', '', 'pending', $2::timestamptz - i * interval '1 second'
+		FROM generate_series(1, $1) AS i`, n, env.Clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJoinRequestsPage(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User
+	fillRequests(t, env, 600)
+	page, total, err := env.Services.Admin.Requests(ctx, ada.ID, "", 200, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 600 || len(page) != 100 || page[99].Email != "person600@else.org" {
+		t.Fatalf("offset 500 = %d requests of %d, want the oldest 100 of 600", len(page), total)
+	}
+}
+
+func TestJoinRequestsBounded(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User
+	if _, err := env.Services.Admin.UpdateSettings(ctx, ada.ID, "approval", nil); err != nil {
+		t.Fatal(err)
+	}
+	fillRequests(t, env, admin.MaxPending)
+	if err := env.Services.Auth.RequestCode(ctx, "dan@else.org", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Services.Auth.Verify(ctx, "dan@else.org", env.Notifier.Code("dan@else.org"), "Dan", "test"); !errs.Is(err, errs.KindRateLimited) {
+		t.Fatalf("a full queue must refuse new requests: %v", err)
+	}
+
+	// Undecided requests expire; decisions stay.
+	pending, _, err := env.Services.Admin.Requests(ctx, ada.ID, "", 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Services.Admin.Decline(ctx, ada.ID, pending[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	env.Clock.Add(admin.PendingTTL)
+	ask(t, env, "eve@else.org")
+	env.Clock.Add(time.Second)
+	rt := &bootstrap.Runtime{Config: env.Config, Log: slog.New(slog.DiscardHandler), Services: env.Services}
+	if err := rt.RunJobsOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for status, want := range map[string]int{"pending": 1, "declined": 1} {
+		if _, total, err := env.Services.Admin.Requests(ctx, ada.ID, status, 50, 0); err != nil || total != want {
+			t.Fatalf("%s requests after cleanup = %d, %v; want %d", status, total, err, want)
+		}
 	}
 }

@@ -16,6 +16,14 @@ import (
 // MaxAllowed bounds the allowed list.
 const MaxAllowed = 500
 
+// MaxPending bounds the requests waiting for a decision, so the queue stays
+// one administrators can work through.
+const MaxPending = 500
+
+// PendingTTL is how long a request waits for a decision before it is
+// removed. The person can ask again.
+const PendingTTL = 30 * 24 * time.Hour
+
 // Settings are the sign-up rules an administrator chose.
 type Settings struct {
 	auth.Signup
@@ -56,7 +64,11 @@ type RequestRepository interface {
 	Find(ctx context.Context, email string) (*Request, error)
 	Get(ctx context.Context, id uuid.UUID) (*Request, error)
 	Save(ctx context.Context, r *Request) error
-	List(ctx context.Context, status Status) ([]*Request, error)
+	// List returns a page of requests with status, newest first, and how
+	// many there are in all.
+	List(ctx context.Context, status Status, limit, offset int) ([]*Request, int, error)
+	// Expire removes pending requests filed before before.
+	Expire(ctx context.Context, before time.Time) error
 	// Delete removes the request of email, if there is one.
 	Delete(ctx context.Context, email string) error
 }

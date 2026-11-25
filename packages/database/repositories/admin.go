@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/admin"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
@@ -86,12 +87,23 @@ func (r *SignupRequests) Save(ctx context.Context, req *admin.Request) error {
 	return err
 }
 
-func (r *SignupRequests) List(ctx context.Context, status admin.Status) ([]*admin.Request, error) {
-	rows, err := r.db.Q(ctx).Query(ctx, `SELECT `+requestColumns+` FROM signup_requests WHERE status = $1 ORDER BY requested_at DESC LIMIT 500`, status)
-	if err != nil {
-		return nil, err
+func (r *SignupRequests) List(ctx context.Context, status admin.Status, limit, offset int) ([]*admin.Request, int, error) {
+	var total int
+	if err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM signup_requests WHERE status = $1`, status).Scan(&total); err != nil {
+		return nil, 0, err
 	}
-	return collect(rows, scanRequest)
+	rows, err := r.db.Q(ctx).Query(ctx, `SELECT `+requestColumns+` FROM signup_requests WHERE status = $1
+		ORDER BY requested_at DESC, id LIMIT $2 OFFSET $3`, status, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	list, err := collect(rows, scanRequest)
+	return list, total, err
+}
+
+func (r *SignupRequests) Expire(ctx context.Context, before time.Time) error {
+	_, err := r.db.Q(ctx).Exec(ctx, `DELETE FROM signup_requests WHERE status = 'pending' AND requested_at < $1`, before)
+	return err
 }
 
 func (r *SignupRequests) Delete(ctx context.Context, email string) error {
