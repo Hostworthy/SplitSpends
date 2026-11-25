@@ -122,9 +122,9 @@ func (s *Service) gather(ctx context.Context, actor uuid.UUID, only *uuid.UUID) 
 
 func (k *known) input(text, today, currency string) ports.DraftInput {
 	in := ports.DraftInput{Text: text, Today: today, Currency: currency,
-		Me: ports.Person{ID: k.me.ID.String(), Name: k.me.Name, Email: k.me.Email}, Categories: expense.CategoryIDs()}
+		Me: ports.Person{ID: k.me.ID.String(), Name: k.me.Name}, Categories: expense.CategoryIDs()}
 	for _, u := range k.people {
-		in.People = append(in.People, ports.Person{ID: u.ID.String(), Name: u.Name, Email: u.Email})
+		in.People = append(in.People, ports.Person{ID: u.ID.String(), Name: u.Name})
 	}
 	for _, g := range k.groups {
 		opt := ports.GroupOption{ID: g.ID.String(), Name: g.Name, Currency: g.DefaultCurrency}

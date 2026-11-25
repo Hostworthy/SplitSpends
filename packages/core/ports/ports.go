@@ -120,9 +120,8 @@ type DraftInput struct {
 
 // Person is a candidate participant the model may reference by id.
 type Person struct {
-	ID    string
-	Name  string
-	Email string
+	ID   string
+	Name string
 }
 
 // GroupOption is a group the user belongs to.
