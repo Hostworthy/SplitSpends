@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/core/auth/session.dart';
+import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/features/expenses/presentation/editor/expense_form.dart';
@@ -52,20 +53,37 @@ class WithSection extends ConsumerWidget {
         ),
       ),
     );
+    if (!context.mounted) return;
     if (picked is Group) {
       onGroupMembers(picked.members);
       form.setPeople(
         picked.members.map((m) => m.id).toList(),
         group: picked.id,
       );
-      form.update(() => form.currency = picked.defaultCurrency);
+      _setCurrency(context, ref, picked.defaultCurrency);
       final preset = picked.defaultSplit;
       if (preset != null) form.applyDefault(preset.method, preset.values);
     } else if (picked == false && form.groupId != null) {
       form.setPeople([form.meId]);
       final mine = ref.read(meProvider)?.defaultCurrency;
-      if (mine != null) form.update(() => form.currency = mine);
+      if (mine != null) _setCurrency(context, ref, mine);
     }
+  }
+
+  void _setCurrency(BuildContext context, WidgetRef ref, String code) {
+    if (code == form.currency) return;
+    final config = ref.read(configValueProvider);
+    final cleared = form.setCurrency(
+      code,
+      from: config.currency(form.currency).exponent,
+      to: config.currency(code).exponent,
+    );
+    if (!cleared) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Amounts are now in $code. Please enter them again.'),
+      ),
+    );
   }
 
   Future<void> _pickFriends(BuildContext context, WidgetRef ref) async {
