@@ -42,11 +42,12 @@ class _DetailsSectionState extends ConsumerState<DetailsSection> {
   }
 
   Future<void> _pickDate() async {
+    final range = Dates.pickable(form.date);
     final picked = await showDatePicker(
       context: context,
       initialDate: form.date,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      firstDate: range.first,
+      lastDate: range.last,
     );
     if (picked != null) form.update(() => form.date = picked);
   }
