@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -166,6 +167,58 @@ func TestNewValidates(t *testing.T) {
 	}
 	if s.Platform != PlatformWeb || s.Label != "My phone" || s.Endpoint != "https://push.example.com/x" {
 		t.Fatalf("unexpected normalisation: %+v", s)
+	}
+}
+
+func TestBlocked(t *testing.T) {
+	cases := []struct {
+		ip           string
+		allowPrivate bool
+		blocked      bool
+	}{
+		{"142.250.74.106", false, false},
+		{"2a00:1450:4001:80b::200a", false, false},
+		{"127.0.0.1", false, true},
+		{"::1", false, true},
+		{"10.0.0.8", false, true},
+		{"192.168.1.20", false, true},
+		{"100.101.102.103", false, true},
+		{"fd00::1", false, true},
+		{"169.254.169.254", false, true},
+		{"0.0.0.0", false, true},
+		{"192.168.1.20", true, false},
+		{"127.0.0.1", true, false},
+		{"169.254.169.254", true, true},
+		{"fe80::1", true, true},
+	}
+	for _, tc := range cases {
+		if got := Blocked(net.ParseIP(tc.ip), tc.allowPrivate); got != tc.blocked {
+			t.Errorf("Blocked(%s, %v) = %v, want %v", tc.ip, tc.allowPrivate, got, tc.blocked)
+		}
+	}
+}
+
+func TestRegisterRefusesBlockedAddresses(t *testing.T) {
+	svc, _, _ := setup()
+	ctx := context.Background()
+	me := uuid.New()
+	for _, endpoint := range []string{"https://127.0.0.1/x", "https://169.254.169.254/x", "https://[::1]:8443/x", "https://10.0.0.8/x"} {
+		if _, _, err := svc.Register(ctx, me, input(endpoint)); !errs.Is(err, errs.KindValidation) {
+			t.Errorf("%s: want a validation error, got %v", endpoint, err)
+		}
+	}
+	for _, endpoint := range []string{"https://push.example.com:8443/x", "https://142.250.74.106/x"} {
+		if _, _, err := svc.Register(ctx, me, input(endpoint)); err != nil {
+			t.Errorf("%s: %v", endpoint, err)
+		}
+	}
+
+	svc.settings.AllowPrivate = true
+	if _, _, err := svc.Register(ctx, me, input("https://192.168.1.20:2586/up")); err != nil {
+		t.Errorf("a LAN distributor should be allowed when private endpoints are: %v", err)
+	}
+	if _, _, err := svc.Register(ctx, me, input("https://169.254.169.254/x")); !errs.Is(err, errs.KindValidation) {
+		t.Errorf("metadata addresses stay refused, got %v", err)
 	}
 }
 
@@ -337,6 +390,33 @@ func TestTest(t *testing.T) {
 	}
 	if !strings.Contains(string(sender.payloads[0]), "Test notification") {
 		t.Fatalf("unexpected payload %s", sender.payloads[0])
+	}
+}
+
+// TestTestHasDeadline checks that a test push waits for at most a few send
+// timeouts, however many devices never answer.
+func TestTestHasDeadline(t *testing.T) {
+	svc, _, sender := setup()
+	svc.timeout = 100 * time.Millisecond
+	ctx := context.Background()
+	me := uuid.New()
+	for i := range MaxDevices {
+		endpoint := fmt.Sprintf("https://slow.example.com/%d", i)
+		sender.hang[endpoint] = true
+		if _, _, err := svc.Register(ctx, me, input(endpoint)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := time.Now()
+	r, err := svc.Test(ctx, me)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 3*svc.timeout+time.Second {
+		t.Fatalf("test push took %v", took)
+	}
+	if r.Failed != MaxDevices {
+		t.Fatalf("unexpected report %+v", r)
 	}
 }
 

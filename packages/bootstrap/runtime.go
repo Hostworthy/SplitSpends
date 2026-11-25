@@ -134,7 +134,7 @@ func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reade
 func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, reader ports.ReceiptReader, sender push.Sender,
 	c clock.Clock, cfg *Config, log *slog.Logger) *Services {
 	pushes := push.NewService(repositories.NewPushSubscriptions(db), sender, c,
-		push.Settings{PublicKey: cfg.VAPIDPublicKey, AppName: cfg.AppName, Link: cfg.BaseURL})
+		push.Settings{PublicKey: cfg.VAPIDPublicKey, AppName: cfg.AppName, Link: cfg.BaseURL, AllowPrivate: cfg.PushAllowPrivate})
 	var p pusher
 	if pushes.Enabled() {
 		p = pushes

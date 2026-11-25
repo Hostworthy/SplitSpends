@@ -43,6 +43,9 @@ type Settings struct {
 	AppName   string
 	// Link is where a notification without its own link opens.
 	Link string
+	// AllowPrivate lets endpoints point at private and loopback addresses,
+	// as the sender does (see Blocked).
+	AllowPrivate bool
 }
 
 // Service registers devices and delivers push notifications to them.
@@ -89,6 +92,9 @@ func (s *Service) Register(ctx context.Context, actor uuid.UUID, in Input) (*Sub
 	sub, err := New(actor, in, s.clock.Now())
 	if err != nil {
 		return nil, false, err
+	}
+	if !sub.Reachable(s.settings.AllowPrivate) {
+		return nil, false, errs.Validation("endpoint", "The push endpoint must not be a private or local address.")
 	}
 	known, err := s.repo.Exists(ctx, sub.Endpoint)
 	if err != nil {
@@ -154,11 +160,13 @@ func clip(s string, max int) string {
 }
 
 // Test sends a test notification to every device of the actor, ignoring
-// preferences, and waits for the result.
+// preferences, and waits for the result, at most a few send timeouts.
 func (s *Service) Test(ctx context.Context, actor uuid.UUID) (Report, error) {
 	if err := s.available(); err != nil {
 		return Report{}, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, 3*s.timeout)
+	defer cancel()
 	subs, err := s.repo.List(ctx, actor)
 	if err != nil {
 		return Report{}, err

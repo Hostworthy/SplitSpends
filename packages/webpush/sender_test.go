@@ -16,7 +16,6 @@ import (
 	"errors"
 	"io"
 	"math/big"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -245,34 +244,6 @@ func TestDefaultClientRefusesLoopback(t *testing.T) {
 	}
 	if len(got()) != 0 {
 		t.Fatal("the request must not reach a loopback endpoint")
-	}
-}
-
-func TestBlocked(t *testing.T) {
-	cases := []struct {
-		ip           string
-		allowPrivate bool
-		blocked      bool
-	}{
-		{"142.250.74.106", false, false},
-		{"2a00:1450:4001:80b::200a", false, false},
-		{"127.0.0.1", false, true},
-		{"::1", false, true},
-		{"10.0.0.8", false, true},
-		{"192.168.1.20", false, true},
-		{"100.101.102.103", false, true},
-		{"fd00::1", false, true},
-		{"169.254.169.254", false, true},
-		{"0.0.0.0", false, true},
-		{"192.168.1.20", true, false},
-		{"127.0.0.1", true, false},
-		{"169.254.169.254", true, true},
-		{"fe80::1", true, true},
-	}
-	for _, tc := range cases {
-		if got := Blocked(net.ParseIP(tc.ip), tc.allowPrivate); got != tc.blocked {
-			t.Errorf("Blocked(%s, %v) = %v, want %v", tc.ip, tc.allowPrivate, got, tc.blocked)
-		}
 	}
 }
 
