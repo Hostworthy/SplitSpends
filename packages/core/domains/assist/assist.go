@@ -287,6 +287,14 @@ func build(k *known, req Request, ext ports.DraftExtract, today, currency string
 		return out
 	}
 	participants := resolve(ext.ParticipantIDs)
+	// The group's default split (say rent 60/40) applies when the
+	// instructions name nobody, as it does in the editor and in MCP.
+	var preset *group.DefaultSplit
+	if g != nil && len(participants) == 0 {
+		if p := g.Effective(); p != nil && p.Method != group.SplitEqual {
+			preset = p
+		}
+	}
 	if len(participants) == 0 {
 		if g != nil {
 			participants = append(participants, g.Members...)
@@ -321,13 +329,21 @@ func build(k *known, req Request, ext ports.DraftExtract, today, currency string
 		}
 		if len(d.Items) == 0 {
 			d.Method = expense.MethodEqual
-			warn("Could not read any items, so the total is split equally.")
+			if preset != nil {
+				warn("Could not read any items, so the group's default split is used.")
+			} else {
+				warn("Could not read any items, so the total is split equally.")
+			}
 		}
 	}
 	if d.Method == expense.MethodEqual {
 		d.Total = amount(ext.Amount)
-		for _, id := range participants {
-			d.Splits = append(d.Splits, expense.SplitInput{UserID: id})
+		if preset != nil {
+			d.Method, d.Splits = expense.Method(preset.Method), defaults(preset, g.Members)
+		} else {
+			for _, id := range participants {
+				d.Splits = append(d.Splits, expense.SplitInput{UserID: id})
+			}
 		}
 	}
 	if d.Total == 0 {
@@ -357,6 +373,20 @@ func build(k *known, req Request, ext ports.DraftExtract, today, currency string
 		warn(note + ".")
 	}
 	return d, nil
+}
+
+// defaults returns the splits a percent or shares default gives the members,
+// in member order. A member whose value is zero takes no part.
+func defaults(preset *group.DefaultSplit, members []uuid.UUID) []expense.SplitInput {
+	splits := []expense.SplitInput{}
+	for _, id := range members {
+		v := preset.Values[id]
+		if r, ok := money.Decimal(v); ok && r.Sign() == 0 {
+			continue
+		}
+		splits = append(splits, expense.SplitInput{UserID: id, Value: v})
+	}
+	return splits
 }
 
 // unitRate is how much one unit of from buys in to, to four decimals.

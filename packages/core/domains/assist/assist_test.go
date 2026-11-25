@@ -2,6 +2,7 @@ package assist
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -149,6 +150,53 @@ func TestReceiptInAnotherCurrencyIsConverted(t *testing.T) {
 		Date: d.Date, Payers: d.Payers, Items: d.Items, Tax: d.Tax, Tip: d.Tip}
 	if _, err := expense.Normalize(in, time.Now()); err != nil {
 		t.Fatalf("converted draft does not validate: %v", err)
+	}
+}
+
+func TestDraftUsesGroupDefaultSplit(t *testing.T) {
+	split := func(method group.SplitMethod, values map[uuid.UUID]string) *group.DefaultSplit {
+		return &group.DefaultSplit{Method: method, Values: values}
+	}
+	cases := []struct {
+		name   string
+		preset *group.DefaultSplit
+		ext    ports.DraftExtract
+		method expense.Method
+		splits []expense.SplitInput
+		warn   string
+	}{
+		{"shares", split(group.SplitShares, map[uuid.UUID]string{ada: "2", ben: "1"}), ports.DraftExtract{Amount: "30"},
+			expense.MethodShares, []expense.SplitInput{{UserID: ada, Value: "2"}, {UserID: ben, Value: "1"}}, ""},
+		{"a member at zero takes no part", split(group.SplitPercent, map[uuid.UUID]string{ada: "100", ben: "0.00"}), ports.DraftExtract{Amount: "30"},
+			expense.MethodPercent, []expense.SplitInput{{UserID: ada, Value: "100"}}, ""},
+		{"no items read", split(group.SplitPercent, map[uuid.UUID]string{ada: "60", ben: "40"}),
+			ports.DraftExtract{Amount: "30", Items: []ports.DraftItem{{Name: "A", Amount: "-1"}}},
+			expense.MethodPercent, []expense.SplitInput{{UserID: ada, Value: "60"}, {UserID: ben, Value: "40"}}, "so the group's default split is used"},
+		{"people named in the instructions", split(group.SplitShares, map[uuid.UUID]string{ada: "2", ben: "1"}),
+			ports.DraftExtract{Amount: "30", ParticipantIDs: []string{ben.String()}},
+			expense.MethodEqual, []expense.SplitInput{{UserID: ben}}, ""},
+		{"stale default", split(group.SplitShares, map[uuid.UUID]string{ada: "2", cleo: "1"}), ports.DraftExtract{Amount: "30"},
+			expense.MethodEqual, []expense.SplitInput{{UserID: ada}, {UserID: ben}}, ""},
+		{"equal default", split(group.SplitEqual, nil), ports.DraftExtract{Amount: "30"},
+			expense.MethodEqual, []expense.SplitInput{{UserID: ada}, {UserID: ben}}, ""},
+	}
+	for _, c := range cases {
+		k := world()
+		k.groups[trip].DefaultSplit = c.preset
+		d, err := build(k, Request{GroupID: &trip}, c.ext, "2026-10-06", "USD", noRates)
+		must(t, err)
+		if d.Method != c.method || !slices.Equal(d.Splits, c.splits) {
+			t.Errorf("%s: got %s %+v, want %s %+v", c.name, d.Method, d.Splits, c.method, c.splits)
+			continue
+		}
+		if c.warn != "" && !strings.Contains(strings.Join(d.Warnings, " "), c.warn) {
+			t.Errorf("%s: warnings %v do not say %q", c.name, d.Warnings, c.warn)
+		}
+		in := expense.Input{GroupID: d.GroupID, Description: d.Description, Currency: d.Currency, Total: d.Total, Method: d.Method,
+			Date: d.Date, Payers: d.Payers, Splits: d.Splits}
+		if _, err := expense.Normalize(in, time.Now()); err != nil {
+			t.Errorf("%s: draft does not validate: %v", c.name, err)
+		}
 	}
 }
 
