@@ -17,7 +17,7 @@ Splitting expenses needs identity but not passwords. Everyone already has email,
 - The sign-up rules are applied when a code is requested and again when it is verified, inside the transaction that opens the session, so a code sent before an account was disabled, sign-up was closed or an invite link was revoked does not let anyone in. A code requested through an invite link remembers the link by its storage hash and checks it again. A disabled account becomes active again only when an administrator enables it.
 - `SIGNUP_MODE` decides who may create an account: `open`, `invite` (default: the first account plus anyone an existing user added) or `domain`.
 - A successful login creates an opaque random bearer token; only its SHA-256 hash is stored. Sessions expire after `SESSION_TTL_DAYS`.
-- Personal API tokens (`ss_` prefix) use the same table with kind `token`, never expire, and can be revoked. They exist for the MCP server and scripts.
+- Personal API tokens (`ss_` prefix) use the same table with kind `token`, never expire, and can be revoked. They exist for the MCP server and scripts. Only a signed-in session can create or revoke one, so a token given to a script cannot mint replacements for itself, and an account holds at most 20, counted under a per-account lock.
 - Invited users get a real user row immediately so expenses can reference them; their first login activates the account and keeps all history.
 
 ## Consequences
