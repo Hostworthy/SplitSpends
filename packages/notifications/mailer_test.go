@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -48,8 +49,8 @@ func TestLoginCodeFailureIsLoggedNotReturned(t *testing.T) {
 
 func TestLoginCodeDoesNotWaitForTheMailServer(t *testing.T) {
 	h := held{release: make(chan struct{}), sent: make(chan string, 1)}
-	n := &Notifier{sender: h, cfg: Config{AppName: "SplitSpends"}, log: slog.New(slog.DiscardHandler), queue: make(chan ports.Notification, 1)}
-	go n.work()
+	n := &Notifier{sender: h, cfg: Config{AppName: "SplitSpends"}, log: slog.New(slog.DiscardHandler), drain: time.Minute}
+	n.start(1)
 	defer n.Close()
 	if err := n.LoginCode(context.Background(), "ada@example.com", "123456", 10*time.Minute); err != nil {
 		t.Fatal(err)
@@ -57,5 +58,66 @@ func TestLoginCodeDoesNotWaitForTheMailServer(t *testing.T) {
 	close(h.release)
 	if to := <-h.sent; to != "ada@example.com" {
 		t.Fatalf("sent to %q", to)
+	}
+}
+
+// recording is a mail server that accepts every message and remembers it.
+type recording struct {
+	mu   sync.Mutex
+	sent []string
+}
+
+func (r *recording) Send(_ context.Context, to, _, _, _ string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sent = append(r.sent, to)
+	return nil
+}
+
+func TestCloseDeliversQueuedMessages(t *testing.T) {
+	var out bytes.Buffer
+	r := &recording{}
+	n := &Notifier{sender: r, cfg: Config{AppName: "SplitSpends"}, log: slog.New(slog.NewTextHandler(&out, nil)), drain: time.Minute}
+	n.start(8)
+	for _, to := range []string{"ada@example.com", "ben@example.com", "cy@example.com"} {
+		n.Notify(context.Background(), ports.Notification{To: to, Subject: "Rent"})
+	}
+	n.Close()
+	r.mu.Lock()
+	sent := len(r.sent)
+	r.mu.Unlock()
+	if sent != 3 {
+		t.Fatalf("Close must deliver every queued message first, sent %d of 3", sent)
+	}
+	n.Notify(context.Background(), ports.Notification{To: "dee@example.com", Subject: "Late"})
+	n.Close()
+	if !strings.Contains(out.String(), "notifications.queue.closed") {
+		t.Fatalf("a message after Close must be dropped and logged: %s", out.String())
+	}
+}
+
+// stuck is a mail server that takes a message and never answers.
+type stuck struct {
+	taken   chan struct{}
+	release chan struct{}
+}
+
+func (s stuck) Send(context.Context, string, string, string, string) error {
+	s.taken <- struct{}{}
+	<-s.release
+	return nil
+}
+
+func TestCloseGivesUpOnAStuckMailServer(t *testing.T) {
+	var out bytes.Buffer
+	s := stuck{taken: make(chan struct{}), release: make(chan struct{})}
+	defer close(s.release)
+	n := &Notifier{sender: s, cfg: Config{AppName: "SplitSpends"}, log: slog.New(slog.NewTextHandler(&out, nil)), drain: time.Millisecond}
+	n.start(2)
+	n.Notify(context.Background(), ports.Notification{To: "ada@example.com", Subject: "Rent"})
+	<-s.taken
+	n.Close()
+	if !strings.Contains(out.String(), "notifications.queue.drain.timeout") {
+		t.Fatalf("Close must stop waiting and say so: %s", out.String())
 	}
 }

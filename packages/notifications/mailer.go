@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
@@ -43,7 +44,18 @@ type Notifier struct {
 	cfg    Config
 	log    *slog.Logger
 	queue  chan ports.Notification
+	// drain bounds how long Close waits for queued messages, so a mail
+	// server that stopped answering cannot hold up shutdown.
+	drain time.Duration
+
+	mu     sync.RWMutex
+	closed bool
+	done   sync.WaitGroup
+	stop   chan struct{}
 }
+
+// drainTimeout is how long Close waits for the queue by default.
+const drainTimeout = 30 * time.Second
 
 // New builds a Notifier and starts its worker. Call Close on shutdown.
 func New(cfg Config, log *slog.Logger) (*Notifier, error) {
@@ -58,17 +70,53 @@ func New(cfg Config, log *slog.Logger) (*Notifier, error) {
 		}
 		sender = s
 	}
-	n := &Notifier{sender: sender, cfg: cfg, log: log, queue: make(chan ports.Notification, 256)}
-	go n.work()
+	n := &Notifier{sender: sender, cfg: cfg, log: log, drain: drainTimeout}
+	n.start(256)
 	return n, nil
 }
 
-// Close stops the worker after draining queued messages.
-func (n *Notifier) Close() { close(n.queue) }
+// start makes the queue and starts its worker.
+func (n *Notifier) start(size int) {
+	n.queue, n.stop = make(chan ports.Notification, size), make(chan struct{})
+	n.done.Add(1)
+	go n.work()
+}
+
+// Close stops the worker after draining queued messages, waiting at most
+// n.drain; later notifications are dropped.
+func (n *Notifier) Close() {
+	n.mu.Lock()
+	if n.closed {
+		n.mu.Unlock()
+		return
+	}
+	n.closed = true
+	close(n.queue)
+	n.mu.Unlock()
+	drained := make(chan struct{})
+	go func() {
+		n.done.Wait()
+		close(drained)
+	}()
+	timer := time.NewTimer(n.drain)
+	defer timer.Stop()
+	select {
+	case <-drained:
+	case <-timer.C:
+		close(n.stop)
+		n.log.Warn("notifications.queue.drain.timeout", "waited", n.drain)
+	}
+}
 
 func (n *Notifier) work() {
+	defer n.done.Done()
 	for msg := range n.queue {
-		n.deliver(msg)
+		select {
+		case <-n.stop:
+			n.log.Warn("notifications.queue.dropped", about(msg))
+		default:
+			n.deliver(msg)
+		}
 	}
 }
 
@@ -115,6 +163,12 @@ func (n *Notifier) Notify(_ context.Context, msg ports.Notification) {
 	}
 	if n.cfg.Sync {
 		n.deliver(msg)
+		return
+	}
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	if n.closed {
+		n.log.Warn("notifications.queue.closed", about(msg))
 		return
 	}
 	select {
