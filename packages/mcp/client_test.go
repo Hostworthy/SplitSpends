@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 )
@@ -156,5 +158,95 @@ func TestMinor(t *testing.T) {
 		if !tc.ok && err == nil {
 			t.Errorf("minor(%q, %s) = %d; want an error", tc.amount, tc.currency, got)
 		}
+	}
+}
+
+// configCalls counts the /config requests a fake API saw.
+func configCalls(a *api) int {
+	n := 0
+	for _, r := range a.requests() {
+		if r == "GET "+platform.Prefix+"/config" {
+			n++
+		}
+	}
+	return n
+}
+
+func TestConfigRetriesAfterFailure(t *testing.T) {
+	var failing atomic.Bool
+	failing.Store(true)
+	a, c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if failing.Load() {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		config(w, r)
+	})
+	if _, err := c.minor(context.Background(), "12.50", "USD"); err == nil {
+		t.Fatal("the first call should fail while the server is down")
+	}
+	failing.Store(false)
+	if got, err := c.minor(context.Background(), "12.50", "USD"); err != nil || got != 1250 {
+		t.Fatalf("after recovery: %d, %v", got, err)
+	}
+	if n := configCalls(a); n != 2 {
+		t.Fatalf("want two /config requests, got %d", n)
+	}
+}
+
+func TestConfigIgnoresCancelledCaller(t *testing.T) {
+	a, c := serve(t, config)
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := c.minor(cancelled, "1", "USD"); err == nil {
+		t.Fatal("a cancelled call should fail")
+	}
+	if got, err := c.minor(context.Background(), "1", "USD"); err != nil || got != 100 {
+		t.Fatalf("a cancelled first caller must not poison the cache: %d, %v", got, err)
+	}
+	if n := configCalls(a); n != 1 {
+		t.Fatalf("want one /config request, got %d", n)
+	}
+}
+
+func TestConfigCached(t *testing.T) {
+	a, c := serve(t, config)
+	now := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	c.settings.now = func() time.Time { return now }
+	for range 2 {
+		if _, err := c.minor(context.Background(), "1", "USD"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := configCalls(a); n != 1 {
+		t.Fatalf("want one /config request, got %d", n)
+	}
+	now = now.Add(configTTL)
+	if _, err := c.minor(context.Background(), "1", "USD"); err != nil {
+		t.Fatal(err)
+	}
+	if n := configCalls(a); n != 2 {
+		t.Fatalf("the configuration should be fetched again after %v, got %d requests", configTTL, n)
+	}
+}
+
+func TestConfigKeptWhenRefreshFails(t *testing.T) {
+	var failing atomic.Bool
+	_, c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if failing.Load() {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		config(w, r)
+	})
+	now := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	c.settings.now = func() time.Time { return now }
+	if _, err := c.minor(context.Background(), "1", "USD"); err != nil {
+		t.Fatal(err)
+	}
+	failing.Store(true)
+	now = now.Add(configTTL)
+	if got, err := c.minor(context.Background(), "1", "USD"); err != nil || got != 100 {
+		t.Fatalf("a failed refresh should keep the known configuration: %d, %v", got, err)
 	}
 }

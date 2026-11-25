@@ -23,13 +23,23 @@ import (
 
 // Client calls the SplitSpends HTTP API with a bearer token.
 type Client struct {
-	base  string
-	token string
-	http  *http.Client
+	base     string
+	token    string
+	http     *http.Client
+	settings *settings
+}
 
-	once   sync.Once
-	config *platform.Config
-	cfgErr error
+// configTTL is how long the instance configuration is reused, so
+// currencies added on the server appear without restarting the MCP server.
+const configTTL = time.Hour
+
+// settings caches the instance configuration. Only successful fetches are
+// kept: a failed one is retried by the next caller, with its own context.
+type settings struct {
+	mu      sync.Mutex
+	config  *platform.Config
+	fetched time.Time
+	now     func() time.Time
 }
 
 // NewClient builds a client. base is the server origin, such as
@@ -43,7 +53,7 @@ func NewClient(base, token string, hc *http.Client) *Client {
 	// Following a 301, 302 or 303 turns a POST or DELETE into a GET, whose
 	// answer would then read as the write succeeding.
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &Client{base: strings.TrimRight(base, "/"), token: token, http: &client}
+	return &Client{base: strings.TrimRight(base, "/"), token: token, http: &client, settings: &settings{now: time.Now}}
 }
 
 // APIError is a failed API call.
@@ -156,13 +166,24 @@ func send[T any](ctx context.Context, c *Client, method, path string, body any) 
 	return data, err
 }
 
-// Config returns the cached instance configuration.
+// Config returns the instance configuration, fetched at most once per
+// configTTL. When a refresh fails the previous configuration is kept.
 func (c *Client) Config(ctx context.Context) (*platform.Config, error) {
-	c.once.Do(func() {
-		cfg, err := get[platform.Config](ctx, c, "/config", nil)
-		c.config, c.cfgErr = &cfg, err
-	})
-	return c.config, c.cfgErr
+	s := c.settings
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.config != nil && s.now().Sub(s.fetched) < configTTL {
+		return s.config, nil
+	}
+	cfg, err := get[platform.Config](ctx, c, "/config", nil)
+	if err != nil {
+		if s.config != nil {
+			return s.config, nil
+		}
+		return nil, err
+	}
+	s.config, s.fetched = &cfg, s.now()
+	return s.config, nil
 }
 
 // exponent returns the minor-unit exponent of a currency.
