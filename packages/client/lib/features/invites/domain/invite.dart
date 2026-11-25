@@ -1,3 +1,4 @@
+import 'package:splitspends/core/api/address.dart';
 import 'package:splitspends/core/models/json.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 
@@ -60,27 +61,41 @@ class JoinLink {
   const JoinLink({required this.token, this.server});
 
   /// Accepts a full link (`https://split.example.com/join/<token>`) or a bare
-  /// token. Returns null for anything else.
+  /// token. Returns null for anything else, including plain `http://` links
+  /// outside the local network (see [origin]).
   static JoinLink? parse(String input) {
     final text = input.trim();
     if (text.isEmpty) return null;
     if (_token.hasMatch(text)) return JoinLink(token: text);
     final uri = Uri.tryParse(text.contains('://') ? text : 'https://$text');
-    // Only http and https have an origin; other schemes are not links to a
-    // server at all.
-    if (uri == null ||
-        !(uri.isScheme('http') || uri.isScheme('https')) ||
-        uri.host.isEmpty) {
-      return null;
-    }
+    if (uri == null) return null;
     final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
     final at = segments.lastIndexOf('join');
     if (at < 0 || at != segments.length - 2) return null;
     final token = segments.last;
     if (!_token.hasMatch(token)) return null;
-    final prefix = segments.sublist(0, at).join('/');
-    final origin = uri.origin + (prefix.isEmpty ? '' : '/$prefix');
-    return JoinLink(token: token, server: origin);
+    final server = _server(uri, segments.sublist(0, at));
+    return server == null ? null : JoinLink(token: token, server: server);
+  }
+
+  /// The server address a link names (such as its `?server=`), or null when
+  /// the app must not talk to it: anything but http and https, and plain
+  /// `http://` outside the local network, which would carry the sign-in
+  /// code and session unencrypted.
+  static String? origin(String address) {
+    final uri = Uri.tryParse(address.trim());
+    if (uri == null) return null;
+    return _server(uri, uri.pathSegments.where((s) => s.isNotEmpty).toList());
+  }
+
+  static String? _server(Uri uri, List<String> path) {
+    // Only http and https have an origin; other schemes are not links to a
+    // server at all.
+    if (!(uri.isScheme('http') || uri.isScheme('https')) || uri.host.isEmpty) {
+      return null;
+    }
+    final server = uri.origin + (path.isEmpty ? '' : '/${path.join('/')}');
+    return publicPlainServer(server) ? null : server;
   }
 
   static final _token = RegExp(r'^[A-Za-z0-9_-]{20,128}$');

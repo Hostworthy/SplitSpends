@@ -29,6 +29,29 @@ void main() {
       },
     );
 
+    test('accepts plain http only on the local network', () {
+      expect(JoinLink.parse('http://evil.example/join/$_token'), isNull);
+      expect(
+        JoinLink.parse('http://192.168.1.20:8080/join/$_token')!.server,
+        'http://192.168.1.20:8080',
+      );
+      expect(
+        JoinLink.parse('http://localhost/join/$_token')!.server,
+        'http://localhost',
+      );
+    });
+
+    test('checks a server address the same way', () {
+      expect(
+        JoinLink.origin('https://split.example.com/split/'),
+        'https://split.example.com/split',
+      );
+      expect(JoinLink.origin('http://localhost:8080'), 'http://localhost:8080');
+      expect(JoinLink.origin('http://evil.example'), isNull);
+      expect(JoinLink.origin('javascript:alert(1)'), isNull);
+      expect(JoinLink.origin('split.example.com'), isNull);
+    });
+
     test('accepts a bare token without a server', () {
       final link = JoinLink.parse(_token)!;
       expect(link.token, _token);
