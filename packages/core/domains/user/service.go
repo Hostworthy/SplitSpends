@@ -190,7 +190,7 @@ func (s *Service) Invite(ctx context.Context, actor, id uuid.UUID, email string)
 		return nil, err
 	}
 	if existing != nil {
-		return nil, errs.Conflict(existing.Name + " already has an account with that email. Add them directly instead.")
+		return nil, errs.Conflict("That email already belongs to an account. Add them by email instead.")
 	}
 	if err := s.spend(ctx, actor); err != nil {
 		return nil, err

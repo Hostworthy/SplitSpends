@@ -47,7 +47,19 @@ func toBalances(b money.Balances) []platform.Balance {
 // so every serializer can honour it.
 var pictures = true
 
+// toUser shows u to other people. Whether an administrator disabled someone
+// is between them and the administrators, so others see them as active.
 func toUser(u *user.User) platform.User {
+	out := toAccountUser(u)
+	if u.Status == user.StatusDisabled {
+		out.Status = string(user.StatusActive)
+	}
+	return out
+}
+
+// toAccountUser shows u with its real status, to itself and to
+// administrators.
+func toAccountUser(u *user.User) platform.User {
 	var email, picture *string
 	if u.Email != "" {
 		email = &u.Email
@@ -60,7 +72,7 @@ func toUser(u *user.User) platform.User {
 }
 
 func toMe(u *user.User) platform.Me {
-	return platform.Me{User: toUser(u), Timezone: u.Timezone, Gravatar: u.Gravatar, Role: string(u.Role), Notifications: platform.Notifications{
+	return platform.Me{User: toAccountUser(u), Timezone: u.Timezone, Gravatar: u.Gravatar, Role: string(u.Role), Notifications: platform.Notifications{
 		NotificationSwitches: platform.NotificationSwitches(u.Notifications.Switches),
 		Push:                 platform.NotificationSwitches(u.Notifications.Push),
 	}}
