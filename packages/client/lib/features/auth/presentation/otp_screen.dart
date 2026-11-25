@@ -90,9 +90,10 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
         return;
       }
       await _continue(login);
-    } on ApiError catch (error) {
+    } catch (error) {
+      if (!mounted) return;
       _code.clear();
-      if (error.isPendingApproval || error.isDeclined) {
+      if (error is ApiError && (error.isPendingApproval || error.isDeclined)) {
         setState(() => _waiting = error);
         return;
       }
@@ -131,7 +132,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('New code sent')));
       }
-    } on ApiError catch (error) {
+    } catch (error) {
+      if (!mounted) return;
       setState(() => _error = describeError(error));
     }
   }
@@ -154,7 +156,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       await _continue(
         LoginResult(token: pending.token, me: me, isNew: pending.isNew),
       );
-    } on ApiError catch (error) {
+    } catch (error) {
+      if (!mounted) return;
       setState(() => _error = describeError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -251,7 +254,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
             alignment: WrapAlignment.spaceBetween,
             children: [
               TextButton(
-                onPressed: () => context.go(Routes.login),
+                onPressed: _busy ? null : () => context.go(Routes.login),
                 child: const Text('Use another email'),
               ),
               TextButton(

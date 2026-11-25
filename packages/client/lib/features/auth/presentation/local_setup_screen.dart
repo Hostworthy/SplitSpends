@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/features/auth/presentation/auth_layout.dart';
@@ -31,10 +32,20 @@ class _LocalSetupScreenState extends ConsumerState<LocalSetupScreen> {
       setState(() => _error = 'Enter a name so splits can say who is who.');
       return;
     }
-    setState(() => _busy = true);
-    await ref
-        .read(sessionProvider.notifier)
-        .useLocally(name: name, currency: _currency);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref
+          .read(sessionProvider.notifier)
+          .useLocally(name: name, currency: _currency);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = describeError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
