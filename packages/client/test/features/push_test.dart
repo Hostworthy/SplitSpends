@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:sembast/sembast_memory.dart';
 
 import 'package:splitspends/app/app.dart';
 import 'package:splitspends/app/repositories.dart';
@@ -14,6 +15,7 @@ import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/app_config.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/models/user.dart';
+import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/features/push/domain/push_device.dart';
 import 'package:splitspends/features/push/domain/push_repository.dart';
 import 'package:splitspends/features/push/platform/push_platform.dart';
@@ -406,6 +408,70 @@ void main() {
 
       expect(repo.devices, isEmpty);
       expect(platform.subscribed, isNull);
+    });
+  });
+
+  group('start-up sync', () {
+    late Database db;
+    setUp(() async {
+      db = await databaseFactoryMemory.openDatabase(
+        'test-${DateTime.now().microsecondsSinceEpoch}',
+      );
+    });
+
+    /// Starts the app's providers once, as each app start does.
+    Future<void> start(_FakePlatform platform, _FakeRepository repo) async {
+      final container = ProviderContainer(
+        overrides: [
+          databaseProvider.overrideWith((ref) async => db),
+          sessionProvider.overrideWith(_ConnectedSession.new),
+          pushPlatformProvider.overrideWithValue(platform),
+          pushRepositoryProvider.overrideWithValue(repo),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(sessionProvider.future);
+      await container.read(pushSyncProvider.future);
+    }
+
+    test('sends a subscription the server has not had, once', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final repo = _FakeRepository();
+
+      await start(platform, repo);
+      expect(repo.devices.map((d) => d.endpoint), [_keys.endpoint]);
+
+      await start(platform, repo);
+      expect(repo.devices, hasLength(1));
+
+      platform.subscribed = const PushKeys(
+        endpoint: 'https://push.example.com/new',
+        p256dh: 'BPn',
+        auth: 'an',
+        platform: 'web',
+      );
+      await start(platform, repo);
+      expect(repo.devices.map((d) => d.endpoint), [
+        _keys.endpoint,
+        'https://push.example.com/new',
+      ]);
+    });
+
+    test('a device removed elsewhere is not added back', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final repo = _FakeRepository();
+      await start(platform, repo);
+      repo.devices.clear();
+
+      await start(platform, repo);
+
+      expect(repo.devices, isEmpty);
+    });
+
+    test('sends nothing without a subscription', () async {
+      final repo = _FakeRepository();
+      await start(_FakePlatform(), repo);
+      expect(repo.devices, isEmpty);
     });
   });
 
