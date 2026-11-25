@@ -754,6 +754,53 @@ void main() {
     );
   });
 
+  test('export matches the server: decimals and former members', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final group = await trip(groups);
+    final sam = group.members[1].id, alex = group.members[2].id;
+    await expenses.create(
+      ExpenseInput(
+        groupId: group.id,
+        description: 'Dinner',
+        category: 'food.dining',
+        currency: 'EUR',
+        total: 9000,
+        date: '2026-11-20',
+        payers: const [Payer(userId: meId, amount: 9000)],
+        splits: [
+          const SplitEntry(userId: meId),
+          SplitEntry(userId: sam),
+          SplitEntry(userId: alex),
+        ],
+      ),
+    );
+    now = now.add(const Duration(minutes: 1));
+    await expenses.recordPayment(
+      groupId: group.id,
+      fromUserId: sam,
+      toUserId: meId,
+      amount: 3000,
+      currency: 'EUR',
+      date: '2026-11-20',
+    );
+    await groups.removeMember(group.id, sam);
+
+    final lines = const LineSplitter().convert(
+      utf8.decode(await groups.export(group.id)),
+    );
+    expect(lines, hasLength(3));
+    expect(
+      lines[0],
+      'Date,Description,Category,Kind,Currency,Cost,Ada,Alex,Sam',
+    );
+    expect(
+      lines[1],
+      '2026-11-20,Dinner,food.dining,expense,EUR,90.00,60.00,-30.00,-30.00',
+    );
+    expect(lines[2], endsWith(',payment,EUR,30.00,-30.00,0.00,30.00'));
+  });
+
   test('export neutralises formulas in names and descriptions', () async {
     final groups = LocalGroupsRepository(ledger);
     final group = await groups.create(
@@ -785,6 +832,6 @@ void main() {
     ];
     expect(rows[0].sublist(6), ['Ada', "'=1+1"]);
     expect(rows[1][1], "'@SUM(A1)");
-    expect(rows[1].sublist(6), ['100', '-100']);
+    expect(rows[1].sublist(6), ['1.00', '-1.00']);
   });
 }

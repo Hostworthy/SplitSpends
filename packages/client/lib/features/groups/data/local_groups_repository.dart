@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:sembast/sembast.dart';
 
 import 'package:splitspends/core/api/api_error.dart';
+import 'package:splitspends/core/config/local_config.dart';
+import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends_ledger/ledger.dart';
 import 'package:splitspends/core/models/json.dart';
 import 'package:splitspends/core/storage/local_db.dart';
@@ -297,20 +299,36 @@ class LocalGroupsRepository implements GroupsRepository {
     });
   }
 
+  /// The server's CSV (GET /groups/{id}/export): oldest first, amounts in
+  /// the currency's decimals, one column per member and then one for each
+  /// former member who still appears in an expense.
   @override
   Future<Uint8List> export(String id) async {
     final db = await _ledger.db;
     final g = await _ledger.group(id, db);
     final people = await _ledger.directory(db);
-    final members = LocalLedger.memberIds(g);
-    String name(String uid) =>
-        _safeCell((people[uid]?['name'] as String?) ?? 'Someone');
+    String name(String uid) => (people[uid]?['name'] as String?) ?? 'Someone';
     String cell(Object? v) {
       final s = '${v ?? ''}';
-      return s.contains(RegExp(r'[",\r\n]'))
+      // Quoted exactly when Go's encoding/csv quotes.
+      return s.contains(RegExp(r'[",\r\n]')) ||
+              s.startsWith(RegExp(r'\s')) ||
+              s == r'\.'
           ? '"${s.replaceAll('"', '""')}"'
           : s;
     }
+
+    final list = [
+      for (final e in await _ledger.expenses(db))
+        if (e['groupId'] == id && !LocalLedger.isDeleted(e)) e,
+    ]..sort(_oldestFirst);
+    final members = LocalLedger.memberIds(g);
+    final former = <String>{
+      for (final e in list)
+        for (final s in (e['shares'] as List).cast<JsonMap>())
+          if (!members.contains(s['userId'])) s['userId'] as String,
+    }.toList()..sort((a, b) => name(a).compareTo(name(b)));
+    final columns = [...members, ...former];
 
     final rows = <List<Object?>>[
       [
@@ -319,31 +337,38 @@ class LocalGroupsRepository implements GroupsRepository {
         'Category',
         'Kind',
         'Currency',
-        'Total',
-        ...members.map(name),
+        'Cost',
+        for (final c in columns) _safeCell(name(c)),
       ],
     ];
-    final list = [
-      for (final e in await _ledger.expenses(db))
-        if (e['groupId'] == id && !LocalLedger.isDeleted(e)) e,
-    ]..sort((a, b) => (a['date'] as String).compareTo(b['date'] as String));
     for (final e in list) {
-      final net = {
-        for (final s in (e['shares'] as List).cast<JsonMap>())
-          s['userId']: (s['paid'] as int) - (s['owed'] as int),
-      };
+      final exponent = localConfig.currency(e['currency'] as String).exponent;
+      final net = <Object?, int>{};
+      for (final s in (e['shares'] as List).cast<JsonMap>()) {
+        net[s['userId']] =
+            (net[s['userId']] ?? 0) + (s['paid'] as int) - (s['owed'] as int);
+      }
       rows.add([
         e['date'],
         _safeCell((e['description'] as String?) ?? ''),
         _safeCell((e['category'] as String?) ?? ''),
         e['kind'],
         e['currency'],
-        e['total'],
-        for (final m in members) net[m] ?? 0,
+        Money.toPlain(e['total'] as int, exponent),
+        for (final c in columns) Money.toPlain(net[c] ?? 0, exponent),
       ]);
     }
     final csv = rows.map((r) => r.map(cell).join(',')).join('\n');
     return Uint8List.fromList(utf8.encode('$csv\n'));
+  }
+
+  /// The server's export order: date, then creation, then id.
+  static int _oldestFirst(JsonMap a, JsonMap b) {
+    for (final key in const ['date', 'createdAt', 'id']) {
+      final order = ('${a[key] ?? ''}').compareTo('${b[key] ?? ''}');
+      if (order != 0) return order;
+    }
+    return 0;
   }
 
   @override
