@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -137,5 +138,72 @@ func TestListActivityShortTimestamp(t *testing.T) {
 	}
 	if text, isError := toolText(t, answer); isError || !strings.Contains(text, "2024 Ada added Rent") {
 		t.Fatalf("got %q (isError %v)", text, isError)
+	}
+}
+
+func TestHTTPHandlerRequiresBearer(t *testing.T) {
+	a, c := serve(t, routes(nil))
+	srv := httptest.NewServer(HTTPHandler(c.base, "test", nil, slog.New(slog.DiscardHandler)))
+	t.Cleanup(srv.Close)
+	for _, header := range []string{"", "Bearer", "Bearer   ", "Basic c3M6dGVzdA==", "ss_test"} {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		if header != "" {
+			req.Header.Set("Authorization", header)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body platform.Error
+		_ = json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("WWW-Authenticate") != "Bearer" || body.Code != "UNAUTHORIZED" || body.Error == "" {
+			t.Errorf("%q: got %d %q %+v", header, resp.StatusCode, resp.Header.Get("WWW-Authenticate"), body)
+		}
+	}
+	if got := a.requests(); len(got) != 0 {
+		t.Fatalf("the API must see no request, saw %v", got)
+	}
+}
+
+func TestHTTPHandlerUsesEachCallersToken(t *testing.T) {
+	var mu sync.Mutex
+	tokens := map[string]bool{}
+	_, c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		tokens[r.Header.Get("Authorization")] = true
+		mu.Unlock()
+		routes(nil)(w, r)
+	})
+	srv := httptest.NewServer(HTTPHandler(c.base, "test", nil, slog.New(slog.DiscardHandler)))
+	t.Cleanup(srv.Close)
+	for _, token := range []string{"ss_ada", "ss_ben"} {
+		if status, answer := rpc(t, srv.URL, token, "tools/call", map[string]any{"name": "list_groups", "arguments": map[string]any{}}); status != http.StatusOK {
+			t.Fatalf("status %d: %v", status, answer)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !tokens["Bearer ss_ada"] || !tokens["Bearer ss_ben"] || len(tokens) != 2 {
+		t.Fatalf("each call should reach the API with its own token, saw %v", tokens)
+	}
+}
+
+func BenchmarkHTTPHandlerToolsList(b *testing.B) {
+	h := HTTPHandler("http://127.0.0.1:1", "test", nil, slog.New(slog.DiscardHandler))
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	b.ReportAllocs()
+	for b.Loop() {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Authorization", "Bearer ss_test")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			b.Fatalf("status %d: %s", w.Code, w.Body)
+		}
 	}
 }

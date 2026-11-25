@@ -8,7 +8,7 @@ In the app, open **Account → API tokens**, create a token and copy it (it star
 
 ## Option 1: Remote (Streamable HTTP)
 
-Every Split Spends server exposes `POST /mcp`. Send the token as a bearer header.
+Every Split Spends server exposes `POST /mcp`. Send the token as a bearer header. A request without one is answered `401 Unauthorized` with `WWW-Authenticate: Bearer` and the usual error envelope; an invalid or revoked token reaches the tools and comes back as a tool error asking for a new token.
 
 Claude Code:
 
