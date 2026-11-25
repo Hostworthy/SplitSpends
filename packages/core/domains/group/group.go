@@ -151,6 +151,7 @@ func (g *Group) HasMember(id uuid.UUID) bool {
 
 // Repository persists groups and memberships.
 type Repository interface {
+	// Create returns errs.Conflict when the id is taken.
 	Create(ctx context.Context, g *Group) error
 	// Get returns errs.NotFound when missing; Members is filled.
 	Get(ctx context.Context, id uuid.UUID) (*Group, error)

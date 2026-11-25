@@ -66,19 +66,30 @@ func (s *Service) Member(ctx context.Context, actor, id uuid.UUID) (*Group, erro
 	return g, nil
 }
 
+// existing returns the group with a client-chosen id when it already exists
+// and the actor belongs to it, so retried creates are idempotent. An id used
+// for someone else's group is a conflict.
+func (s *Service) existing(ctx context.Context, actor uuid.UUID, id *uuid.UUID) (*View, error) {
+	if id == nil || *id == uuid.Nil {
+		return nil, nil
+	}
+	g, err := s.repo.Get(ctx, *id)
+	if errs.Is(err, errs.KindNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !g.HasMember(actor) {
+		return nil, errs.Conflict("That group id is already in use.")
+	}
+	return s.view(ctx, actor, g)
+}
+
 // Create makes a group with the actor and invitees as members.
 func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (*View, error) {
-	if in.ID != nil && *in.ID != uuid.Nil {
-		g, err := s.repo.Get(ctx, *in.ID)
-		if err == nil {
-			if g.HasMember(actor) {
-				return s.view(ctx, actor, g)
-			}
-			return nil, errs.Conflict("That group id is already in use.")
-		}
-		if !errs.Is(err, errs.KindNotFound) {
-			return nil, err
-		}
+	if v, err := s.existing(ctx, actor, in.ID); v != nil || err != nil {
+		return v, err
 	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
@@ -146,6 +157,12 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: &g.ID, Kind: activity.GroupCreated,
 			Involved: g.Members, Data: map[string]any{"groupName": g.Name}})
 	})
+	if errs.Is(err, errs.KindConflict) {
+		// A request with the same id may have saved its group first.
+		if v, err := s.existing(ctx, actor, in.ID); v != nil || err != nil {
+			return v, err
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

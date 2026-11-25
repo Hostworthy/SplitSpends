@@ -47,13 +47,16 @@ func (r *Expenses) Create(ctx context.Context, e *expense.Expense) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Q(ctx).Exec(ctx, `INSERT INTO expenses (id, group_id, receipt_id, created_by, updated_by, created_at, updated_at, deleted_at,
+	tag, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO expenses (id, group_id, receipt_id, created_by, updated_by, created_at, updated_at, deleted_at,
 		total, tax, tip, date, next_date, kind, description, category, currency, notes, method, recurrence, items)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) ON CONFLICT (id) DO NOTHING`,
 		e.ID, e.GroupID, e.ReceiptID, e.CreatedBy, e.UpdatedBy, e.CreatedAt, e.UpdatedAt, e.DeletedAt,
 		e.Total, e.Tax, e.Tip, e.Date, e.NextDate, e.Kind, e.Description, e.Category, e.Currency, e.Notes, e.Method, e.Recurrence, items)
 	if err != nil {
 		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errs.Conflict("That expense id is already in use.")
 	}
 	return r.writeShares(ctx, e)
 }

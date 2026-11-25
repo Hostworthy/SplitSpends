@@ -290,7 +290,7 @@ Deleting hides a category from listings and from new expenses but never rewrites
 
 ### Offline Clients and Import
 
-`POST /groups`, `POST /expenses` and `POST /payments` accept an optional client-generated `id` (UUID). Repeating the request with the same `id` returns the existing object instead of creating a duplicate, so an offline outbox can retry safely. An `id` that belongs to something the caller cannot see returns 409.
+`POST /groups`, `POST /expenses` and `POST /payments` accept an optional client-generated `id` (UUID). Repeating the request with the same `id` returns the existing object as it is now (edited, or with `deleted: true` when it was deleted since) instead of creating a duplicate, so an offline outbox can retry safely, also while the first request is still running. An `id` that belongs to something the caller cannot see returns 409, and so does an `id` used for a different kind of object: an expense `id` sent to `/payments` or a payment `id` to `/expenses`, or a retry naming another `groupId`.
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
