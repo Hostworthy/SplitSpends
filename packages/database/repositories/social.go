@@ -207,14 +207,18 @@ func (r *Receipts) Create(ctx context.Context, rc *receipt.Receipt) error {
 	return err
 }
 
-func (r *Receipts) Get(ctx context.Context, id uuid.UUID) (*receipt.Receipt, error) {
+func scanReceipt(row pgx.Row) (*receipt.Receipt, error) {
 	var rc receipt.Receipt
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT id, uploaded_by, created_at, size, content_type, storage_key FROM receipts WHERE id=$1`, id).
-		Scan(&rc.ID, &rc.UploadedBy, &rc.CreatedAt, &rc.Size, &rc.ContentType, &rc.StorageKey)
+	err := row.Scan(&rc.ID, &rc.UploadedBy, &rc.CreatedAt, &rc.Size, &rc.ContentType, &rc.StorageKey)
+	return &rc, err
+}
+
+func (r *Receipts) Get(ctx context.Context, id uuid.UUID) (*receipt.Receipt, error) {
+	rc, err := scanReceipt(r.db.Q(ctx).QueryRow(ctx, `SELECT id, uploaded_by, created_at, size, content_type, storage_key FROM receipts WHERE id=$1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, errs.NotFound("Receipt")
 	}
-	return &rc, err
+	return rc, err
 }
 
 func (r *Receipts) Owned(ctx context.Context, id, userID uuid.UUID) (bool, error) {
@@ -228,4 +232,28 @@ func (r *Receipts) Owned(ctx context.Context, id, userID uuid.UUID) (bool, error
 
 func (r *Receipts) Visible(ctx context.Context, id, userID uuid.UUID) (bool, error) {
 	return r.Owned(ctx, id, userID)
+}
+
+func (r *Receipts) Pending(ctx context.Context, userID uuid.UUID) (int, int64, error) {
+	var count int
+	var size int64
+	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*), COALESCE(sum(size), 0) FROM receipts rc
+		WHERE rc.uploaded_by=$1 AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.receipt_id=rc.id)`, userID).Scan(&count, &size)
+	return count, size, err
+}
+
+func (r *Receipts) Stale(ctx context.Context, cutoff time.Time, limit int) ([]*receipt.Receipt, error) {
+	rows, err := r.db.Q(ctx).Query(ctx, `SELECT rc.id, rc.uploaded_by, rc.created_at, rc.size, rc.content_type, rc.storage_key FROM receipts rc
+		WHERE rc.created_at < $1 AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.receipt_id=rc.id)
+		ORDER BY rc.created_at LIMIT $2`, cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	return collect(rows, scanReceipt)
+}
+
+func (r *Receipts) Delete(ctx context.Context, id uuid.UUID) (bool, error) {
+	tag, err := r.db.Q(ctx).Exec(ctx, `DELETE FROM receipts rc WHERE rc.id=$1
+		AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.receipt_id=rc.id)`, id)
+	return tag.RowsAffected() == 1, err
 }
