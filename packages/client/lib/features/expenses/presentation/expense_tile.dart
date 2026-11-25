@@ -50,6 +50,8 @@ class ExpenseTile extends ConsumerWidget {
           '${groupName == null ? '' : ' · $groupName'}';
     }
 
+    if (expense.pending) subtitle = 'Waiting to sync · $subtitle';
+
     final mine = expense.myBalance;
     final label = mine > 0
         ? (expense.isPayment ? 'you paid' : 'you lent')

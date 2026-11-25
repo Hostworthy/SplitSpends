@@ -3,7 +3,8 @@ import 'package:splitspends_ledger/ledger.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 
 /// Builds the expense the server will create from [input], with the same
-/// rules, so offline writes can show a correct result right away.
+/// rules, so offline writes can show a correct result right away. The
+/// result is marked pending until the server has it.
 Expense optimisticExpense(
   ExpenseInput input, {
   required String id,
@@ -67,5 +68,36 @@ Expense optimisticExpense(
     'createdAt': now,
     'updatedAt': now,
     'myBalance': mine == null ? 0 : mine.paid - mine.owed,
-  });
+  }).copyWith(pending: true);
 }
+
+/// The payment the server will record: [fromUserId] paid [toUserId].
+Expense optimisticPayment({
+  required String id,
+  String? groupId,
+  required String fromUserId,
+  required String toUserId,
+  required int amount,
+  required String currency,
+  String? date,
+  String? notes,
+  required String meId,
+  required DateTime today,
+}) => optimisticExpense(
+  ExpenseInput(
+    groupId: groupId,
+    description: 'Payment',
+    currency: currency,
+    total: amount,
+    date: date ?? '',
+    category: 'payment',
+    notes: notes ?? '',
+    splitMethod: SplitMethod.exact,
+    payers: [Payer(userId: fromUserId, amount: amount)],
+    splits: [SplitEntry(userId: toUserId, value: '$amount')],
+  ),
+  id: id,
+  meId: meId,
+  today: today,
+  kind: 'payment',
+);

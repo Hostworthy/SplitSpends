@@ -8,10 +8,15 @@ import 'package:sembast/sembast_memory.dart';
 import 'package:splitspends/core/storage/local_db.dart';
 
 import 'package:splitspends/core/api/api_client.dart';
+import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/sync/outbox.dart';
 import 'package:splitspends/features/expenses/data/offline_expenses_repository.dart';
 import 'package:splitspends/features/expenses/data/remote_expenses_repository.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
+import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
+import 'package:splitspends/features/groups/data/offline_groups_repository.dart';
+import 'package:splitspends/features/groups/data/remote_groups_repository.dart';
+import 'package:splitspends/features/groups/domain/group.dart';
 
 const _ada = (server: 'http://server.test', user: 'ada');
 
@@ -131,6 +136,190 @@ void main() {
       throwsA(predicate((e) => e.toString().contains('add up to the total'))),
     );
     expect(await outbox.pending(), isEmpty);
+  });
+
+  group('offline reads show queued writes', () {
+    late _Cache cache;
+    late ApiClient client;
+    late OfflineExpensesRepository expenses;
+    late OfflineGroupsRepository groups;
+
+    const flat = 'g1';
+    final rent = {
+      'id': 'e0',
+      'groupId': flat,
+      'description': 'Rent',
+      'currency': 'EUR',
+      'total': 90000,
+      'date': '2026-11-01',
+      'shares': [
+        {'userId': 'me', 'paid': 90000, 'owed': 45000},
+        {'userId': 'sam', 'paid': 0, 'owed': 45000},
+      ],
+    };
+    const taxi = ExpenseInput(
+      groupId: flat,
+      description: 'Taxi',
+      currency: 'EUR',
+      total: 1200,
+      date: '2026-11-24',
+      payers: [Payer(userId: 'me', amount: 1200)],
+      splits: [
+        SplitEntry(userId: 'me'),
+        SplitEntry(userId: 'sam'),
+      ],
+    );
+
+    setUp(() async {
+      cache = _Cache();
+      client = ApiClient(
+        serverUrl: 'http://server.test',
+        token: 't',
+        cache: cache,
+        httpClient: MockClient((request) async {
+          if (!online) throw http.ClientException('offline');
+          final path = request.url.path;
+          final query = request.url.queryParameters;
+          if (path.endsWith('/expenses')) {
+            final found = query['groupId'] == flat && query['q'] == null;
+            return http.Response(
+              jsonEncode({
+                'items': [if (found) rent],
+                'total': found ? 1 : 0,
+              }),
+              200,
+            );
+          }
+          if (path.endsWith('/expenses/e0')) {
+            return http.Response(jsonEncode({'data': rent}), 200);
+          }
+          final archived = query['archived'] == 'true';
+          return http.Response(
+            jsonEncode({
+              'items': [
+                if (!archived) {'id': flat, 'name': 'Flat'},
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+      expenses = OfflineExpensesRepository(
+        RemoteExpensesRepository(client),
+        outbox,
+        meId: () => 'me',
+        onQueued: () {},
+      );
+      groups = OfflineGroupsRepository(
+        RemoteGroupsRepository(client),
+        outbox,
+        me: () => const User(id: 'me', name: 'Me'),
+        onQueued: () {},
+      );
+      // Seen once while online, so the API client has cached copies.
+      online = true;
+      for (final query in const [
+        ExpenseQuery(groupId: flat),
+        ExpenseQuery(groupId: flat, q: 'TAX'),
+        ExpenseQuery(groupId: 'g2'),
+      ]) {
+        await expenses.list(query);
+      }
+      await expenses.get('e0');
+      await groups.list();
+      await groups.list(archived: true);
+      online = false;
+    });
+
+    Future<List<String>> listed(ExpenseQuery query) async {
+      final page = await expenses.list(query);
+      expect(page.total, page.items.length);
+      return [for (final e in page.items) e.description];
+    }
+
+    test('a queued create is listed and can be opened', () async {
+      final created = await expenses.create(taxi);
+
+      expect(await listed(const ExpenseQuery(groupId: flat)), ['Taxi', 'Rent']);
+      expect(await listed(const ExpenseQuery(groupId: 'g2')), isEmpty);
+      expect(await listed(const ExpenseQuery(groupId: flat, q: 'TAX')), [
+        'Taxi',
+      ]);
+      final page = await expenses.list(const ExpenseQuery(groupId: flat));
+      expect(page.items.first.pending, isTrue);
+      expect(page.items.last.pending, isFalse);
+
+      final opened = await expenses.get(created.id);
+      expect(opened.description, 'Taxi');
+      expect(opened.myBalance, 600);
+    });
+
+    test('a queued edit and payment are shown', () async {
+      await expenses.update(
+        'e0',
+        const ExpenseInput(
+          groupId: flat,
+          description: 'Rent (November)',
+          currency: 'EUR',
+          total: 80000,
+          date: '2026-11-01',
+          payers: [Payer(userId: 'me', amount: 80000)],
+          splits: [
+            SplitEntry(userId: 'me'),
+            SplitEntry(userId: 'sam'),
+          ],
+        ),
+      );
+      await expenses.recordPayment(
+        groupId: flat,
+        fromUserId: 'sam',
+        toUserId: 'me',
+        amount: 40000,
+        currency: 'EUR',
+        date: '2026-11-25',
+      );
+
+      final page = await expenses.list(const ExpenseQuery(groupId: flat));
+      expect(
+        [for (final e in page.items) e.description],
+        ['Payment', 'Rent (November)'],
+      );
+      expect(page.items.first.isPayment, isTrue);
+      expect((await expenses.get('e0')).total, 80000);
+    });
+
+    test('a queued delete hides the expense', () async {
+      await expenses.delete('e0');
+
+      expect(await listed(const ExpenseQuery(groupId: flat)), isEmpty);
+      final opened = await expenses.get('e0');
+      expect(opened.deleted, isTrue);
+      expect(opened.pending, isTrue);
+    });
+
+    test('a queued group create is listed and can be opened', () async {
+      final created = await groups.create(const GroupInput(name: 'Trip'));
+
+      expect([for (final g in await groups.list()) g.name], ['Trip', 'Flat']);
+      expect(await groups.list(archived: true), isEmpty);
+      final opened = await groups.get(created.id);
+      expect(opened.name, 'Trip');
+      expect([for (final m in opened.members) m.id], ['me']);
+
+      // Its expenses too, although the server has never listed them.
+      await expenses.create(
+        ExpenseInput(
+          groupId: created.id,
+          description: taxi.description,
+          currency: taxi.currency,
+          total: taxi.total,
+          date: taxi.date,
+          payers: taxi.payers,
+          splits: taxi.splits,
+        ),
+      );
+      expect(await listed(ExpenseQuery(groupId: created.id)), ['Taxi']);
+    });
   });
 
   group('ownership', () {
@@ -326,4 +515,18 @@ void main() {
       expect((await outbox.pending()).single.label, 'e2');
     });
   });
+}
+
+/// Keeps GET responses in memory.
+class _Cache implements ResponseCache {
+  final _entries = <String, Object?>{};
+
+  @override
+  Future<Object?> read(String key) async => _entries[key];
+
+  @override
+  Future<void> write(String key, Object? body) async => _entries[key] = body;
+
+  @override
+  Future<void> clear() async => _entries.clear();
 }
