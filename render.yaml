@@ -20,6 +20,10 @@ services:
         sync: false
       - key: SIGNUP_MODE
         value: invite
+      # Your email: only this address can create the first account, which
+      # becomes the administrator.
+      - key: ADMIN_EMAIL
+        sync: false
       - key: BLOB_STORE
         value: postgres
       - key: TRUST_PROXY

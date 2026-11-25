@@ -202,6 +202,7 @@ resource "aws_lambda_function" "app" {
       TRUST_PROXY                  = "2"
       SIGNUP_MODE                  = var.signup_mode
       SIGNUP_ALLOWED_DOMAINS       = var.signup_allowed_domains
+      ADMIN_EMAIL                  = var.admin_email
       BLOB_STORE                   = "s3"
       S3_BUCKET                    = aws_s3_bucket.receipts.id
       S3_REGION                    = var.region

@@ -43,6 +43,12 @@ variable "signup_mode" {
   default = "invite"
 }
 
+variable "admin_email" {
+  description = "Your email address: only it can create the first account, which becomes the administrator. Empty lets whoever signs in first take it."
+  type        = string
+  default     = ""
+}
+
 variable "smtp" {
   type = object({
     host     = string
