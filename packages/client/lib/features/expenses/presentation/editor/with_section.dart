@@ -147,7 +147,11 @@ class WithSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final groups = ref.watch(groupsProvider).value ?? const <Group>[];
-    final group = groups.where((g) => g.id == form.groupId).firstOrNull;
+    final groupId = form.groupId;
+    // The editor loads its group itself; the list may not have it yet.
+    final group =
+        groups.where((g) => g.id == groupId).firstOrNull ??
+        (groupId == null ? null : ref.watch(groupProvider(groupId)).value);
     final text = Theme.of(context).textTheme;
     final others = form.people.where((id) => id != form.meId).toList();
     return Padding(
