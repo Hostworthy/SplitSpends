@@ -67,6 +67,23 @@ func (s *Service) load(ctx context.Context, actor, id uuid.UUID) (*Expense, *gro
 	if err != nil {
 		return nil, nil, err
 	}
+	return s.visible(ctx, actor, e)
+}
+
+// lock is load for a change, inside the caller's transaction. The row stays
+// locked until the change is saved, so the checks made on it still hold and
+// concurrent changes apply one after the other instead of overwriting each
+// other.
+func (s *Service) lock(ctx context.Context, actor, id uuid.UUID) (*Expense, *group.Group, error) {
+	e, err := s.repo.Lock(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	return s.visible(ctx, actor, e)
+}
+
+// visible returns e and its group if the actor may see it.
+func (s *Service) visible(ctx context.Context, actor uuid.UUID, e *Expense) (*Expense, *group.Group, error) {
 	if e.GroupID == nil {
 		if !e.Involves(actor) {
 			return nil, nil, errs.NotFound("Expense")
@@ -280,37 +297,41 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expen
 
 // Update replaces an expense. The group cannot change.
 func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*Expense, error) {
-	e, _, err := s.load(ctx, actor, id)
-	if err != nil {
-		return nil, err
-	}
-	if e.DeletedAt != nil {
-		return nil, errs.Conflict("Restore the expense before editing it.")
-	}
-	if e.Kind == KindPayment {
-		in.Method, in.Category = MethodExact, PaymentCategory
-	}
-	in.GroupID = e.GroupID
-	if in.Currency == "" {
-		in.Currency = e.Currency
-	}
-	if in.Date == "" {
-		in.Date = e.Date.Format(time.DateOnly)
-	}
-	n, err := Normalize(in, clock.Today(s.clock))
-	if err != nil {
-		return nil, err
-	}
-	if err := s.category(ctx, actor, n.Category, e.Category); err != nil {
-		return nil, err
-	}
-	g, err := s.authorize(ctx, actor, e.GroupID, n.Shares, in.ReceiptID)
-	if err != nil {
-		return nil, err
-	}
-	now := s.clock.Now()
-	s.build(e, n, actor, now)
-	err = s.tx.Do(ctx, func(ctx context.Context) error {
+	var e *Expense
+	var g *group.Group
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		var err error
+		if e, _, err = s.lock(ctx, actor, id); err != nil {
+			return err
+		}
+		if e.DeletedAt != nil {
+			return errs.Conflict("Restore the expense before editing it.")
+		}
+		// Clients see updatedAt to the second, so that is what is compared.
+		if in.UpdatedAt != nil && !e.UpdatedAt.Truncate(time.Second).Equal(in.UpdatedAt.Truncate(time.Second)) {
+			return errs.Conflict("Someone else changed this expense. Reload it and try again.")
+		}
+		if e.Kind == KindPayment {
+			in.Method, in.Category = MethodExact, PaymentCategory
+		}
+		in.GroupID = e.GroupID
+		if in.Currency == "" {
+			in.Currency = e.Currency
+		}
+		if in.Date == "" {
+			in.Date = e.Date.Format(time.DateOnly)
+		}
+		n, err := Normalize(in, clock.Today(s.clock))
+		if err != nil {
+			return err
+		}
+		if err := s.category(ctx, actor, n.Category, e.Category); err != nil {
+			return err
+		}
+		if g, err = s.authorize(ctx, actor, e.GroupID, n.Shares, in.ReceiptID); err != nil {
+			return err
+		}
+		s.build(e, n, actor, s.clock.Now())
 		if err := s.repo.Update(ctx, e); err != nil {
 			return err
 		}
@@ -344,31 +365,36 @@ func (s *Service) List(ctx context.Context, f Filter) ([]*Expense, int, error) {
 }
 
 func (s *Service) setDeleted(ctx context.Context, actor, id uuid.UUID, deleted bool) (*Expense, error) {
-	e, g, err := s.load(ctx, actor, id)
-	if err != nil {
-		return nil, err
-	}
-	if (e.DeletedAt != nil) == deleted {
-		return e, nil
-	}
-	if !deleted && g != nil && !members(g, e.Shares) {
-		return nil, errs.Conflict("Someone in this expense has left the group, so it cannot be restored.")
-	}
-	now := s.clock.Now()
-	kind := activity.ExpenseRestored
-	e.DeletedAt = nil
-	if deleted {
-		kind = activity.ExpenseDeleted
-		e.DeletedAt = &now
-	}
-	e.UpdatedBy, e.UpdatedAt = actor, now
-	err = s.tx.Do(ctx, func(ctx context.Context) error {
+	var e *Expense
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		var g *group.Group
+		var err error
+		if e, g, err = s.lock(ctx, actor, id); err != nil {
+			return err
+		}
+		if (e.DeletedAt != nil) == deleted {
+			return nil
+		}
+		if !deleted && g != nil && !members(g, e.Shares) {
+			return errs.Conflict("Someone in this expense has left the group, so it cannot be restored.")
+		}
+		now := s.clock.Now()
+		kind := activity.ExpenseRestored
+		e.DeletedAt = nil
+		if deleted {
+			kind = activity.ExpenseDeleted
+			e.DeletedAt = &now
+		}
+		e.UpdatedBy, e.UpdatedAt = actor, now
 		if err := s.repo.Update(ctx, e); err != nil {
 			return err
 		}
 		return s.record(ctx, actor, kind, e, g, nil)
 	})
-	return e, err
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
 }
 
 // Delete soft-deletes an expense.

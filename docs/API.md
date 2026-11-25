@@ -116,6 +116,8 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
 A recurring expense repeats on its `recurrence`: a background job books each occurrence as a new expense, and the schedule moves to the newest copy, so editing the latest expense edits the series. When a series has fallen behind, only the 12 most recent missed occurrences are booked and older ones are skipped. A series ends instead of repeating once someone in it has left the group (or, outside groups, is no longer connected to the person who created it); that is recorded as `expense.stopped`.
 
+An update may send `updatedAt`: the `updatedAt` of the expense as the client last saw it, unchanged. When the expense has been changed (or deleted) since, the update is refused with 409 `CONFLICT` and nothing is saved, so one person's edit never silently replaces another's; reload the expense and edit again. Without `updatedAt` the update always replaces the current version. Updating a deleted expense is a 409 either way.
+
 `category` is a built-in id or a custom category id (`custom.<uuid>`). A custom id must be one of the caller's own live categories; an update may also keep the category the expense already has, even when it belongs to another member or was deleted.
 
 ### Default Split
@@ -222,7 +224,7 @@ People without an account follow the link, request a login code with `inviteToke
 | GET | `/expenses` | `?groupId=&friendId=&q=&category=&from=&to=&kind=&includeDeleted=` | List of `Expense`, newest `date` first |
 | POST | `/expenses` | `{ id?, groupId?, description, currency?, total, date, category?, notes?, splitMethod, payers, splits?, items?, tax?, tip?, receiptId?, recurrence? }` | 201 `{ data: Expense }` |
 | GET | `/expenses/{expenseId}` | | `{ data: Expense }` |
-| PUT | `/expenses/{expenseId}` | same as POST (full replace) | `{ data: Expense }` |
+| PUT | `/expenses/{expenseId}` | same as POST (full replace), plus `updatedAt?` | `{ data: Expense }`; 409 when `updatedAt` is set and the expense has changed since |
 | DELETE | `/expenses/{expenseId}` | | 204 (soft delete) |
 | POST | `/expenses/{expenseId}/restore` | | `{ data: Expense }` |
 | GET | `/expenses/{expenseId}/comments` | | List of `{ id, expenseId, user: User, body, createdAt }` |

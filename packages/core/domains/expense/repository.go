@@ -29,6 +29,9 @@ type Repository interface {
 	Create(ctx context.Context, e *Expense) error
 	// Get returns errs.NotFound when missing. Deleted expenses are returned.
 	Get(ctx context.Context, id uuid.UUID) (*Expense, error)
+	// Lock is Get for a write: the row stays locked until the current
+	// transaction ends.
+	Lock(ctx context.Context, id uuid.UUID) (*Expense, error)
 	// Update replaces the expense and its shares.
 	Update(ctx context.Context, e *Expense) error
 	List(ctx context.Context, f Filter) ([]*Expense, int, error)

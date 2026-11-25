@@ -37,6 +37,13 @@ func toInput(in platform.ExpenseInput) (expense.Input, error) {
 	if out.ReceiptID, err = optionalID(in.ReceiptID, "receiptId"); err != nil {
 		return out, err
 	}
+	if in.UpdatedAt != nil && *in.UpdatedAt != "" {
+		at, err := time.Parse(time.RFC3339, *in.UpdatedAt)
+		if err != nil {
+			return out, errs.Validation("updatedAt", "Use the updatedAt the expense came with.")
+		}
+		out.UpdatedAt = &at
+	}
 	for _, p := range in.Payers {
 		id, err := parseID(p.UserID, "payers")
 		if err != nil {
