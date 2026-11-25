@@ -257,6 +257,7 @@ func (s *Service) Disable(ctx context.Context, actor, id uuid.UUID) (*user.User,
 		if err := s.keepAnAdmin(ctx, u, true); err != nil {
 			return err
 		}
+		email := u.Email
 		if err := u.Disable(s.d.Clock.Now()); err != nil {
 			return err
 		}
@@ -264,7 +265,7 @@ func (s *Service) Disable(ctx context.Context, actor, id uuid.UUID) (*user.User,
 			return err
 		}
 		out = u
-		return s.d.Credentials.Revoke(ctx, u.ID)
+		return s.d.Credentials.Revoke(ctx, u.ID, email)
 	})
 	return out, err
 }

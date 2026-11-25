@@ -180,6 +180,7 @@ resource "google_cloud_run_v2_service" "app" {
           AI_PROVIDER   = var.ai.provider
           AI_MODEL      = var.ai.model
           AI_BASE_URL   = var.ai.base_url
+          AI_EFFORT     = var.ai.effort
         }
         content {
           name  = env.key

@@ -7,6 +7,10 @@ import 'package:splitspends_ledger/rational.dart';
 /// Caps a single expense so sums never approach integer limits.
 const maxTotal = 1000000000000;
 
+/// The earliest date an expense can have. Dates also stop a year after
+/// today, so a typo cannot start a series that runs for centuries.
+final firstDay = DateTime.utc(2000);
+
 const defaultCategory = 'general';
 const paymentCategory = 'payment';
 
@@ -173,6 +177,13 @@ NormalizedExpense normalize(
     date =
         parseDay(input.date!) ??
         (throw const LedgerError('date', 'Use a YYYY-MM-DD date.'));
+  }
+  if (date.isBefore(firstDay) ||
+      date.isAfter(DateTime.utc(today.year + 1, today.month, today.day))) {
+    throw const LedgerError(
+      'date',
+      'Choose a date from 2000 up to a year from today.',
+    );
   }
 
   final paid = _payers(input.payers, input.total);

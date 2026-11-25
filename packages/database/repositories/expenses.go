@@ -202,6 +202,26 @@ func (r *Expenses) Due(ctx context.Context, day time.Time, limit int) ([]*expens
 	return list, r.attachShares(ctx, list)
 }
 
+func (r *Expenses) Claim(ctx context.Context, id uuid.UUID, day time.Time) (*expense.Expense, error) {
+	e, err := scanExpense(r.db.Q(ctx).QueryRow(ctx, `SELECT `+expenseColumns+` FROM expenses e
+		WHERE e.id=$1 AND e.deleted_at IS NULL AND e.recurrence <> 'none' AND e.next_date <= $2 FOR UPDATE OF e SKIP LOCKED`, id, day))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := r.attachShares(ctx, []*expense.Expense{e}); err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+func (r *Expenses) EndSeries(ctx context.Context, id uuid.UUID, at time.Time) error {
+	_, err := r.db.Q(ctx).Exec(ctx, `UPDATE expenses SET recurrence='none', next_date=NULL, updated_at=$2 WHERE id=$1`, id, at)
+	return err
+}
+
 // Ledger reads entries for balance computations.
 
 func (r *Expenses) entries(ctx context.Context, where string, args ...any) (map[uuid.UUID][]balance.Entry, []balance.Entry, error) {

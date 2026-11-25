@@ -64,6 +64,28 @@ func (r Recurrence) Next(date time.Time) time.Time {
 	return date
 }
 
+// CatchUp is how many missed occurrences a series books at most when it has
+// fallen behind. Older ones are skipped, so a series that starts long ago
+// cannot flood a group with copies.
+const CatchUp = 12
+
+// Missed returns the occurrences from next up to and including today (the
+// latest CatchUp of them, oldest first) and the first occurrence after
+// today, where the series continues.
+func (r Recurrence) Missed(next, today time.Time) ([]time.Time, time.Time) {
+	if r == RecurNone || !r.Valid() {
+		return nil, next
+	}
+	var dates []time.Time
+	for ; !next.After(today); next = r.Next(next) {
+		if len(dates) == CatchUp {
+			dates = dates[1:]
+		}
+		dates = append(dates, next)
+	}
+	return dates, next
+}
+
 // Share is one participant's position in an expense. Value keeps the split
 // input (percent, shares, exact or adjustment) so the expense can be edited.
 type Share struct {

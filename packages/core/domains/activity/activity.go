@@ -18,6 +18,7 @@ const (
 	ExpenseUpdated     Kind = "expense.updated"
 	ExpenseDeleted     Kind = "expense.deleted"
 	ExpenseRestored    Kind = "expense.restored"
+	ExpenseStopped     Kind = "expense.stopped"
 	PaymentCreated     Kind = "payment.created"
 	CommentCreated     Kind = "comment.created"
 	GroupCreated       Kind = "group.created"
@@ -109,6 +110,11 @@ func Describe(a *Activity, actor string) string {
 		return actor + " deleted “" + str("description") + "”" + in
 	case ExpenseRestored:
 		return actor + " restored “" + str("description") + "”" + in
+	case ExpenseStopped:
+		if in == "" {
+			return "“" + str("description") + "” stopped repeating because someone in it is no longer connected"
+		}
+		return "“" + str("description") + "” stopped repeating" + in + " because someone in it left the group"
 	case PaymentCreated:
 		return actor + " recorded a payment from " + str("fromName") + " to " + str("toName") + in
 	case CommentCreated:

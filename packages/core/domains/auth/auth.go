@@ -38,8 +38,9 @@ type Challenge struct {
 	CreatedAt  time.Time
 	// Client is a keyed hash of the network the code was requested from.
 	Client string
-	// Pending marks a code sent to someone who still needs approval.
-	Pending bool
+	// Invite is the storage hash of the invite link the code was requested
+	// with, or empty.
+	Invite string
 }
 
 // Usable reports whether the challenge can still be verified.

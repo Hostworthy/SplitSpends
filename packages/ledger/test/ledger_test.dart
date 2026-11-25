@@ -74,6 +74,31 @@ void main() {
     expect(nextOccurrence('none', DateTime.utc(2026)), isNull);
   });
 
+  test('a series behind schedule books only the latest occurrences', () {
+    String day(DateTime d) => formatDay(d);
+    var (dates, next) = missed(
+      'monthly',
+      DateTime.utc(2026, 2),
+      DateTime.utc(2026, 3, 15),
+    );
+    expect(dates.map(day), ['2026-02-01', '2026-03-01']);
+    expect(day(next), '2026-04-01');
+    (dates, next) = missed(
+      'weekly',
+      DateTime.utc(2024, 3, 17),
+      DateTime.utc(2026, 3, 15),
+    );
+    expect(dates, hasLength(catchUp));
+    expect(day(dates.first), '2025-12-28');
+    expect(day(dates.last), '2026-03-15');
+    expect(day(next), '2026-03-22');
+    (dates, next) = missed('weekly', DateTime.utc(1), DateTime.utc(2026));
+    expect(dates, hasLength(catchUp));
+    expect(next.isAfter(DateTime.utc(2026)), isTrue);
+    (dates, _) = missed('none', DateTime.utc(2026), DateTime.utc(2026, 3));
+    expect(dates, isEmpty);
+  });
+
   test('sheet honours simplification per group plus non-group pairwise', () {
     const g = LedgerGroup('g', 'Trip', simplified: true);
     final sheet = sheetFor(

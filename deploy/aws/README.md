@@ -30,7 +30,7 @@ Open the `url` output. That is also the server URL for the mobile app. Redeploy 
 ## Notes
 
 - **Cost:** Lambda, API Gateway and CloudFront free tiers cover personal use. EventBridge API destinations store the jobs secret in Secrets Manager (about 0.40 USD a month).
-- **Timeouts:** API Gateway allows 30 seconds per request, so AI receipt scans run with `AI_EFFORT=low` here.
+- **Timeouts:** API Gateway allows 30 seconds per request, so AI receipt scans run with `AI_EFFORT=low` here (`effort` in the `ai` variable).
 - **Rate limits** on sign-in are per Lambda instance; per-email code limits are enforced in the database regardless.
 - **Secrets** (database URL, SMTP and AI keys, generated `SECRET_KEY`) are Lambda environment variables, encrypted at rest by AWS. They are also in Terraform state: use an encrypted remote backend such as S3 with a DynamoDB lock table.
 - **Custom domain:** add an ACM certificate and an alias to the CloudFront distribution, then set `base_url`.
