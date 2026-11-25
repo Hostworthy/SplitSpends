@@ -32,12 +32,17 @@ type Client struct {
 }
 
 // NewClient builds a client. base is the server origin, such as
-// https://split.example.com.
+// https://split.example.com. hc may be nil; a client passed in is copied
+// so that, like the default one, it never follows redirects.
 func NewClient(base, token string, hc *http.Client) *Client {
-	if hc == nil {
-		hc = &http.Client{Timeout: 3 * time.Minute}
+	client := http.Client{Timeout: 3 * time.Minute}
+	if hc != nil {
+		client = *hc
 	}
-	return &Client{base: strings.TrimRight(base, "/"), token: token, http: hc}
+	// Following a 301, 302 or 303 turns a POST or DELETE into a GET, whose
+	// answer would then read as the write succeeding.
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &Client{base: strings.TrimRight(base, "/"), token: token, http: &client}
 }
 
 // APIError is a failed API call.
@@ -56,12 +61,13 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("request failed with status %d", e.Status)
 }
 
-func (c *Client) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
+// do sends one request and returns the body of a 2xx answer.
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, body any) ([]byte, error) {
 	var reader io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		reader = bytes.NewReader(buf)
 	}
@@ -71,7 +77,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u, reader)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
@@ -82,40 +88,71 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	req.Header.Set("User-Agent", "splitspends-mcp")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("mcp.api.unreachable: %w", err)
+		return nil, fmt.Errorf("mcp.api.unreachable: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if resp.StatusCode >= http.StatusMultipleChoices {
+	if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+		target := resp.Header.Get("Location")
+		if loc, err := resp.Location(); err == nil {
+			target = loc.String()
+		}
+		return nil, fmt.Errorf("mcp.api.redirected: the server redirected this request to %s and nothing was changed; set SPLITSPENDS_URL to the address the server uses", target)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
 		apiErr := &APIError{Status: resp.StatusCode}
 		_ = json.Unmarshal(raw, &apiErr.Body)
-		return apiErr
+		return nil, apiErr
 	}
-	if out == nil || len(raw) == 0 {
-		return nil
+	return raw, nil
+}
+
+// member decodes the key member of a success envelope into out. An answer
+// without it came from something other than the API endpoint and must not
+// read as success.
+func member(raw []byte, key string, out any) error {
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return fmt.Errorf("mcp.api.response.invalid: %w", err)
 	}
-	return json.Unmarshal(raw, out)
+	value, ok := env[key]
+	if !ok {
+		return fmt.Errorf("mcp.api.response.invalid: the answer has no %q; check that SPLITSPENDS_URL points at a Split Spends server", key)
+	}
+	return json.Unmarshal(value, out)
 }
 
 func get[T any](ctx context.Context, c *Client, path string, query url.Values) (T, error) {
-	var env platform.Details[T]
-	err := c.do(ctx, http.MethodGet, path, query, nil, &env)
-	return env.Data, err
+	var data T
+	raw, err := c.do(ctx, http.MethodGet, path, query, nil)
+	if err == nil {
+		err = member(raw, "data", &data)
+	}
+	return data, err
 }
 
 func getList[T any](ctx context.Context, c *Client, path string, query url.Values) (platform.List[T], error) {
-	var env platform.List[T]
-	err := c.do(ctx, http.MethodGet, path, query, nil, &env)
-	return env, err
+	var list platform.List[T]
+	raw, err := c.do(ctx, http.MethodGet, path, query, nil)
+	if err == nil {
+		err = member(raw, "items", &list.Items)
+	}
+	if err == nil {
+		err = member(raw, "total", &list.Total)
+	}
+	return list, err
 }
 
 func send[T any](ctx context.Context, c *Client, method, path string, body any) (T, error) {
-	var env platform.Details[T]
-	err := c.do(ctx, method, path, nil, body, &env)
-	return env.Data, err
+	var data T
+	raw, err := c.do(ctx, method, path, nil, body)
+	if err == nil {
+		err = member(raw, "data", &data)
+	}
+	return data, err
 }
 
 // Config returns the cached instance configuration.

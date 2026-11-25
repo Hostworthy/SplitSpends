@@ -4,7 +4,7 @@ package push
 
 import (
 	"encoding/base64"
-	"net"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -105,8 +105,8 @@ func (s *Subscription) Reachable(allowPrivate bool) bool {
 	if err != nil {
 		return false
 	}
-	ip := net.ParseIP(u.Hostname())
-	return ip == nil || !Blocked(ip, allowPrivate)
+	ip, err := netip.ParseAddr(u.Hostname())
+	return err != nil || !Blocked(ip, allowPrivate)
 }
 
 // decode accepts base64url (what browsers and UnifiedPush send) and, to be
@@ -118,17 +118,71 @@ func decode(s string) ([]byte, error) {
 	return base64.RawStdEncoding.DecodeString(s)
 }
 
-// Blocked reports whether a push endpoint may not reach ip: cloud metadata
-// and other link-local addresses always, and unless allowPrivate (for a
+// Blocked reports whether a push endpoint may not reach ip: reserved
+// ranges and cloud metadata services always, and unless allowPrivate (for a
 // UnifiedPush server on the local network), loopback and private networks.
-func Blocked(ip net.IP, allowPrivate bool) bool {
-	if ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() {
+// IPv6 addresses that carry an IPv4 address (mapped, NAT64, 6to4) are judged
+// by that IPv4 address.
+func Blocked(ip netip.Addr, allowPrivate bool) bool {
+	// A prefix never contains an address with a zone, so drop it.
+	ip = ip.Unmap().WithZone("")
+	if !ip.IsValid() {
 		return true
+	}
+	if v4, ok := embedded(ip); ok {
+		return Blocked(v4, allowPrivate)
+	}
+	for _, p := range reserved {
+		if p.Contains(ip) {
+			return true
+		}
 	}
 	if allowPrivate {
 		return false
 	}
-	return ip.IsLoopback() || ip.IsPrivate() || cgnat.Contains(ip)
+	for _, p := range private {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
-var cgnat = &net.IPNet{IP: net.IP{100, 64, 0, 0}, Mask: net.CIDRMask(10, 32)}
+// embedded returns the IPv4 address a NAT64 (64:ff9b::/96) or 6to4
+// (2002::/16) address forwards to.
+func embedded(ip netip.Addr) (netip.Addr, bool) {
+	b := ip.As16()
+	switch {
+	case nat64.Contains(ip):
+		return netip.AddrFrom4([4]byte(b[12:16])), true
+	case sixToFour.Contains(ip):
+		return netip.AddrFrom4([4]byte(b[2:6])), true
+	}
+	return netip.Addr{}, false
+}
+
+var (
+	nat64     = netip.MustParsePrefix("64:ff9b::/96")
+	sixToFour = netip.MustParsePrefix("2002::/16")
+
+	// reserved is never a push service: this network, link-local (where
+	// most clouds serve instance metadata), IETF protocol assignments
+	// (Oracle Cloud's legacy metadata), benchmarking, multicast, the
+	// reserved block and broadcast, local-use NAT64, and the metadata
+	// services of AWS (IPv6) and Alibaba Cloud, which sit inside private
+	// ranges and so must stay blocked when those are allowed.
+	reserved = prefixes("0.0.0.0/8", "169.254.0.0/16", "192.0.0.0/24", "198.18.0.0/15", "224.0.0.0/3",
+		"::/128", "fe80::/10", "ff00::/8", "64:ff9b:1::/48", "fd00:ec2::254/128", "100.100.100.200/32")
+
+	// private is loopback, private networks and carrier-grade NAT.
+	private = prefixes("127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",
+		"::1/128", "fc00::/7")
+)
+
+func prefixes(list ...string) []netip.Prefix {
+	out := make([]netip.Prefix, len(list))
+	for i, p := range list {
+		out[i] = netip.MustParsePrefix(p)
+	}
+	return out
+}

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -38,9 +38,12 @@ func (m *memRepo) Save(_ context.Context, s *Subscription, limit int) (bool, err
 	if others >= limit {
 		return false, ErrFull
 	}
+	// Like the SQL upsert: the stored row keeps its id, creation time and
+	// last success, and its failures survive only when the keys are the same.
 	for _, old := range m.subs {
 		if old.Endpoint == s.Endpoint {
-			s.ID, s.CreatedAt = old.ID, old.CreatedAt
+			s.ID, s.CreatedAt, s.LastSuccessAt = old.ID, old.CreatedAt, old.LastSuccessAt
+			s.Failures = 0
 			if old.P256dh == s.P256dh && old.Auth == s.Auth {
 				s.Failures = old.Failures
 			}
@@ -48,6 +51,7 @@ func (m *memRepo) Save(_ context.Context, s *Subscription, limit int) (bool, err
 			return false, nil
 		}
 	}
+	s.LastSuccessAt, s.Failures = nil, 0
 	c := *s
 	m.subs[s.ID] = &c
 	return true, nil
@@ -178,11 +182,12 @@ func TestNewValidates(t *testing.T) {
 }
 
 func TestBlocked(t *testing.T) {
-	cases := []struct {
+	type blockCase struct {
 		ip           string
 		allowPrivate bool
 		blocked      bool
-	}{
+	}
+	cases := []blockCase{
 		{"142.250.74.106", false, false},
 		{"2a00:1450:4001:80b::200a", false, false},
 		{"127.0.0.1", false, true},
@@ -197,9 +202,22 @@ func TestBlocked(t *testing.T) {
 		{"127.0.0.1", true, false},
 		{"169.254.169.254", true, true},
 		{"fe80::1", true, true},
+		{"::ffff:10.0.0.8", false, true},
+		{"::ffff:142.250.74.106", false, false},
+		{"64:ff9b::8efa:4a6a", false, false},
+		{"2002:8efa:4a6a::1", false, false},
+		{"64:ff9b::a00:8", false, true},
+		{"64:ff9b::a00:8", true, false},
+		{"fe80::1%eth0", true, true},
+		{"fd00::1%eth0", false, true},
+	}
+	// Reserved and cloud metadata ranges stay blocked whatever the policy.
+	for _, ip := range []string{"192.0.0.192", "64:ff9b::a9fe:a9fe", "2002:a9fe:a9fe::1", "0.1.2.3", "240.0.0.1",
+		"198.18.0.1", "255.255.255.255", "224.0.0.1", "ff02::1", "::", "fd00:ec2::254", "100.100.100.200"} {
+		cases = append(cases, blockCase{ip, false, true}, blockCase{ip, true, true})
 	}
 	for _, tc := range cases {
-		if got := Blocked(net.ParseIP(tc.ip), tc.allowPrivate); got != tc.blocked {
+		if got := Blocked(netip.MustParseAddr(tc.ip), tc.allowPrivate); got != tc.blocked {
 			t.Errorf("Blocked(%s, %v) = %v, want %v", tc.ip, tc.allowPrivate, got, tc.blocked)
 		}
 	}
@@ -484,15 +502,47 @@ func TestTestHasDeadline(t *testing.T) {
 }
 
 func TestPayloadStaysSmall(t *testing.T) {
-	p := Message{Title: strings.Repeat("é", 500), Body: strings.Repeat("€", 5000), URL: "https://split.example.com"}.Payload()
-	if len(p) > 3000 {
-		t.Fatalf("payload too large: %d bytes", len(p))
+	for _, m := range []Message{
+		{Title: strings.Repeat("é", 500), Body: strings.Repeat("€", 5000)},
+		{Title: strings.Repeat("<", 500), Body: strings.Repeat("&", 5000)},
+		{Title: strings.Repeat("<", 500), Body: strings.Repeat("\u2028", 5000)},
+		{Title: strings.Repeat("\x01", 500), Body: strings.Repeat("\x02", 5000)},
+	} {
+		m.URL = "https://split.example.com"
+		p := m.Payload()
+		if len(p) > MaxPayload {
+			t.Errorf("payload of %.10q is %d bytes, more than %d", m.Body, len(p), MaxPayload)
+		}
+		var got Message
+		if err := json.Unmarshal(p, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Body != "" && !strings.HasSuffix(got.Body, "…") || got.URL != m.URL {
+			t.Errorf("clipped text should end with an ellipsis and keep the link: %+v", got)
+		}
 	}
-	var m Message
-	if err := json.Unmarshal(p, &m); err != nil {
+	if p := (Message{Title: "Tom & Jerry <3"}).Payload(); !strings.Contains(string(p), "Tom & Jerry <3") {
+		t.Errorf("the payload is not HTML, so it should not be escaped: %s", p)
+	}
+}
+
+// TestOversizePayloadIsNotTheDevice checks that a message the sender
+// cannot fit is reported but not counted against the device.
+func TestOversizePayloadIsNotTheDevice(t *testing.T) {
+	svc, repo, sender := setup()
+	ctx := context.Background()
+	me := uuid.New()
+	if _, _, err := svc.Register(ctx, me, uuid.New(), input("https://push.example.com/a")); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(m.Body, "…") {
-		t.Fatal("clipped text should end with an ellipsis")
+	sender.answers["https://push.example.com/a"] = fmt.Errorf("webpush.send.failed: %w", ErrTooLarge)
+	r, err := svc.Notify(ctx, ports.Notification{UserID: me, Subject: "x"})
+	if err != nil || r.Failed != 1 || r.Err == nil {
+		t.Fatalf("unexpected report %+v %v", r, err)
+	}
+	for _, s := range repo.subs {
+		if s.Failures != 0 {
+			t.Fatalf("failures = %d, want 0", s.Failures)
+		}
 	}
 }

@@ -553,7 +553,7 @@ func (t *tools) remind(ctx context.Context, _ *sdk.CallToolRequest, in remindArg
 }
 
 func (t *tools) deleteExpense(ctx context.Context, _ *sdk.CallToolRequest, in expenseArgs) (*sdk.CallToolResult, any, error) {
-	if err := t.c.do(ctx, http.MethodDelete, "/expenses/"+url.PathEscape(in.ExpenseID), nil, nil, nil); err != nil {
+	if _, err := t.c.do(ctx, http.MethodDelete, "/expenses/"+url.PathEscape(in.ExpenseID), nil, nil); err != nil {
 		return fail(err)
 	}
 	return text("Deleted expense " + in.ExpenseID + ". It can be restored from the app."), nil, nil

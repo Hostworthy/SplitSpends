@@ -41,6 +41,10 @@ var ErrFull = errors.New("push.subscriptions.full")
 // the subscription expired or the user revoked it.
 var ErrGone = errors.New("push.subscription.gone")
 
+// ErrTooLarge is returned by a Sender for a payload that does not fit in
+// one Web Push message. It is this server's fault, not the device's.
+var ErrTooLarge = errors.New("push.payload.too-large")
+
 // Sender encrypts and delivers one message (RFC 8291 and RFC 8292). The
 // webpush adapter implements it.
 type Sender interface {
