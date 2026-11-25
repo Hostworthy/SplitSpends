@@ -148,8 +148,8 @@ func (c codes) LoginCode(_ context.Context, to, code string, _ time.Duration) er
 	c[to] = code
 	return nil
 }
-func (codes) Invite(context.Context, string, string) error { return nil }
-func (codes) Notify(context.Context, ports.Notification)   {}
+func (codes) Invite(context.Context, string, string) error  { return nil }
+func (codes) Notify(context.Context, ...ports.Notification) {}
 
 // links are the invite tokens that are currently valid. A link's storage
 // hash is its token with a "hash:" prefix.

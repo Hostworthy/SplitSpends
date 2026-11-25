@@ -181,10 +181,10 @@ func (n *Notifier) Invites() []string {
 	return append([]string(nil), n.invites...)
 }
 
-func (n *Notifier) Notify(_ context.Context, msg ports.Notification) {
+func (n *Notifier) Notify(_ context.Context, msgs ...ports.Notification) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.sent = append(n.sent, msg)
+	n.sent = append(n.sent, msgs...)
 }
 
 // Code returns the last login code sent to email, or "" when none was.

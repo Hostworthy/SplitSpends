@@ -116,7 +116,7 @@ type outbox struct{ sent []ports.Notification }
 
 func (o *outbox) LoginCode(context.Context, string, string, time.Duration) error { return nil }
 func (o *outbox) Invite(context.Context, string, string) error                   { return nil }
-func (o *outbox) Notify(_ context.Context, n ports.Notification)                 { o.sent = append(o.sent, n) }
+func (o *outbox) Notify(_ context.Context, n ...ports.Notification)              { o.sent = append(o.sent, n...) }
 
 // memQuota mirrors the database rule: limit uses per window from the first.
 type memQuota map[string]*budget

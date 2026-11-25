@@ -634,6 +634,7 @@ func (s *Service) notify(ctx context.Context, actor uuid.UUID, e *Expense, g *gr
 	if g != nil {
 		where = " in " + g.Name
 	}
+	var notes []ports.Notification
 	for _, u := range people {
 		if u.ID == actor {
 			continue
@@ -653,9 +654,10 @@ func (s *Service) notify(ctx context.Context, actor uuid.UUID, e *Expense, g *gr
 			[]string{actorName + " " + verb + " “" + e.Description + "” (" + money.Format(e.Total, e.Currency) + ")" + where + ".", line},
 			s.baseURL)
 		if ok {
-			s.notifier.Notify(ctx, n)
+			notes = append(notes, n)
 		}
 	}
+	s.notifier.Notify(ctx, notes...)
 }
 
 // Comments returns a page of the comments on an expense, oldest first, and

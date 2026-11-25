@@ -40,7 +40,9 @@ type Quota interface {
 type Notifier interface {
 	LoginCode(ctx context.Context, to, code string, ttl time.Duration) error
 	Invite(ctx context.Context, to, inviterName string) error
-	Notify(ctx context.Context, n Notification)
+	// Notify sends notifications about one event, one per recipient; an
+	// adapter that waits for delivery sends them at the same time.
+	Notify(ctx context.Context, n ...Notification)
 }
 
 // Notification is a fan-out message about something that happened. Each
