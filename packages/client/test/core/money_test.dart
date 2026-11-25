@@ -70,9 +70,24 @@ void main() {
       expect(Money.parse(r'$ 7', 2), 700);
       expect(Money.parse('-3.10', 2), -310);
       expect(Money.parse('1250', 0), 1250);
+      expect(Money.parse('1,234,567', 2), 123456700);
+      expect(Money.parse('1.234', 0), 1234);
+    });
+
+    test('reads a lone dot as the decimal point', () {
       expect(Money.parse('0.500', 2), 50);
-      // Ambiguous grouping reads as thousands, like most locales.
-      expect(Money.parse('12.500', 2), 1250000);
+      expect(Money.parse('12.500', 2), 1250);
+      expect(Money.parse('9.999', 2), isNull);
+      expect(Money.parse('1.234', 2), isNull);
+      expect(Money.parse('1.234', 3), 1234);
+    });
+
+    test('rejects amounts too large to hold exactly', () {
+      expect(Money.parse('184467440737095517', 2), isNull);
+      expect(Money.parse('99999999999999', 2), isNull);
+      expect(Money.parse('9999999999999', 2), 999999999999900);
+      expect(Money.parse('999999999999999', 0), 999999999999999);
+      expect(Money.parse('0000000000000001.00', 2), 100);
     });
 
     test('rejects invalid or over-precise values', () {
