@@ -31,6 +31,8 @@ When AI reads amounts in another currency (a receipt from abroad), `POST /ai/exp
 
 Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `CONFLICT` (409), `RATE_LIMITED` (429), `AI_DISABLED` (503), `RATES_UNAVAILABLE` (503), `APPROVAL_PENDING` (403, the account waits for an administrator), `APPROVAL_DECLINED` (403), `INTERNAL` (500). Several codes share a status, so clients read `code`, never the status alone; a 502, 503 or 504 without the error envelope comes from a proxy in front of the API (a timeout or an outage), not from the API.
 
+An object the caller may not see answers 404 `NOT_FOUND`, exactly as an id that does not exist, so ids of other people's groups, expenses, comments, categories and people reveal nothing. 403 `FORBIDDEN` is only for objects the caller can see but may not change.
+
 Lists accept `limit` (default 50, max 200) and `offset` (default 0).
 
 Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
@@ -182,7 +184,7 @@ Delivery: the server encrypts each message (RFC 8291, `aes128gcm`) and signs it 
 | ------ | ---- | ---- | -------- |
 | GET | `/friends` | | List of `{ user: User, balances: [Balance] }` (positive: friend owes you) |
 | POST | `/friends` | `{ email?, name? }` | 201 `{ data: { user, balances } }`; with an email, creates an invited user when new and emails an invite; with only a name, creates a `placeholder` person |
-| PATCH | `/friends/{userId}` | `{ email }` | `{ data: { user, balances } }`; gives a placeholder you created an email and invites them. 409 when the email already has an account |
+| PATCH | `/friends/{userId}` | `{ email }` | `{ data: { user, balances } }`; gives a placeholder you created an email and invites them. 404 for anyone you did not add by name; 409 when the email already has an account or the person already has an email |
 | GET | `/friends/{userId}` | | `{ data: { user, balances, groups: [{ groupId, groupName, balances }], nonGroup: [Balance] } }` |
 | DELETE | `/friends/{userId}` | | 204; 409 when balances are not settled |
 
@@ -243,7 +245,7 @@ People without an account follow the link, request a login code with `inviteToke
 | POST | `/expenses/{expenseId}/restore` | | `{ data: Expense }`; 409 when someone in it has left the group |
 | GET | `/expenses/{expenseId}/comments` | | List of `{ id, expenseId, user: User, body, createdAt }` |
 | POST | `/expenses/{expenseId}/comments` | `{ body }` | 201 `{ data: Comment }` |
-| DELETE | `/comments/{commentId}` | | 204 (author only) |
+| DELETE | `/comments/{commentId}` | | 204 (author only; 403 for someone else's comment you can see, 404 when you cannot see the expense) |
 | POST | `/payments` | `{ id?, groupId?, fromUserId, toUserId, amount, currency?, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
 
 A payment is always one person paying another. `PUT /expenses/{id}` on a payment takes the usual expense body but must keep that shape: one entry in `payers` paying the whole `total` and one other person in `splits` (422 otherwise). Only the people, `total`, `currency`, `date` and `notes` are used; the description stays `Payment`, the category `payment`, and payments never recur. Only payments use the `payment` category.
@@ -310,7 +312,7 @@ Deleting hides a category from listings and from new expenses but never rewrites
 
 ### Offline Clients and Import
 
-`POST /groups`, `POST /expenses` and `POST /payments` accept an optional client-generated `id` (UUID). Repeating the request with the same `id` returns the existing object as it is now (edited, or with `deleted: true` when it was deleted since) instead of creating a duplicate, so an offline outbox can retry safely, also while the first request is still running. An `id` that belongs to something the caller cannot see returns 409, and so does an `id` used for a different kind of object: an expense `id` sent to `/payments` or a payment `id` to `/expenses`, or a retry naming another `groupId`.
+`POST /groups`, `POST /expenses` and `POST /payments` accept an optional client-generated `id` (UUID). Repeating the request with the same `id` returns the existing object as it is now (edited, or with `deleted: true` when it was deleted since) instead of creating a duplicate, so an offline outbox can retry safely, also while the first request is still running. An `id` that belongs to something the caller cannot see returns 409, and so does an `id` used for a different kind of object: an expense `id` sent to `/payments` or a payment `id` to `/expenses`, or a retry naming another `groupId`. Every such 409 has the same message, whatever the `id` names.
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |

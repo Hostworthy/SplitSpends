@@ -92,7 +92,7 @@ func (s *Service) existing(ctx context.Context, actor uuid.UUID, id *uuid.UUID) 
 		return nil, err
 	}
 	if !g.HasMember(actor) {
-		return nil, errs.Conflict("That group id is already in use.")
+		return nil, errs.Taken()
 	}
 	return s.view(ctx, actor, g)
 }

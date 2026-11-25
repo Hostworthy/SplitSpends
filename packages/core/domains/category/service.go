@@ -64,7 +64,7 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Categ
 		existing, err := s.repo.Get(ctx, c.ID)
 		if err == nil {
 			if existing.OwnerID != actor {
-				return nil, errs.Conflict("That category id is already in use.")
+				return nil, errs.Taken()
 			}
 			return existing, nil
 		}

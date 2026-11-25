@@ -148,7 +148,7 @@ func (s *Service) Placeholder(ctx context.Context, id *uuid.UUID, name string, c
 			if existing.Status == StatusPlaceholder && existing.CreatedBy != nil && *existing.CreatedBy == createdBy {
 				return existing, nil
 			}
-			return nil, errs.Conflict("That person id is already in use.")
+			return nil, errs.Taken()
 		}
 		if !errs.Is(err, errs.KindNotFound) {
 			return nil, err
@@ -172,13 +172,17 @@ func (s *Service) Placeholder(ctx context.Context, id *uuid.UUID, name string, c
 }
 
 // Invite attaches an email to a placeholder the actor created, turning it
-// into an invited user who can sign in.
+// into an invited user who can sign in. Anyone the actor did not create is
+// not found, like an id that does not exist.
 func (s *Service) Invite(ctx context.Context, actor, id uuid.UUID, email string) (*User, error) {
 	u, err := s.repo.Get(ctx, id)
-	if err != nil {
+	if err != nil && !errs.Is(err, errs.KindNotFound) {
 		return nil, err
 	}
-	if u.Status != StatusPlaceholder || u.CreatedBy == nil || *u.CreatedBy != actor {
+	if err != nil || u.CreatedBy == nil || *u.CreatedBy != actor {
+		return nil, errs.NotFound("Friend")
+	}
+	if u.Status != StatusPlaceholder {
 		return nil, errs.Conflict("Only people you added by name can be given an email.")
 	}
 	normalized, err := NormalizeEmail(email)

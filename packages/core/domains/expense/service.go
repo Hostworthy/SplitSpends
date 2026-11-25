@@ -264,12 +264,12 @@ func (s *Service) existing(ctx context.Context, actor uuid.UUID, id *uuid.UUID, 
 	}
 	if _, _, err := s.visible(ctx, actor, e); err != nil {
 		if errs.Is(err, errs.KindNotFound) {
-			return nil, errs.Conflict("That expense id is already in use.")
+			return nil, errs.Taken()
 		}
 		return nil, err
 	}
 	if e.Kind != kind || (e.GroupID == nil) != (groupID == nil) || (groupID != nil && *e.GroupID != *groupID) {
-		return nil, errs.Conflict("That expense id is already in use.")
+		return nil, errs.Taken()
 	}
 	return e, nil
 }
@@ -497,16 +497,17 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	if in.GroupID == nil && actor != in.From && actor != in.To {
 		return nil, errs.Validation("fromUserId", "You must be part of a payment outside a group.")
 	}
+	// Authorizing first answers an id that does not exist like a stranger's.
+	g, err := s.authorize(ctx, actor, in.GroupID, n.Shares, nil)
+	if err != nil {
+		return nil, err
+	}
 	people, err := s.users.Index(ctx, []uuid.UUID{in.From, in.To})
 	if err != nil {
 		return nil, err
 	}
 	if people[in.From] == nil || people[in.To] == nil {
 		return nil, errs.Validation("toUserId", "Unknown person.")
-	}
-	g, err := s.authorize(ctx, actor, in.GroupID, n.Shares, nil)
-	if err != nil {
-		return nil, err
 	}
 	now := s.clock.Now()
 	e := &Expense{ID: newID(in.ID), GroupID: in.GroupID, Kind: KindPayment, CreatedBy: actor, CreatedAt: now}
@@ -601,10 +602,17 @@ func (s *Service) Comment(ctx context.Context, actor, id uuid.UUID, body string)
 	return c, err
 }
 
-// DeleteComment removes the actor's own comment.
+// DeleteComment removes the actor's own comment. A comment on an expense the
+// actor cannot see is not found, like a comment that does not exist.
 func (s *Service) DeleteComment(ctx context.Context, actor, id uuid.UUID) error {
 	c, err := s.comments.Get(ctx, id)
 	if err != nil {
+		return err
+	}
+	if _, _, err := s.load(ctx, actor, c.ExpenseID); err != nil {
+		if errs.Is(err, errs.KindNotFound) {
+			return errs.NotFound("Comment")
+		}
 		return err
 	}
 	if c.UserID != actor {
