@@ -147,15 +147,18 @@ func (r *Users) Admins(ctx context.Context) (int, error) {
 }
 
 // Accounts lists people who can sign in or could (everyone but name-only
-// placeholders), filtered by status and a name or email search.
+// placeholders), filtered by status and a name or email search. A search
+// for a whole address also finds the account that keeps only its hash.
 func (r *Users) Accounts(ctx context.Context, status, q string, limit, offset int) ([]*user.User, int, error) {
-	where := `status <> 'placeholder' AND ($1 = '' OR status = $1) AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR email ILIKE '%' || $2 || '%')`
+	where := `status <> 'placeholder' AND ($1 = '' OR status = $1)
+		AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR email ILIKE '%' || $2 || '%' OR email_hash = $3)`
+	hash := user.HashEmail(q)
 	var total int
-	if err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM users WHERE `+where, status, q).Scan(&total); err != nil {
+	if err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM users WHERE `+where, status, q, hash).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	rows, err := r.db.Q(ctx).Query(ctx, `SELECT `+userColumns+` FROM users WHERE `+where+`
-		ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END, lower(name), id LIMIT $3 OFFSET $4`, status, q, limit, offset)
+		ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END, lower(name), id LIMIT $4 OFFSET $5`, status, q, hash, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}

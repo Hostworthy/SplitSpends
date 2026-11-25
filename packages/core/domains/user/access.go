@@ -64,13 +64,23 @@ func (u *User) Disable(now time.Time) error {
 }
 
 // Enable turns a disabled account back on. The person signs in again with
-// the same email, which is recognised by its hash and stored again.
+// the same email, which is recognised by its hash and stored again; until
+// then the account is Reenabled.
 func (u *User) Enable(now time.Time) error {
 	if u.Status != StatusDisabled {
 		return errs.Conflict(u.Name + " is not disabled.")
 	}
 	u.Status, u.UpdatedAt = StatusInvited, now
 	return nil
+}
+
+// Reenabled reports whether an administrator enabled u again and the
+// person has not signed in since. Such an account is invited but, unlike
+// people someone added by email, has no address to write to: only the
+// hash of its old one, which lets that address sign in whatever the
+// sign-up mode.
+func (u *User) Reenabled() bool {
+	return u.Status == StatusInvited && u.Email == "" && u.EmailHash != ""
 }
 
 // Attach stores email again for an account known only by its hash.
