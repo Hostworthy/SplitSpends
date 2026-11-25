@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -374,5 +375,47 @@ func TestCurrencyNeedsMembership(t *testing.T) {
 	}
 	if got, err := w.svc.currency(ctx, w.mal, &w.group.ID, "USD"); err != nil || got != "USD" {
 		t.Errorf("a given currency is kept: %q, %v", got, err)
+	}
+}
+
+func TestSame(t *testing.T) {
+	ada, ben := uuid.New(), uuid.New()
+	receipt := uuid.New()
+	today := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	base := Input{Description: "Rent", Currency: "EUR", Total: 1000, Date: "2026-03-01", Method: MethodExact,
+		Payers: []Payer{{UserID: ada, Amount: 1000}}, Splits: []SplitInput{{UserID: ada, Value: "400"}, {UserID: ben, Value: "600"}}}
+	n, err := Normalize(base, today)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := &Expense{Description: n.Description, Category: n.Category, Currency: n.Currency, Total: n.Total, Date: n.Date,
+		Method: n.Method, Shares: []Share{n.Shares[1], n.Shares[0]}, Recurrence: n.Recurrence}
+	for _, c := range []struct {
+		name   string
+		change func(in *Input)
+		want   bool
+	}{
+		{"same edit, shares in another order", func(*Input) {}, true},
+		{"description", func(in *Input) { in.Description = "Rent, March" }, false},
+		{"total", func(in *Input) { in.Total, in.Payers[0].Amount, in.Splits[1].Value = 1100, 1100, "700" }, false},
+		{"split", func(in *Input) { in.Splits[0].Value, in.Splits[1].Value = "500", "500" }, false},
+		{"date", func(in *Input) { in.Date = "2026-02-28" }, false},
+		{"notes", func(in *Input) { in.Notes = "Paid late" }, false},
+		{"receipt", func(in *Input) { in.ReceiptID = &receipt }, false},
+		{"recurrence", func(in *Input) { in.Recurrence = RecurMonthly }, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			in := base
+			in.Payers = slices.Clone(base.Payers)
+			in.Splits = slices.Clone(base.Splits)
+			c.change(&in)
+			n, err := Normalize(in, today)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := same(stored, n); got != c.want {
+				t.Fatalf("same = %v, want %v", got, c.want)
+			}
+		})
 	}
 }

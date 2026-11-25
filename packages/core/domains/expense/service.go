@@ -322,6 +322,26 @@ func (s *Service) build(e *Expense, n *Normalized, actor uuid.UUID, now time.Tim
 	e.UpdatedBy, e.UpdatedAt = actor, now
 }
 
+// same reports whether saving n would leave e as it is.
+func same(e *Expense, n *Normalized) bool {
+	if e.Description != n.Description || e.Category != n.Category || e.Currency != n.Currency || e.Total != n.Total ||
+		!e.Date.Equal(n.Date) || e.Notes != n.Notes || e.Method != n.Method || e.Tax != n.Tax || e.Tip != n.Tip ||
+		e.Recurrence != n.Recurrence || !equalID(e.ReceiptID, n.ReceiptID) {
+		return false
+	}
+	byUser := func(a, b Share) int { return strings.Compare(a.UserID.String(), b.UserID.String()) }
+	if !slices.Equal(slices.SortedFunc(slices.Values(e.Shares), byUser), slices.SortedFunc(slices.Values(n.Shares), byUser)) {
+		return false
+	}
+	return slices.EqualFunc(e.Items, n.Items, func(a, b Item) bool {
+		return a.Name == b.Name && a.Amount == b.Amount && slices.Equal(a.UserIDs, b.UserIDs)
+	})
+}
+
+func equalID(a, b *uuid.UUID) bool {
+	return a == b || (a != nil && b != nil && *a == *b)
+}
+
 func (s *Service) record(ctx context.Context, actor uuid.UUID, kind activity.Kind, e *Expense, g *group.Group, extra map[string]any) error {
 	data := map[string]any{"description": e.Description, "amount": e.Total, "currency": e.Currency}
 	involved := e.Participants()
@@ -444,6 +464,7 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expen
 func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*Expense, error) {
 	var e *Expense
 	var g *group.Group
+	var kept bool
 	err := s.tx.Do(ctx, func(ctx context.Context) error {
 		var err error
 		if e, g, err = s.lock(ctx, actor, id); err != nil {
@@ -455,10 +476,9 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		if e.DeletedAt != nil {
 			return errs.Conflict("Restore the expense before editing it.")
 		}
-		// Clients see updatedAt to the second, so that is what is compared.
-		if in.UpdatedAt != nil && !e.UpdatedAt.Truncate(time.Second).Equal(in.UpdatedAt.Truncate(time.Second)) {
-			return errs.Conflict("Someone else changed this expense. Reload it and try again.")
-		}
+		// The database keeps microseconds, so that is how finely versions
+		// are told apart.
+		stale := in.UpdatedAt != nil && !e.UpdatedAt.Truncate(time.Microsecond).Equal(in.UpdatedAt.Truncate(time.Microsecond))
 		in.GroupID = e.GroupID
 		if in.Currency == "" {
 			in.Currency = e.Currency
@@ -468,15 +488,23 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		}
 		var n *Normalized
 		if e.Kind == KindPayment {
-			p, err := repayment(in)
-			if err != nil {
-				return err
+			var p PaymentInput
+			if p, err = repayment(in); err == nil {
+				n, err = payment(p, clock.Today(s.clock))
 			}
-			n, err = payment(p, clock.Today(s.clock))
-			if err != nil {
-				return err
+		} else {
+			n, err = Normalize(in, clock.Today(s.clock))
+		}
+		if stale {
+			// An edit replayed after it was saved finds the result already
+			// there; it would replace nobody's change, so it is not refused.
+			if err == nil && same(e, n) {
+				kept = true
+				return nil
 			}
-		} else if n, err = Normalize(in, clock.Today(s.clock)); err != nil {
+			return errs.Conflict("Someone else changed this expense. Reload it and try again.")
+		}
+		if err != nil {
 			return err
 		}
 		if err := s.category(ctx, actor, n.Category, e.Category); err != nil {
@@ -491,8 +519,8 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		}
 		return s.record(ctx, actor, activity.ExpenseUpdated, e, g, nil)
 	})
-	if err != nil {
-		return nil, err
+	if err != nil || kept {
+		return e, err
 	}
 	s.notify(ctx, actor, e, g, true)
 	return e, nil

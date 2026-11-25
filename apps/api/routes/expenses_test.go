@@ -44,6 +44,61 @@ func TestUpdateVersion(t *testing.T) {
 	s.call(t, http.MethodPut, path, ada.Token, edit(5000, saved.UpdatedAt)).want(t, http.StatusOK)
 }
 
+func TestUpdateVersionPrecision(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	p := platform.Prefix
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	ben := s.signIn(t, "ben@example.com", "Ben")
+	g := s.group(t, ada.Token, "Flat", "ben@example.com")
+	e := s.expense(t, ada.Token, g.ID, 3000, ada.User.ID, ada.User.ID, ben.User.ID)
+	edit := func(total int64, at string) platform.ExpenseInput {
+		return platform.ExpenseInput{Description: "Groceries", Currency: "EUR", Total: total, SplitMethod: "equal", UpdatedAt: &at,
+			Payers: []platform.Payer{{UserID: ada.User.ID, Amount: total}},
+			Splits: []platform.Split{{UserID: ada.User.ID}, {UserID: ben.User.ID}}}
+	}
+	path := p + "/expenses/" + e.ID
+
+	s.Clock.Add(time.Millisecond)
+	first := data[platform.Expense](t, s.call(t, http.MethodPut, path, ben.Token, edit(4000, e.UpdatedAt)).want(t, http.StatusOK))
+	s.Clock.Add(time.Millisecond)
+	if f := s.call(t, http.MethodPut, path, ada.Token, edit(5000, e.UpdatedAt)).want(t, http.StatusConflict).failure(t); f.Code != "CONFLICT" {
+		t.Fatalf("an edit of the version changed a millisecond ago must be refused, got %+v", f)
+	}
+	got := data[platform.Expense](t, s.call(t, http.MethodGet, path, ada.Token, nil).want(t, http.StatusOK))
+	if got.UpdatedAt != first.UpdatedAt {
+		t.Fatalf("updatedAt read back %q, the edit answered %q", got.UpdatedAt, first.UpdatedAt)
+	}
+	s.call(t, http.MethodPut, path, ada.Token, edit(5000, got.UpdatedAt)).want(t, http.StatusOK)
+}
+
+func TestUpdateReplay(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	p := platform.Prefix
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	ben := s.signIn(t, "ben@example.com", "Ben")
+	g := s.group(t, ada.Token, "Flat", "ben@example.com")
+	e := s.expense(t, ada.Token, g.ID, 3000, ada.User.ID, ada.User.ID, ben.User.ID)
+	edit := func(total int64) platform.ExpenseInput {
+		return platform.ExpenseInput{Description: "Groceries", Currency: "EUR", Total: total, SplitMethod: "equal", UpdatedAt: &e.UpdatedAt,
+			Payers: []platform.Payer{{UserID: ada.User.ID, Amount: total}},
+			Splits: []platform.Split{{UserID: ada.User.ID}, {UserID: ben.User.ID}}}
+	}
+	path := p + "/expenses/" + e.ID
+
+	s.Clock.Add(time.Minute)
+	saved := data[platform.Expense](t, s.call(t, http.MethodPut, path, ada.Token, edit(4000)).want(t, http.StatusOK))
+	s.Clock.Add(time.Minute)
+	// The same edit again, as a client replays it when it never saw the
+	// answer: it is already saved, so it is not a conflict.
+	again := data[platform.Expense](t, s.call(t, http.MethodPut, path, ada.Token, edit(4000)).want(t, http.StatusOK))
+	if again.UpdatedAt != saved.UpdatedAt {
+		t.Fatalf("a replayed edit made a new version: %q, saved as %q", again.UpdatedAt, saved.UpdatedAt)
+	}
+	if f := s.call(t, http.MethodPut, path, ada.Token, edit(5000)).want(t, http.StatusConflict).failure(t); f.Code != "CONFLICT" {
+		t.Fatalf("a different edit of the old version must be refused, got %+v", f)
+	}
+}
+
 func TestSafeCell(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
 		{"", ""},

@@ -32,7 +32,7 @@ func toInput(in platform.ExpenseInput) (expense.Input, error) {
 		return out, err
 	}
 	if in.UpdatedAt != nil && *in.UpdatedAt != "" {
-		at, err := time.Parse(time.RFC3339, *in.UpdatedAt)
+		at, err := time.Parse(time.RFC3339Nano, *in.UpdatedAt)
 		if err != nil {
 			return out, errs.Validation("updatedAt", "Use the updatedAt the expense came with.")
 		}
