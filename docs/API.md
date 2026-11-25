@@ -209,7 +209,7 @@ Each account may have up to 1000 people it added by name only (placeholders, fro
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/groups` | `?archived=true&limit=&offset=` | List of `Group`, most recently changed first |
-| POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, defaultSplit?, members?: [{ email, name? }] }` | 201 `{ data: Group }`; `defaultSplit` is checked against the members after they are added. 409 when the caller or someone added is already in 1000 groups |
+| POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, defaultSplit?, members?: [{ email?, name? }] }` | 201 `{ data: Group }` (a member with a name and no email is added as a placeholder); `defaultSplit` is checked against the members after they are added. 409 when the caller or someone added is already in 1000 groups |
 | GET | `/groups/{groupId}` | | `{ data: Group }` |
 | PATCH | `/groups/{groupId}` | `{ name?, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, archived?, defaultSplit? }` | `{ data: Group }`; `defaultSplit: null` clears it, leaving it out keeps it |
 | DELETE | `/groups/{groupId}` | | 204; 403 when the caller may not delete it; 409 when not settled |
@@ -250,7 +250,7 @@ People without an account follow the link, request a login code with `inviteToke
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/expenses` | `?groupId=&friendId=&q=&category=&from=&to=&kind=&includeDeleted=` | List of `Expense`, newest `date` first |
-| POST | `/expenses` | `{ id?, groupId?, description, currency?, total, date, category?, notes?, splitMethod, payers, splits?, items?, tax?, tip?, receiptId?, recurrence? }` | 201 `{ data: Expense }` |
+| POST | `/expenses` | `{ id?, groupId?, description, currency?, total, date?, category?, notes?, splitMethod, payers, splits?, items?, tax?, tip?, receiptId?, recurrence? }` | 201 `{ data: Expense }`. `date` defaults to today in UTC |
 | GET | `/expenses/{expenseId}` | | `{ data: Expense }` |
 | PUT | `/expenses/{expenseId}` | same as POST (full replace), plus `updatedAt?` | `{ data: Expense }`; 409 when `updatedAt` is set and the expense has changed since |
 | DELETE | `/expenses/{expenseId}` | | 204 (soft delete); 409 when someone in it has left the group |
@@ -386,7 +386,7 @@ Administrators and managers get an `approvals` notification (email and push, eac
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
-| POST | `/internal/jobs` | Outside `/api/v1`. Runs recurring expenses and cleanup once; overlapping runs are safe, each occurrence is booked once. Every job runs even when another fails, and a recurring expense that fails is skipped and tried again next run; any failure answers 500 after the rest has run. Requires `Authorization: Bearer <JOBS_SECRET>`; only mounted when `JOBS_SECRET` is set. For serverless schedulers |
+| POST | `/internal/jobs` | Outside `/api/v1`. Runs recurring expenses and cleanup once; overlapping runs are safe, each occurrence is booked once. Every job runs even when another fails, and a recurring expense that fails is skipped and tried again next run; any failure answers 500 after the rest has run. Requires `Authorization: Bearer <JOBS_SECRET>`; only mounted when `JOBS_SECRET` is set. Answers 204 when every job succeeded and 401 `UNAUTHORIZED` for a wrong or missing secret. For serverless schedulers |
 
 ## MCP
 

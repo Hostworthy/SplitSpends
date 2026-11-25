@@ -157,3 +157,38 @@ func TestUnreadableReceiptImage(t *testing.T) {
 		t.Fatalf("want an uncached JSON error, got Content-Type %q, Cache-Control %q", ct, cc)
 	}
 }
+
+// currencies is an AI reader that remembers the currency each scan asked
+// for.
+type currencies struct {
+	rent
+	asked []string
+}
+
+func (c *currencies) ReadReceipt(_ context.Context, in ports.ReceiptInput) (ports.ReceiptExtract, error) {
+	c.asked = append(c.asked, in.Currency)
+	return ports.ReceiptExtract{Total: "1000"}, nil
+}
+
+// TestScanReadsChunkedBody checks that a scan request sent without a
+// Content-Length, as streaming clients do, still has its currency read.
+func TestScanReadsChunkedBody(t *testing.T) {
+	reader := &currencies{}
+	s := newServer(t, bootstraptest.Options{Reader: reader})
+	ada := s.signIn(t, "ada@example.com", "Ada").Token
+	rc := data[platform.Receipt](t, s.upload(t, platform.Prefix+"/receipts", ada, pixel(t)).want(t, http.StatusCreated))
+
+	req, err := http.NewRequest(http.MethodPost, s.url+platform.Prefix+"/receipts/"+rc.ID+"/scan",
+		io.MultiReader(strings.NewReader(`{"currency":"JPY"}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if req.ContentLength != 0 {
+		t.Fatalf("the request must have no known length, has %d", req.ContentLength)
+	}
+	s.send(t, req, ada).want(t, http.StatusOK)
+	if len(reader.asked) != 1 || reader.asked[0] != "JPY" {
+		t.Fatalf("want one scan in JPY, got %q", reader.asked)
+	}
+}
