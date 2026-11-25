@@ -49,7 +49,7 @@ Build or download `splitspends-mcp` (`make build` writes `bin/splitspends-mcp`; 
 }
 ```
 
-Set `SPLITSPENDS_URL` to the exact address the server answers on, usually its `https://` origin. The MCP server does not follow redirects, because following one can turn a write into a read: when the server redirects, the tool fails with an error that names the address to use instead.
+Set `SPLITSPENDS_URL` to the exact address the server answers on, usually its `https://` origin, without `/api/v1` (a path prefix such as `https://example.com/split` is fine when the server sits under one). The binary refuses to start when the address has no `http://` or `https://` scheme, contains a user name, query or fragment, or ends in `/api/v1`. Use `https://`: the token goes with every request and never expires, so over plain `http://` anyone on the network path can read it. The binary warns at startup when `http://` points at another machine; `http://localhost` is fine. The MCP server does not follow redirects, because following one can turn a write into a read: when the server redirects, the tool fails with an error that names the address to use instead.
 
 ## Tools
 

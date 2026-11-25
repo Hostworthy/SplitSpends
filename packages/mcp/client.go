@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -54,6 +55,33 @@ func NewClient(base, token string, hc *http.Client) *Client {
 	// answer would then read as the write succeeding.
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Client{base: strings.TrimRight(base, "/"), token: token, http: &client, settings: &settings{now: time.Now}}
+}
+
+// Origin checks the server address the stdio binary is given and returns it
+// without trailing slashes. It must be an http or https URL with a host and
+// no user, query or fragment; a path prefix is kept for servers behind a
+// reverse proxy, but it must not already end in the API prefix. insecure
+// reports plain http to another machine, where the token travels
+// unencrypted.
+func Origin(raw string) (origin string, insecure bool, err error) {
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.Opaque != "" {
+		return "", false, fmt.Errorf("%q is not a server address such as https://split.example.com", raw)
+	}
+	if u.User != nil || strings.ContainsAny(raw, "?#") {
+		return "", false, fmt.Errorf("%q must not contain a user name, password, query or fragment", raw)
+	}
+	origin = strings.TrimRight(raw, "/")
+	if strings.HasSuffix(strings.TrimRight(u.Path, "/"), platform.Prefix) {
+		return "", false, fmt.Errorf("%q ends in %s; give the server address without it", raw, platform.Prefix)
+	}
+	host := u.Hostname()
+	local := strings.EqualFold(host, "localhost")
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		local = true
+	}
+	return origin, u.Scheme == "http" && !local, nil
 }
 
 // with returns a client that calls the same API with token, sharing the
