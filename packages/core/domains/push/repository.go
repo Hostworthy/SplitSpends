@@ -11,7 +11,9 @@ import (
 // Repository persists subscriptions.
 type Repository interface {
 	// Save inserts s, or refreshes the subscription with the same endpoint
-	// (keys, platform, label and owner) and resets its failures. It fills
+	// (keys, platform, label and owner), resetting its failures only when
+	// the keys changed: the same device registering again is not a fresh
+	// start, a new subscription on it is. It fills
 	// s.ID, s.CreatedAt, s.LastSuccessAt and s.Failures from the stored row
 	// and reports whether a new row was created.
 	Save(ctx context.Context, s *Subscription) (created bool, err error)

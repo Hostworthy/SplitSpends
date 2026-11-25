@@ -38,6 +38,8 @@ Open the `url` output. That is also the server URL for the mobile app. Redeploy 
 - **Rate limits** on sign-in are per Lambda instance; per-email code limits are enforced in the database regardless.
 - **Database connections:** every concurrent request runs in its own Lambda execution environment with its own pool of up to 3 connections (`DATABASE_MAX_CONNS`), limited only by the API Gateway throttle (50 requests a second, bursts of 100) and your account's concurrency quota. If your database allows few connections, as free tiers often do, set `max_concurrency` so that `max_concurrency` x 3 stays below that limit; requests beyond it are turned away instead of exhausting the database for everyone. AWS keeps at least 10 executions unreserved per account, so an account whose concurrency quota is 10 (common on new accounts) cannot reserve any: leave `max_concurrency` unset there, or ask AWS to raise the quota.
 - **Secrets** (database URL, SMTP and AI keys, generated `SECRET_KEY` and `JOBS_SECRET`) are kept in one Secrets Manager secret. The function's environment holds only its ARN (`SECRETS_ARN`), and the server reads the secret at start with the function's role, which may read that secret and nothing else. Anyone who can read the function's configuration (the `ReadOnlyAccess` policy, for example) therefore does not see them; reading them needs `secretsmanager:GetSecretValue` on the secret. They are also in Terraform state, which is why the Deploy steps keep it in S3.
+- **Custom domain:** add an ACM certificate and an alias to the CloudFront distribution, then set `base_url`.
+- **Layer:** `lambda_web_adapter_layer` defaults to the public AWS Lambda Web Adapter arm64 layer; override it if your region needs a different ARN.
 
 ## Upgrading a Deployment That Kept Secrets in the Environment
 
@@ -48,5 +50,3 @@ Stacks applied before secrets moved to Secrets Manager hold them as Lambda envir
 3. Open the `url` output and sign in. If the server does not start, its CloudWatch log names the problem (a `bootstrap.config.secrets` error).
 
 To change a secret later, change `terraform.tfvars` and apply. Instances that are already running keep the old value until Lambda replaces them; the next code deploy replaces them all.
-- **Custom domain:** add an ACM certificate and an alias to the CloudFront distribution, then set `base_url`.
-- **Layer:** `lambda_web_adapter_layer` defaults to the public AWS Lambda Web Adapter arm64 layer; override it if your region needs a different ARN.

@@ -37,7 +37,7 @@ func secrets() error {
 		return fmt.Errorf("bootstrap.config.secrets.failed: could not read SECRETS_ARN from Secrets Manager: %w", err)
 	}
 	var values map[string]string
-	if err := json.Unmarshal([]byte(value), &values); err != nil {
+	if err := json.Unmarshal([]byte(value), &values); err != nil || values == nil {
 		return fmt.Errorf("bootstrap.config.secrets.invalid: the SECRETS_ARN secret must be a JSON object of strings, such as {\"SECRET_KEY\": \"...\"}")
 	}
 	for key, v := range values {

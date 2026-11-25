@@ -153,3 +153,33 @@ func TestVAPIDKeysAreShared(t *testing.T) {
 		t.Fatal("later starts must reuse the stored pair")
 	}
 }
+
+// TestRegisterKeepsFailures checks that the same device registering again
+// keeps its count of failed deliveries, so one that never answers is still
+// removed in the end, while a new subscription with new keys starts over.
+func TestRegisterKeepsFailures(t *testing.T) {
+	env, _ := pushSetup(t, time.Now())
+	ctx := context.Background()
+	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
+	p256dh, auth := deviceKeys(t)
+	device := push.Input{Endpoint: "https://push.example.com/down", P256dh: p256dh, Auth: auth}
+	sub, _, err := env.Services.Push.Register(ctx, ben, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := repositories.NewPushSubscriptions(env.DB)
+	for range 3 {
+		if _, err := repo.Failed(ctx, sub.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	again, _, err := env.Services.Push.Register(ctx, ben, device)
+	if err != nil || again.Failures != 3 {
+		t.Fatalf("the same keys should keep the failures: %+v %v", again, err)
+	}
+	device.P256dh, _ = deviceKeys(t)
+	fresh, _, err := env.Services.Push.Register(ctx, ben, device)
+	if err != nil || fresh.Failures != 0 {
+		t.Fatalf("new keys should start over: %+v %v", fresh, err)
+	}
+}

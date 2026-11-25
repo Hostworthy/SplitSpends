@@ -91,6 +91,14 @@ type pusher interface {
 // email and push, so services call Notify once. Push deliveries go through
 // a bounded queue (like emails) so slow push services never hold up a
 // request; with sync set (serverless) they finish before Notify returns.
+// pushWorkers send queued push notifications at once, so one recipient
+// whose devices answer slowly does not hold up everyone else's.
+const pushWorkers = 4
+
+// pushBudget bounds one push notification: listing devices and one round
+// of sends, which run together and stop after push.SendTimeout each.
+const pushBudget = 3 * push.SendTimeout
+
 type fanout struct {
 	email ports.Notifier
 	push  pusher
@@ -103,8 +111,10 @@ type fanout struct {
 func newFanout(email ports.Notifier, p pusher, log *slog.Logger, sync bool) *fanout {
 	f := &fanout{email: email, push: p, log: log, sync: sync, queue: make(chan ports.Notification, 256)}
 	if p != nil && !sync {
-		f.done.Add(1)
-		go f.work()
+		f.done.Add(pushWorkers)
+		for range pushWorkers {
+			go f.work()
+		}
 	}
 	return f
 }
@@ -143,7 +153,7 @@ func (f *fanout) work() {
 }
 
 func (f *fanout) deliver(n ports.Notification) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), pushBudget)
 	defer cancel()
 	r, err := f.push.Notify(ctx, n)
 	if err != nil {
@@ -155,7 +165,7 @@ func (f *fanout) deliver(n ports.Notification) {
 	}
 }
 
-// Close stops the push worker after draining queued messages.
+// Close stops the push workers after draining queued messages.
 func (f *fanout) Close() {
 	if f.push != nil && !f.sync {
 		close(f.queue)

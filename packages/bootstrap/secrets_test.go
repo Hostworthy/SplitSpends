@@ -111,6 +111,7 @@ func TestSecretsFailures(t *testing.T) {
 		{"not Secrets Manager", "arn:aws:ssm:eu-west-1:123456789012:parameter/app", "", "bootstrap.config.env.invalid.SECRETS_ARN", http.StatusOK},
 		{"denied", secretARN, `{"__type":"AccessDeniedException","Message":"not authorized"}`, "AccessDeniedException: not authorized", http.StatusBadRequest},
 		{"not an object", secretARN, `{"SecretString":"plain text"}`, "a JSON object of strings", http.StatusOK},
+		{"null", secretARN, `{"SecretString":"null"}`, "a JSON object of strings", http.StatusOK},
 		{"not strings", secretARN, `{"SecretString":"{\"SMTP_PORT\":587}"}`, "a JSON object of strings", http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
