@@ -126,6 +126,8 @@ Split Spends does not run a model. When a provider is configured, the server sen
 | `AI_EFFORT` | model default | Anthropic only: `low`, `medium`, `high`, `xhigh`, `max` |
 | `AI_RATE_LIMIT` | `30` | AI requests (receipt scans and expense drafts together) each person may make per hour. Each server instance counts on its own, so with several instances (serverless) a person can make this many on each |
 
+A scan or draft waits at most 3 minutes for the provider, a retry of a rate-limited or failing Anthropic call included, and then fails. Serverless platforms that end a function sooner cut it off first, so give the API function at least that long.
+
 Examples:
 
 | Provider | `AI_PROVIDER` | `AI_BASE_URL` | `AI_MODEL` (example) |

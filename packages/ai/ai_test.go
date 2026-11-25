@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
@@ -209,7 +210,7 @@ func message(text, stopReason string) string {
 // failing answer is seen at once.
 func anthropicAt(url string) *Anthropic {
 	return &Anthropic{client: anthropic.NewClient(option.WithAPIKey("sk-test"), option.WithBaseURL(url), option.WithMaxRetries(0)),
-		model: DefaultAnthropicModel}
+		model: DefaultAnthropicModel, timeout: requestTimeout}
 }
 
 const receiptAnswer = `{"merchant":"Market","date":"2026-10-05","currency":"EUR","category":"food.groceries","subtotal":"10.00",
@@ -323,6 +324,69 @@ func TestProviderErrorsKeepContentOut(t *testing.T) {
 			slog.New(slog.NewTextHandler(&logged, nil)).Error("middleware.error.internal", "error", err)
 			if strings.Contains(logged.String(), secret) || (tc.want != 0 && !strings.Contains(logged.String(), "status="+strconv.Itoa(tc.want))) {
 				t.Fatalf("the log line must carry the status and no content: %s", logged.String())
+			}
+		})
+	}
+}
+
+// TestProviderBudget checks that both adapters give up on a provider that
+// never answers once their time budget is spent, and that a failing
+// provider is asked at most once more.
+func TestProviderBudget(t *testing.T) {
+	const budget = 200 * time.Millisecond
+	adapters := []struct {
+		name     string
+		read     func(url string, timeout time.Duration) error
+		attempts int32
+	}{
+		{"openai", func(url string, timeout time.Duration) error {
+			o := NewOpenAICompatible(url, "key", "m")
+			o.timeout = timeout
+			_, err := o.ReadReceipt(context.Background(), receiptInput())
+			return err
+		}, 1},
+		{"anthropic", func(url string, timeout time.Duration) error {
+			a := NewAnthropic("sk-test", url, "", "")
+			a.timeout = timeout
+			_, err := a.ReadReceipt(context.Background(), receiptInput())
+			return err
+		}, 1 + retries},
+	}
+	for _, tc := range adapters {
+		t.Run(tc.name+" times out", func(t *testing.T) {
+			release := make(chan struct{})
+			srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				select {
+				case <-release:
+				case <-r.Context().Done():
+				}
+			}))
+			defer srv.Close()
+			defer close(release)
+
+			start := time.Now()
+			err := tc.read(srv.URL, budget)
+			if elapsed := time.Since(start); elapsed > budget+2*time.Second {
+				t.Fatalf("returned after %v, want about %v", elapsed, budget)
+			}
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("want a deadline error, got %v", err)
+			}
+		})
+		t.Run(tc.name+" retries", func(t *testing.T) {
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Retry-After-Ms", "1")
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			defer srv.Close()
+
+			if err := tc.read(srv.URL, requestTimeout); err == nil {
+				t.Fatal("want an error from a failing provider")
+			}
+			if got := calls.Load(); got != tc.attempts {
+				t.Fatalf("want %d requests, got %d", tc.attempts, got)
 			}
 		})
 	}
