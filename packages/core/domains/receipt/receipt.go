@@ -238,23 +238,23 @@ func (s *Service) Open(ctx context.Context, actor, id uuid.UUID) (*Receipt, io.R
 	return r, body, nil
 }
 
-// Image returns the bytes and content type of a receipt the actor may see,
+// Image returns a receipt the actor may see and its bytes,
 // for sending to the AI provider. It fails with a validation error when the
 // provider cannot read the image's type.
-func (s *Service) Image(ctx context.Context, actor, id uuid.UUID) ([]byte, string, error) {
+func (s *Service) Image(ctx context.Context, actor, id uuid.UUID) (*Receipt, []byte, error) {
 	r, body, err := s.Open(ctx, actor, id)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	defer body.Close()
 	if err := r.Readable(); err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	data, err := io.ReadAll(io.LimitReader(body, MaxSize+1))
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
-	return data, r.ContentType, nil
+	return r, data, nil
 }
 
 // Scan extracts line items with the AI reader.
@@ -271,11 +271,11 @@ func (s *Service) Scan(ctx context.Context, actor, id uuid.UUID, currency string
 		}
 		currency = cur.Code
 	}
-	data, contentType, err := s.Image(ctx, actor, id)
+	r, data, err := s.Image(ctx, actor, id)
 	if err != nil {
 		return nil, err
 	}
-	ext, err := s.reader.ReadReceipt(ctx, ports.ReceiptInput{Image: data, ContentType: contentType, Currency: currency, Categories: expense.CategoryIDs()})
+	ext, err := s.reader.ReadReceipt(ctx, ports.ReceiptInput{Image: data, ContentType: r.ContentType, Currency: currency, Categories: expense.CategoryIDs()})
 	if err != nil {
 		return nil, err
 	}
