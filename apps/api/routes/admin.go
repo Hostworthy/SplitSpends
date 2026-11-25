@@ -29,7 +29,7 @@ func toRequest(r *admin.Request) platform.SignupRequest {
 }
 
 func toAccount(u *user.User) platform.Account {
-	return platform.Account{User: toUser(u), Role: string(u.Role), CreatedAt: stamp(u.CreatedAt)}
+	return platform.Account{User: toAccountUser(u), Role: string(u.Role), CreatedAt: stamp(u.CreatedAt)}
 }
 
 func (a *API) signupSettings(w http.ResponseWriter, r *http.Request) error {

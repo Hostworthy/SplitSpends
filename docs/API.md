@@ -44,6 +44,8 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
   "status": "active" | "invited" | "placeholder" }
 // avatarUrl is set only when the person turned on Gravatar (and the host allows it).
 // It answers 404 when they have no Gravatar, so clients keep the initials as a fallback.
+// An account an administrator disabled shows as "active" to everyone except
+// administrators (/admin/accounts), whose Account shape has "status": "disabled".
 
 // Me (User plus private settings). In notifications the top-level switches
 // are email (as before push existed); push has the same keys.
