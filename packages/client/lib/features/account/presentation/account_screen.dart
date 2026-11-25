@@ -10,7 +10,6 @@ import 'package:splitspends/core/sync/outbox_sync.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
-import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/account/presentation/local_mode_card.dart';
 import 'package:splitspends/features/account/presentation/providers.dart';
 import 'package:splitspends/core/config/config_provider.dart';
@@ -28,30 +27,18 @@ class AccountScreen extends ConsumerWidget {
     String? defaultCurrency,
     String? avatarColor,
     bool? gravatar,
-    NotificationPrefs? notifications,
+    NotificationPrefs Function(NotificationPrefs prefs)? notifications,
   }) async {
-    final session = ref.read(sessionProvider).value;
     try {
-      final Me me;
-      if (session?.isLocal ?? false) {
-        me = session!.me!.copyWith(
-          name: name,
-          defaultCurrency: defaultCurrency,
-          avatarColor: avatarColor,
-          notifications: notifications,
-        );
-      } else {
-        me = await ref
-            .read(accountRepositoryProvider)
-            .update(
-              name: name,
-              defaultCurrency: defaultCurrency,
-              avatarColor: avatarColor,
-              gravatar: gravatar,
-              notifications: notifications,
-            );
-      }
-      await ref.read(sessionProvider.notifier).updateMe(me);
+      await ref
+          .read(profileEditsProvider)
+          .save(
+            name: name,
+            defaultCurrency: defaultCurrency,
+            avatarColor: avatarColor,
+            gravatar: gravatar,
+            notifications: notifications,
+          );
     } catch (error) {
       if (context.mounted) showError(context, error);
     }
@@ -296,8 +283,8 @@ class AccountScreen extends ConsumerWidget {
                       kind: kind,
                       prefs: prefs,
                       push: ref.watch(configValueProvider).pushEnabled,
-                      onChanged: (next) =>
-                          _update(context, ref, notifications: next),
+                      onChanged: (change) =>
+                          _update(context, ref, notifications: change),
                     ),
                   const PushSection(),
                   const SectionHeader('Developers'),
@@ -352,7 +339,11 @@ class _KindTile extends StatelessWidget {
 
   /// Whether the server sends push, so the push switch means something.
   final bool push;
-  final ValueChanged<NotificationPrefs> onChanged;
+
+  /// Receives the change rather than the new settings, so it applies to
+  /// the latest settings, not the ones this tile was built with.
+  final ValueChanged<NotificationPrefs Function(NotificationPrefs prefs)>
+  onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -365,14 +356,14 @@ class _KindTile extends StatelessWidget {
             label: const Text('Email'),
             selected: prefs.email.on(kind),
             onSelected: (v) =>
-                onChanged(prefs.copyWith(email: prefs.email.set(kind, v))),
+                onChanged((p) => p.copyWith(email: p.email.set(kind, v))),
           ),
           if (push)
             FilterChip(
               label: const Text('Push'),
               selected: prefs.push.on(kind),
               onSelected: (v) =>
-                  onChanged(prefs.copyWith(push: prefs.push.set(kind, v))),
+                  onChanged((p) => p.copyWith(push: p.push.set(kind, v))),
             ),
         ],
       ),
