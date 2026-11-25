@@ -176,6 +176,8 @@ Delivery: the server encrypts each message (RFC 8291, `aes128gcm`) and signs it 
 
 Adding people sends email, so it is limited. `POST /friends`, `PATCH /friends/{userId}`, `POST /groups`, `POST /groups/{groupId}/members` and `POST /reminders` share a budget of 20 requests a minute per account (429 `RATE_LIMITED`). Each account may invite 20 new email addresses a day, counting every address that gets an invitation from these routes; a request that would go over answers 429 `RATE_LIMITED` and adds nobody. The invitation email is sent once the request has succeeded. Someone added to groups by the same person is emailed about it at most 3 times a day; later additions still reach their devices.
 
+Each account may have up to 1000 people it added by name only (placeholders, from `/friends`, `/groups` and `/import`); adding another answers 409 `CONFLICT`. Giving a placeholder an email frees its place.
+
 ### Groups
 
 | Method | Path | Body | Response |

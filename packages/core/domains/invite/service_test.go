@@ -91,6 +91,7 @@ func (m users) List(context.Context, []uuid.UUID) ([]*user.User, error) { return
 func (m users) Create(context.Context, *user.User) error                { return nil }
 func (m users) Update(context.Context, *user.User) error                { return nil }
 func (m users) Count(context.Context) (int, error)                      { return len(m), nil }
+func (m users) Placeholders(context.Context, uuid.UUID) (int, error)    { return 0, nil }
 
 type clockAt struct{ at time.Time }
 

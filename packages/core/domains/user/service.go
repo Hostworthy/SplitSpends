@@ -19,6 +19,10 @@ const (
 	InviteWindow = 24 * time.Hour
 )
 
+// MaxPlaceholders is how many people known only by name one account may
+// add, as many as an import may bring.
+const MaxPlaceholders = 1000
+
 // Service exposes user use cases.
 type Service struct {
 	repo     Repository
@@ -153,6 +157,13 @@ func (s *Service) Placeholder(ctx context.Context, id *uuid.UUID, name string, c
 	u, err := NewPlaceholder(id, name, createdBy, s.clock.Now())
 	if err != nil {
 		return nil, err
+	}
+	n, err := s.repo.Placeholders(ctx, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	if n >= MaxPlaceholders {
+		return nil, errs.Conflict(fmt.Sprintf("You have added %d people by name, the most you can. Give some of them an email, or remove ones you no longer need.", MaxPlaceholders))
 	}
 	if inviter, err := s.repo.Get(ctx, createdBy); err == nil {
 		u.DefaultCurrency = inviter.DefaultCurrency

@@ -11,6 +11,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/reminder"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/transfer"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/google/uuid"
@@ -159,5 +160,37 @@ func TestCreateGroupMemberLimit(t *testing.T) {
 	wantField(t, err, "members")
 	if _, err := svc.Groups.Join(ctx, cara, v.ID); !errs.Is(err, errs.KindConflict) {
 		t.Fatalf("joining a full group must be refused, got %v", err)
+	}
+}
+
+// TestPlaceholderLimit checks that one account adds at most
+// user.MaxPlaceholders people by name, that retrying an import of them still
+// works at the limit, and that someone else is not affected.
+func TestPlaceholderLimit(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
+
+	bundle := transfer.Bundle{Me: uuid.New()}
+	for i := range user.MaxPlaceholders {
+		bundle.People = append(bundle.People, transfer.Person{ID: uuid.New(), Name: fmt.Sprintf("Person %d", i)})
+	}
+	for attempt := range 2 {
+		if _, err := svc.Transfer.Import(ctx, ada, bundle); err != nil {
+			t.Fatalf("import %d: %v", attempt, err)
+		}
+	}
+	if _, err := svc.Friends.Add(ctx, ada, "", "One more"); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("person %d added by name must be refused, got %v", user.MaxPlaceholders+1, err)
+	}
+	name := "Trip"
+	_, err := svc.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name}, Members: []group.Invitee{{Name: "Sam"}}})
+	if !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("groups cannot add people by name past the limit either, got %v", err)
+	}
+	if _, err := svc.Friends.Add(ctx, ben, "", "Sam"); err != nil {
+		t.Fatalf("the limit is per account: %v", err)
 	}
 }

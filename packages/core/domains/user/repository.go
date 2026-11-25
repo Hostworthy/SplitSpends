@@ -16,4 +16,6 @@ type Repository interface {
 	Create(ctx context.Context, u *User) error
 	Update(ctx context.Context, u *User) error
 	Count(ctx context.Context) (int, error)
+	// Placeholders counts the people createdBy added by name only.
+	Placeholders(ctx context.Context, createdBy uuid.UUID) (int, error)
 }
