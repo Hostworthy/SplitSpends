@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
 import 'package:splitspends/core/api/api_error.dart';
+import 'package:splitspends/core/api/transport.dart';
+import 'package:splitspends/core/log.dart';
 import 'package:splitspends/core/models/json.dart';
 import 'package:splitspends/core/paging/page_result.dart';
 
@@ -126,6 +128,7 @@ class ApiClient {
   /// Fetches raw bytes (receipt images, CSV export).
   Future<Uint8List> getBytes(String path) async {
     final response = await _guard(
+      path,
       () => _http.get(uri(path), headers: headers(json: false)),
     );
     _check(response);
@@ -152,6 +155,7 @@ class ApiClient {
         ),
       );
     final response = await _guard(
+      path,
       () async => http.Response.fromStream(await _http.send(request)),
     );
     _check(response);
@@ -174,6 +178,7 @@ class ApiClient {
       // The body is read inside the guard too: a connection that drops or
       // stalls mid-body is a network failure like any other.
       response = await _guard(
+        path,
         () async => http.Response.fromStream(await _http.send(request)),
       );
     } on ApiError catch (error) {
@@ -199,15 +204,35 @@ class ApiClient {
     return decoded;
   }
 
-  Future<R> _guard<R>(Future<R> Function() run) async {
+  /// Turns connection failures into [ApiError]s. Anything else is a fault
+  /// in the app and propagates as it is.
+  Future<R> _guard<R>(String path, Future<R> Function() run) async {
     try {
       return await run().timeout(timeout);
     } on ApiError {
       rethrow;
     } on TimeoutException {
+      log('api.request.timeout', details: {'path': path});
       throw const ApiError.network('The server took too long to respond.');
-    } catch (_) {
-      throw const ApiError.network('Cannot reach the server.');
+    } catch (error, stack) {
+      // Checked first: a rejected certificate is also an I/O failure.
+      if (isTlsFailure(error)) {
+        log(
+          'api.request.insecure',
+          details: {'path': path},
+          error: error,
+          stack: stack,
+        );
+        throw const ApiError.tls(
+          'The server\'s security certificate could not be verified. Check '
+          'the address, or ask whoever runs the server to renew it.',
+        );
+      }
+      if (isTransportFailure(error)) {
+        log('api.request.failed', details: {'path': path}, error: error);
+        throw const ApiError.network('Cannot reach the server.');
+      }
+      rethrow;
     }
   }
 
@@ -226,6 +251,7 @@ class ApiClient {
       error = ApiError(
         status: response.statusCode,
         message: 'Request failed (${response.statusCode}).',
+        code: ApiError.codeFor(response.statusCode),
         retryAfter: retryAfter,
       );
     }

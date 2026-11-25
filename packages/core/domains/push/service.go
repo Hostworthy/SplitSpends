@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
@@ -20,6 +22,19 @@ const (
 	// MaxFailures removes a subscription after this many failed deliveries
 	// in a row (for example after the server's VAPID key changed).
 	MaxFailures = 25
+	// SendTimeout bounds one delivery to one device. Endpoints are chosen
+	// by users, so a slow or silent one must not hold up the others.
+	SendTimeout = 5 * time.Second
+
+	// storeTimeout bounds recording one delivery's outcome. It runs apart
+	// from the delivery's own deadline, so slow devices cannot use up the
+	// time needed to count their failures.
+	storeTimeout = 5 * time.Second
+
+	// parallel is how many devices are sent to at once: all of a user's
+	// devices up to the cap, so one notification costs about one
+	// SendTimeout however its devices answer.
+	parallel = MaxDevices
 
 	maxTitle = 120
 	maxBody  = 600
@@ -33,6 +48,9 @@ type Settings struct {
 	AppName   string
 	// Link is where a notification without its own link opens.
 	Link string
+	// AllowPrivate lets endpoints point at private and loopback addresses,
+	// as the sender does (see Blocked).
+	AllowPrivate bool
 }
 
 // Service registers devices and delivers push notifications to them.
@@ -41,12 +59,13 @@ type Service struct {
 	sender   Sender
 	clock    clock.Clock
 	settings Settings
+	timeout  time.Duration
 }
 
 // NewService builds a Service. A nil sender disables push: devices cannot
 // register and nothing is sent.
 func NewService(repo Repository, sender Sender, c clock.Clock, settings Settings) *Service {
-	return &Service{repo: repo, sender: sender, clock: c, settings: settings}
+	return &Service{repo: repo, sender: sender, clock: c, settings: settings, timeout: SendTimeout}
 }
 
 // Enabled reports whether this server sends push notifications.
@@ -70,29 +89,23 @@ func (s *Service) available() error {
 // Register adds the actor's device or refreshes it when the endpoint is
 // already known. Registering is idempotent on the endpoint; an endpoint
 // registered by someone else moves to the actor, because a browser or phone
-// belongs to whoever is signed in on it now.
-func (s *Service) Register(ctx context.Context, actor uuid.UUID, in Input) (*Subscription, bool, error) {
+// belongs to whoever is signed in on it now. The device belongs to session,
+// the actor's session or API token: it is removed when that ends.
+func (s *Service) Register(ctx context.Context, actor, session uuid.UUID, in Input) (*Subscription, bool, error) {
 	if err := s.available(); err != nil {
 		return nil, false, err
 	}
-	sub, err := New(actor, in, s.clock.Now())
+	sub, err := New(actor, session, in, s.clock.Now())
 	if err != nil {
 		return nil, false, err
 	}
-	known, err := s.repo.Exists(ctx, sub.Endpoint)
-	if err != nil {
-		return nil, false, err
+	if !sub.Reachable(s.settings.AllowPrivate) {
+		return nil, false, errs.Validation("endpoint", "The push endpoint must not be a private or local address.")
 	}
-	if !known {
-		n, err := s.repo.Count(ctx, actor)
-		if err != nil {
-			return nil, false, err
-		}
-		if n >= MaxDevices {
-			return nil, false, errs.Conflict("You have too many devices registered for push notifications. Remove one first.")
-		}
+	created, err := s.repo.Save(ctx, sub, MaxDevices)
+	if errors.Is(err, ErrFull) {
+		return nil, false, errs.Conflict("You have too many devices registered for push notifications. Remove one first.")
 	}
-	created, err := s.repo.Save(ctx, sub)
 	if err != nil {
 		return nil, false, err
 	}
@@ -114,8 +127,10 @@ type Report struct {
 	Sent    int
 	Failed  int
 	Removed int
-	// Err is the last delivery failure, for logs.
+	// Err is one of the delivery failures (the last device's), for logs.
 	Err error
+	// Store joins the errors met while recording outcomes, for logs.
+	Store error
 }
 
 // Message is the payload devices receive: small JSON that the web app's
@@ -143,11 +158,13 @@ func clip(s string, max int) string {
 }
 
 // Test sends a test notification to every device of the actor, ignoring
-// preferences, and waits for the result.
+// preferences, and waits for the result, at most a few send timeouts.
 func (s *Service) Test(ctx context.Context, actor uuid.UUID) (Report, error) {
 	if err := s.available(); err != nil {
 		return Report{}, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, 3*s.timeout)
+	defer cancel()
 	subs, err := s.repo.List(ctx, actor)
 	if err != nil {
 		return Report{}, err
@@ -181,29 +198,56 @@ func (s *Service) Notify(ctx context.Context, n ports.Notification) (Report, err
 	return s.deliver(ctx, subs, Message{Title: n.Subject, Body: body, URL: link}), nil
 }
 
-// deliver sends to each device. Devices the push service forgot are
-// removed; other failures are counted, and a device that keeps failing is
-// eventually removed too.
+// deliver sends to the devices concurrently, each within its own timeout.
+// Devices the push service forgot are removed; other failures are counted,
+// and a device that keeps failing is eventually removed too.
 func (s *Service) deliver(ctx context.Context, subs []*Subscription, m Message) Report {
-	var r Report
 	payload := m.Payload()
-	for _, sub := range subs {
-		err := s.sender.Send(ctx, sub, payload)
-		switch {
-		case err == nil:
-			r.Sent++
-			_ = s.repo.Succeeded(ctx, sub.ID, s.clock.Now())
-		case errors.Is(err, ErrGone):
-			r.Removed++
-			_ = s.repo.Remove(ctx, sub.ID)
-		default:
-			r.Failed++
-			r.Err = err
-			if n, ferr := s.repo.Failed(ctx, sub.ID); ferr == nil && n >= MaxFailures {
-				r.Removed++
-				_ = s.repo.Remove(ctx, sub.ID)
-			}
-		}
+	results := make([]Report, len(subs))
+	slots := make(chan struct{}, parallel)
+	var wg sync.WaitGroup
+	for i, sub := range subs {
+		slots <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-slots; wg.Done() }()
+			results[i] = s.send(ctx, sub, payload)
+		}()
 	}
+	wg.Wait()
+	var r Report
+	var store []error
+	for _, one := range results {
+		r.Sent, r.Failed, r.Removed = r.Sent+one.Sent, r.Failed+one.Failed, r.Removed+one.Removed
+		if one.Err != nil {
+			r.Err = one.Err
+		}
+		store = append(store, one.Store)
+	}
+	r.Store = errors.Join(store...)
 	return r
+}
+
+// send delivers payload to one device and records the outcome.
+func (s *Service) send(ctx context.Context, sub *Subscription, payload []byte) Report {
+	sendCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	err := s.sender.Send(sendCtx, sub, payload)
+	cancel()
+	store, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)
+	defer cancel()
+	switch {
+	case err == nil:
+		return Report{Sent: 1, Store: s.repo.Succeeded(store, sub.ID, s.clock.Now())}
+	case errors.Is(err, ErrGone):
+		return Report{Removed: 1, Store: s.repo.Remove(store, sub.ID)}
+	default:
+		r := Report{Failed: 1, Err: err}
+		n, ferr := s.repo.Failed(store, sub.ID)
+		r.Store = ferr
+		if ferr == nil && n >= MaxFailures {
+			r.Removed = 1
+			r.Store = s.repo.Remove(store, sub.ID)
+		}
+		return r
+	}
 }

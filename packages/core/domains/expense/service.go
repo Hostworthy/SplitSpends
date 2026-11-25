@@ -223,15 +223,20 @@ func (s *Service) category(ctx context.Context, actor uuid.UUID, id, kept string
 }
 
 func (s *Service) build(e *Expense, n *Normalized, actor uuid.UUID, now time.Time) {
-	e.Description, e.Category, e.Currency, e.Total = n.Description, n.Category, n.Currency, n.Total
-	e.Date, e.Notes, e.Method, e.Shares = n.Date, strings.TrimSpace(n.Notes), n.Method, n.Shares
-	e.Items, e.Tax, e.Tip, e.ReceiptID, e.Recurrence = n.Items, n.Tax, n.Tip, n.ReceiptID, n.Recurrence
-	if e.Method == "" {
-		e.Method = MethodEqual
+	// Editing the expense that carries a series keeps the series' day unless
+	// the date changes, so an edit of the copy booked on 28 February still
+	// returns to the 31st.
+	if e.AnchorDay == 0 || !n.Date.Equal(e.Date) {
+		e.AnchorDay = n.Date.Day()
 	}
+	e.Description, e.Category, e.Currency, e.Total = n.Description, n.Category, n.Currency, n.Total
+	e.Date, e.Notes, e.Method, e.Shares = n.Date, n.Notes, n.Method, n.Shares
+	e.Items, e.Tax, e.Tip, e.ReceiptID, e.Recurrence = n.Items, n.Tax, n.Tip, n.ReceiptID, n.Recurrence
 	e.NextDate = nil
-	if e.Recurrence != RecurNone {
-		next := e.Recurrence.Next(e.Date)
+	if e.Recurrence == RecurNone {
+		e.AnchorDay = 0
+	} else {
+		next := e.Recurrence.Next(e.Date, e.AnchorDay)
 		e.NextDate = &next
 	}
 	e.UpdatedBy, e.UpdatedAt = actor, now
@@ -267,12 +272,12 @@ func (s *Service) existing(ctx context.Context, actor uuid.UUID, id *uuid.UUID, 
 	}
 	if _, _, err := s.visible(ctx, actor, e); err != nil {
 		if errs.Is(err, errs.KindNotFound) {
-			return nil, errs.Conflict("That expense id is already in use.")
+			return nil, errs.Taken()
 		}
 		return nil, err
 	}
 	if e.Kind != kind || (e.GroupID == nil) != (groupID == nil) || (groupID != nil && *e.GroupID != *groupID) {
-		return nil, errs.Conflict("That expense id is already in use.")
+		return nil, errs.Taken()
 	}
 	return e, nil
 }
@@ -500,16 +505,17 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	if in.GroupID == nil && actor != in.From && actor != in.To {
 		return nil, errs.Validation("fromUserId", "You must be part of a payment outside a group.")
 	}
+	// Authorizing first answers an id that does not exist like a stranger's.
+	g, err := s.authorize(ctx, actor, in.GroupID, n.Shares, nil)
+	if err != nil {
+		return nil, err
+	}
 	people, err := s.users.Index(ctx, []uuid.UUID{in.From, in.To})
 	if err != nil {
 		return nil, err
 	}
 	if people[in.From] == nil || people[in.To] == nil {
 		return nil, errs.Validation("toUserId", "Unknown person.")
-	}
-	g, err := s.authorize(ctx, actor, in.GroupID, n.Shares, nil)
-	if err != nil {
-		return nil, err
 	}
 	now := s.clock.Now()
 	e := &Expense{ID: newID(in.ID), GroupID: in.GroupID, Kind: KindPayment, CreatedBy: actor, CreatedAt: now}
@@ -604,10 +610,17 @@ func (s *Service) Comment(ctx context.Context, actor, id uuid.UUID, body string)
 	return c, err
 }
 
-// DeleteComment removes the actor's own comment.
+// DeleteComment removes the actor's own comment. A comment on an expense the
+// actor cannot see is not found, like a comment that does not exist.
 func (s *Service) DeleteComment(ctx context.Context, actor, id uuid.UUID) error {
 	c, err := s.comments.Get(ctx, id)
 	if err != nil {
+		return err
+	}
+	if _, _, err := s.load(ctx, actor, c.ExpenseID); err != nil {
+		if errs.Is(err, errs.KindNotFound) {
+			return errs.NotFound("Comment")
+		}
 		return err
 	}
 	if c.UserID != actor {
@@ -686,14 +699,18 @@ func (s *Service) repeat(ctx context.Context, id uuid.UUID, today time.Time) (in
 	if !ok {
 		return 0, s.record(ctx, src.CreatedBy, activity.ExpenseStopped, src, g, nil)
 	}
-	dates, next := src.Recurrence.Missed(*src.NextDate, today)
+	day := src.AnchorDay
+	if day == 0 {
+		day = src.Date.Day()
+	}
+	dates, next := src.Recurrence.Missed(*src.NextDate, today, day)
 	for i, date := range dates {
 		c := *src
 		c.ID, c.Date, c.ReceiptID = uuid.New(), date, nil
 		c.CreatedAt, c.UpdatedAt = now, now
-		c.Recurrence, c.NextDate = RecurNone, nil
+		c.Recurrence, c.NextDate, c.AnchorDay = RecurNone, nil, 0
 		if i == len(dates)-1 {
-			c.Recurrence, c.NextDate = src.Recurrence, &next
+			c.Recurrence, c.NextDate, c.AnchorDay = src.Recurrence, &next, day
 		}
 		if err := s.repo.Create(ctx, &c); err != nil {
 			return 0, err

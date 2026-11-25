@@ -34,10 +34,13 @@ func (r *Friends) Add(ctx context.Context, a, b uuid.UUID) error {
 	return err
 }
 
-func (r *Friends) Remove(ctx context.Context, a, b uuid.UUID) error {
+func (r *Friends) Remove(ctx context.Context, a, b uuid.UUID) (bool, error) {
 	x, y := ordered(a, b)
-	_, err := r.db.Q(ctx).Exec(ctx, `DELETE FROM friendships WHERE user_a=$1 AND user_b=$2`, x, y)
-	return err
+	tag, err := r.db.Q(ctx).Exec(ctx, `DELETE FROM friendships WHERE user_a=$1 AND user_b=$2`, x, y)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 func (r *Friends) List(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
@@ -128,7 +131,7 @@ func (r *Groups) Create(ctx context.Context, g *group.Group) error {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return errs.Conflict("That group id is already in use.")
+		return errs.Taken()
 	}
 	return nil
 }

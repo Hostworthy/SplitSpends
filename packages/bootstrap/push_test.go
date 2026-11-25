@@ -99,6 +99,72 @@ func TestFanoutQueueDoesNotBlock(t *testing.T) {
 	}
 }
 
+// stallingPusher never finishes deliveries to slow and reports every
+// other delivery on done.
+type stallingPusher struct {
+	slow    uuid.UUID
+	release chan struct{}
+	done    chan ports.Notification
+}
+
+func (p *stallingPusher) Notify(_ context.Context, n ports.Notification) (push.Report, error) {
+	if n.UserID == p.slow {
+		<-p.release
+		return push.Report{}, nil
+	}
+	p.done <- n
+	return push.Report{Sent: 1}, nil
+}
+
+func TestFanoutSlowRecipientDoesNotBlockOthers(t *testing.T) {
+	pushes := &stallingPusher{slow: uuid.New(), release: make(chan struct{}), done: make(chan ports.Notification, 1)}
+	f := newFanout(&fakeNotifier{codes: map[string]string{}}, pushes, slog.New(slog.DiscardHandler), false)
+	defer f.Close()
+	defer close(pushes.release)
+
+	f.Notify(context.Background(), ports.Notification{UserID: pushes.slow, Subject: "stuck"})
+	f.Notify(context.Background(), ports.Notification{UserID: uuid.New(), Subject: "next"})
+	select {
+	case n := <-pushes.done:
+		if n.Subject != "next" {
+			t.Fatalf("unexpected delivery %+v", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a recipient with stalled devices held up everyone else's push")
+	}
+}
+
+func TestFanoutNotifyAfterClose(t *testing.T) {
+	pushes := &recordingPusher{}
+	f := newFanout(&fakeNotifier{codes: map[string]string{}}, pushes, slog.New(slog.DiscardHandler), false)
+	f.Close()
+	f.Notify(context.Background(), ports.Notification{UserID: uuid.New(), Subject: "late"})
+	f.Close()
+	if pushes.count() != 0 {
+		t.Fatal("a notification after Close should be dropped")
+	}
+}
+
+func TestFanoutCloseHasDeadline(t *testing.T) {
+	pushes := &recordingPusher{wait: make(chan struct{})}
+	defer close(pushes.wait)
+	f := newFanout(&fakeNotifier{codes: map[string]string{}}, pushes, slog.New(slog.DiscardHandler), false)
+	f.drain = 50 * time.Millisecond
+	for range pushWorkers + 3 {
+		f.Notify(context.Background(), ports.Notification{UserID: uuid.New(), Subject: "stuck"})
+	}
+	closed := make(chan struct{})
+	go func() {
+		f.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close waited for stalled deliveries past its deadline")
+	}
+}
+
 func TestFanoutWithoutPush(t *testing.T) {
 	email := &fakeNotifier{codes: map[string]string{}}
 	f := newFanout(email, nil, slog.New(slog.DiscardHandler), false)

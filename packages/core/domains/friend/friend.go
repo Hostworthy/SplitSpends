@@ -20,7 +20,8 @@ import (
 // Repository persists friendships.
 type Repository interface {
 	Add(ctx context.Context, a, b uuid.UUID) error
-	Remove(ctx context.Context, a, b uuid.UUID) error
+	// Remove reports whether there was an explicit friendship to end.
+	Remove(ctx context.Context, a, b uuid.UUID) (bool, error)
 	// List returns explicit friends plus active group co-members.
 	List(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	// Connected reports whether a and b are friends or share a group.
@@ -172,7 +173,9 @@ func (s *Service) Detail(ctx context.Context, me, id uuid.UUID) (*Detail, error)
 	return d, nil
 }
 
-// Remove ends an explicit friendship once everything is settled.
+// Remove ends an explicit friendship once everything is settled. Someone
+// who is a friend only through a shared group stays one, so that is a
+// conflict rather than a removal that changes nothing.
 func (s *Service) Remove(ctx context.Context, me, id uuid.UUID) error {
 	d, err := s.Detail(ctx, me, id)
 	if err != nil {
@@ -181,7 +184,18 @@ func (s *Service) Remove(ctx context.Context, me, id uuid.UUID) error {
 	if !d.Balances.Settled() {
 		return errs.Conflict("Settle up with " + d.User.Name + " before removing them.")
 	}
-	return s.repo.Remove(ctx, me, id)
+	removed, err := s.repo.Remove(ctx, me, id)
+	if err != nil || removed {
+		return err
+	}
+	connected, err := s.repo.Connected(ctx, me, id)
+	if err != nil {
+		return err
+	}
+	if connected {
+		return errs.Conflict("You share a group with " + d.User.Name + ". Leave the group to stop being connected.")
+	}
+	return nil
 }
 
 // Connected reports whether a and b may share non-group expenses.

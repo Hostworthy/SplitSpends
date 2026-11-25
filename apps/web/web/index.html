@@ -41,14 +41,9 @@
 </head>
 <body>
   <div id="splash" aria-hidden="true"><img src="favicon.svg" alt=""></div>
-  <script>
-    window.addEventListener('flutter-first-frame', function () {
-      var splash = document.getElementById('splash');
-      if (!splash) return;
-      splash.classList.add('gone');
-      setTimeout(function () { splash.remove(); }, 300);
-    });
-  </script>
+  <!-- Scripts live in files: the server's Content-Security-Policy runs no
+       inline scripts. -->
+  <script src="splash.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

@@ -244,6 +244,21 @@ void main() {
     });
     expect(e.field, 'splits');
     expect(describeError(e), 'Percentages must add up to 100.');
-    expect(ApiError.fromJson(503, {'error': 'off'}).isAiDisabled, isTrue);
+  });
+
+  test('only an explicit AI_DISABLED code means AI is off', () {
+    expect(
+      ApiError.fromJson(503, {'message': 'Service Unavailable'}).isAiDisabled,
+      isFalse,
+    );
+    expect(ApiError.fromJson(503, {'error': 'off'}).isAiDisabled, isFalse);
+    expect(ApiError.fromJson(504, {}).code, 'UNAVAILABLE');
+    expect(
+      ApiError.fromJson(503, {
+        'error': 'x',
+        'code': 'AI_DISABLED',
+      }).isAiDisabled,
+      isTrue,
+    );
   });
 }

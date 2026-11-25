@@ -52,7 +52,7 @@ func newServer(t *testing.T, o bootstraptest.Options) *server {
 	mux.Handle("/api/", api)
 	mux.Handle("/health", api)
 	mux.Handle("/internal/", api)
-	srv := httptest.NewServer(middleware.Observe(log, middleware.Security(middleware.CORS(env.Config.CORSOrigins, mux))))
+	srv := httptest.NewServer(middleware.Observe(log, middleware.Security(false, middleware.CORS(env.Config.CORSOrigins, mux))))
 	t.Cleanup(srv.Close)
 	return &server{Env: env, url: srv.URL}
 }

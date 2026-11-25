@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/subtle"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -380,8 +381,13 @@ type IssuedToken struct {
 	Token   string
 }
 
-// CreateToken issues a personal API token.
-func (s *Service) CreateToken(ctx context.Context, userID uuid.UUID, name string) (*IssuedToken, error) {
+// CreateToken issues a personal API token. Only an interactive session may
+// create one, so a token handed to a script cannot outlive its revocation by
+// minting replacements.
+func (s *Service) CreateToken(ctx context.Context, p *Principal, name string) (*IssuedToken, error) {
+	if err := interactive(p); err != nil {
+		return nil, err
+	}
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > 60 {
 		return nil, errs.Validation("name", "Give the token a name of up to 60 characters.")
@@ -390,8 +396,21 @@ func (s *Service) CreateToken(ctx context.Context, userID uuid.UUID, name string
 	if err != nil {
 		return nil, err
 	}
-	sess := &Session{ID: uuid.New(), UserID: userID, Kind: KindToken, Name: name, TokenHash: hash, CreatedAt: s.clock.Now()}
-	if err := s.sessions.Create(ctx, sess); err != nil {
+	sess := &Session{ID: uuid.New(), UserID: p.UserID, Kind: KindToken, Name: name, TokenHash: hash, CreatedAt: s.clock.Now()}
+	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.sessions.Lock(ctx, p.UserID); err != nil {
+			return err
+		}
+		held, err := s.sessions.ListTokens(ctx, p.UserID)
+		if err != nil {
+			return err
+		}
+		if len(held) >= MaxTokens {
+			return errs.Validation("name", fmt.Sprintf("You already have %d API tokens, the most an account can hold. Revoke one you no longer use to create another.", MaxTokens))
+		}
+		return s.sessions.Create(ctx, sess)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &IssuedToken{Session: sess, Token: token}, nil
@@ -402,14 +421,25 @@ func (s *Service) Tokens(ctx context.Context, userID uuid.UUID) ([]*Session, err
 	return s.sessions.ListTokens(ctx, userID)
 }
 
-// RevokeToken deletes one of the user's API tokens.
-func (s *Service) RevokeToken(ctx context.Context, userID, id uuid.UUID) error {
-	ok, err := s.sessions.DeleteToken(ctx, userID, id)
+// RevokeToken deletes one of the caller's API tokens. Like CreateToken, it
+// needs an interactive session.
+func (s *Service) RevokeToken(ctx context.Context, p *Principal, id uuid.UUID) error {
+	if err := interactive(p); err != nil {
+		return err
+	}
+	ok, err := s.sessions.DeleteToken(ctx, p.UserID, id)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return errs.NotFound("Token")
+	}
+	return nil
+}
+
+func interactive(p *Principal) error {
+	if p.Kind == KindToken {
+		return errs.Forbidden("API tokens can only be created and revoked from the app, not with another API token.")
 	}
 	return nil
 }

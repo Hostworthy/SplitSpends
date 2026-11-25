@@ -4,6 +4,7 @@ package push
 
 import (
 	"encoding/base64"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -29,6 +30,11 @@ const (
 type Subscription struct {
 	ID     uuid.UUID
 	UserID uuid.UUID
+	// SessionID is the session or API token that registered the device.
+	// The device is removed with it, so it stops getting the account's
+	// notifications once that sign-in ends. Nil for devices registered
+	// before devices were tied to sessions.
+	SessionID uuid.UUID
 	// Endpoint is the push service URL. It is a capability: whoever knows it
 	// can address the device, so it is only shown to its owner.
 	Endpoint string
@@ -60,8 +66,9 @@ const (
 	maxLabel    = 80
 )
 
-// New validates in and builds a subscription for userID.
-func New(userID uuid.UUID, in Input, now time.Time) (*Subscription, error) {
+// New validates in and builds a subscription for userID, registered by
+// sessionID.
+func New(userID, sessionID uuid.UUID, in Input, now time.Time) (*Subscription, error) {
 	endpoint := strings.TrimSpace(in.Endpoint)
 	u, err := url.Parse(endpoint)
 	if endpoint == "" || err != nil || u.Scheme != "https" || u.Host == "" || len(endpoint) > maxEndpoint {
@@ -86,8 +93,20 @@ func New(userID uuid.UUID, in Input, now time.Time) (*Subscription, error) {
 	if utf8.RuneCountInString(label) > maxLabel {
 		label = string([]rune(label)[:maxLabel])
 	}
-	return &Subscription{ID: uuid.New(), UserID: userID, Endpoint: endpoint, P256dh: p256dh, Auth: auth,
+	return &Subscription{ID: uuid.New(), UserID: userID, SessionID: sessionID, Endpoint: endpoint, P256dh: p256dh, Auth: auth,
 		Platform: platform, Label: label, CreatedAt: now, UpdatedAt: now}, nil
+}
+
+// Reachable reports whether the endpoint may be contacted under the
+// address policy. Only addresses written into the URL are checked here;
+// the sender checks every address a host name resolves to.
+func (s *Subscription) Reachable(allowPrivate bool) bool {
+	u, err := url.Parse(s.Endpoint)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(u.Hostname())
+	return ip == nil || !Blocked(ip, allowPrivate)
 }
 
 // decode accepts base64url (what browsers and UnifiedPush send) and, to be
@@ -98,3 +117,18 @@ func decode(s string) ([]byte, error) {
 	}
 	return base64.RawStdEncoding.DecodeString(s)
 }
+
+// Blocked reports whether a push endpoint may not reach ip: cloud metadata
+// and other link-local addresses always, and unless allowPrivate (for a
+// UnifiedPush server on the local network), loopback and private networks.
+func Blocked(ip net.IP, allowPrivate bool) bool {
+	if ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() {
+		return true
+	}
+	if allowPrivate {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || cgnat.Contains(ip)
+}
+
+var cgnat = &net.IPNet{IP: net.IP{100, 64, 0, 0}, Mask: net.CIDRMask(10, 32)}

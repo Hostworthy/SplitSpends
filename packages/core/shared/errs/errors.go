@@ -18,7 +18,7 @@ const (
 	KindForbidden    Kind = "FORBIDDEN"
 	KindConflict     Kind = "CONFLICT"
 	KindRateLimited  Kind = "RATE_LIMITED"
-	KindUnavailable  Kind = "AI_DISABLED"
+	KindAIDisabled   Kind = "AI_DISABLED"
 	KindNoRates      Kind = "RATES_UNAVAILABLE"
 	KindPending      Kind = "APPROVAL_PENDING"
 	KindDeclined     Kind = "APPROVAL_DECLINED"
@@ -66,14 +66,21 @@ func Conflict(message string) *Error {
 	return &Error{Kind: KindConflict, Message: message}
 }
 
+// Taken reports that a client-chosen id is already used by something the
+// caller may not reuse it for. It reads the same whatever the id names, so
+// it says nothing about whose it is.
+func Taken() *Error {
+	return Conflict("That id is already in use. Try again with a new one.")
+}
+
 // RateLimited reports too many attempts.
 func RateLimited(message string) *Error {
 	return &Error{Kind: KindRateLimited, Message: message}
 }
 
-// Unavailable reports an optional capability the host did not enable.
-func Unavailable(message string) *Error {
-	return &Error{Kind: KindUnavailable, Message: message}
+// AIDisabled reports that the host did not configure an AI provider.
+func AIDisabled(message string) *Error {
+	return &Error{Kind: KindAIDisabled, Message: message}
 }
 
 // NoRates reports that an amount could not be converted because exchange

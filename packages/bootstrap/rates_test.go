@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -63,5 +64,34 @@ func TestRatesCache(t *testing.T) {
 	var rows int
 	if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM exchange_rates`).Scan(&rows); err != nil || rows != 1 {
 		t.Fatalf("rows = %d, %v", rows, err)
+	}
+}
+
+// TestRatesRoundTrip saves rates with more decimals than a float holds and
+// reads back exactly the same values.
+func TestRatesRoundTrip(t *testing.T) {
+	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+	env := bootstraptest.Open(t, bootstraptest.Options{Now: now})
+	ctx := context.Background()
+
+	long := "0." + strings.Repeat("123456789", 5)
+	table, ok := rates.New("USD", map[string]string{"EUR": long, "JPY": "1.5e-7"})
+	if !ok {
+		t.Fatal("table rejected")
+	}
+	table.Fetched, table.Published = now, now
+	repo := repositories.NewRates(env.DB)
+	if err := repo.Save(ctx, table); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Latest(ctx)
+	if err != nil || got == nil {
+		t.Fatalf("Latest = %v, %v", got, err)
+	}
+	for _, code := range []string{"EUR", "JPY"} {
+		want, _ := table.Rate(code)
+		if r, ok := got.Rate(code); !ok || r.Cmp(want) != 0 {
+			t.Errorf("%s = %v, want %v", code, r, want)
+		}
 	}
 }

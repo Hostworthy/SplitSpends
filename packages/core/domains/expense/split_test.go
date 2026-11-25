@@ -1,6 +1,7 @@
 package expense
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -177,6 +178,104 @@ func TestParseDecimal(t *testing.T) {
 		got, ok := ParseDecimal(c.in, c.exp)
 		if !ok || got != c.want {
 			t.Errorf("ParseDecimal(%q,%d) = %d,%v want %d", c.in, c.exp, got, ok, c.want)
+		}
+	}
+}
+
+// people returns n distinct user ids.
+func people(n int) []uuid.UUID {
+	ids := make([]uuid.UUID, n)
+	for i := range ids {
+		ids[i] = uuid.UUID{15: byte(i), 14: byte(i >> 8), 0: 1}
+	}
+	return ids
+}
+
+func TestNormalizeRejectsTooManyParticipants(t *testing.T) {
+	many := people(MaxPeople + 1)
+	cases := []struct {
+		name  string
+		field string
+		edit  func(in *Input)
+	}{
+		{"payers", "payers", func(in *Input) {
+			in.Payers = []Payer{{ada, in.Total}}
+			for _, id := range many[1:] {
+				in.Payers = append(in.Payers, Payer{UserID: id})
+			}
+		}},
+		{"splits", "splits", func(in *Input) {
+			in.Splits = nil
+			for _, id := range many {
+				in.Splits = append(in.Splits, SplitInput{UserID: id})
+			}
+		}},
+		{"items", "items", func(in *Input) {
+			in.Method, in.Splits, in.Total = MethodItemized, nil, MaxItems+1
+			in.Payers = []Payer{{ada, in.Total}}
+			for range MaxItems + 1 {
+				in.Items = append(in.Items, Item{Name: "Tea", Amount: 1, UserIDs: []uuid.UUID{ada}})
+			}
+		}},
+		{"item users", "items", func(in *Input) {
+			in.Method, in.Splits = MethodItemized, nil
+			in.Items = []Item{{Name: "Cake", Amount: in.Total, UserIDs: many}}
+		}},
+	}
+	for _, c := range cases {
+		in := base(MethodEqual, SplitInput{UserID: ada})
+		c.edit(&in)
+		_, err := Normalize(in, day)
+		if de, ok := errs.As(err); !ok || de.Field != c.field {
+			t.Errorf("%s: want an error on %s, got %v", c.name, c.field, err)
+		}
+	}
+	in := base(MethodEqual)
+	for _, id := range many[:MaxPeople] {
+		in.Splits = append(in.Splits, SplitInput{UserID: id})
+	}
+	n, err := Normalize(in, day)
+	if err != nil {
+		t.Fatalf("%d people must be allowed: %v", MaxPeople, err)
+	}
+	for i := 1; i < len(n.Shares); i++ {
+		if n.Shares[i-1].UserID.String() >= n.Shares[i].UserID.String() {
+			t.Fatalf("shares are not ordered by id at %d", i)
+		}
+	}
+}
+
+func BenchmarkMerge(b *testing.B) {
+	ids := people(MaxPeople)
+	paid := map[uuid.UUID]int64{ids[0]: 1}
+	owed := make(map[uuid.UUID]int64, len(ids))
+	for _, id := range ids {
+		owed[id] = 1
+	}
+	for b.Loop() {
+		merge(paid, owed, nil)
+	}
+}
+
+func TestItemizedRejectsHugeTax(t *testing.T) {
+	cases := []struct {
+		name     string
+		tax, tip int64
+		item     int64
+	}{
+		{"tax above max", MaxTotal + 1, 0, 100},
+		{"tip above max", 0, MaxTotal + 1, 100},
+		{"sum wraps", math.MaxInt64, math.MaxInt64, 102},
+	}
+	for _, c := range cases {
+		in := Input{Description: "Lunch", Currency: "USD", Total: 100, Method: MethodItemized,
+			Payers: []Payer{{ada, 100}},
+			Items:  []Item{{Name: "Soup", Amount: c.item, UserIDs: []uuid.UUID{ada, ben}}},
+			Tax:    c.tax, Tip: c.tip,
+		}
+		_, err := Normalize(in, day)
+		if de, ok := errs.As(err); !ok || de.Field != "tax" {
+			t.Errorf("%s: want an error on tax, got %v", c.name, err)
 		}
 	}
 }

@@ -174,3 +174,29 @@ func TestRemindersAndInviteLinks(t *testing.T) {
 		t.Fatalf("expired link must be invalid: %v", err)
 	}
 }
+
+// TestRemoveCoMemberFriendConflicts checks that removing someone who is a
+// friend only because of a shared group says so instead of reporting a
+// removal that did not happen.
+func TestRemoveCoMemberFriendConflicts(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, _ := flat(t)
+	svc := env.Services
+	if err := svc.Friends.Remove(ctx, ada, ben); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("removing a co-member must be a conflict, got %v", err)
+	}
+	if ok, err := svc.Friends.Connected(ctx, ada, ben); err != nil || !ok {
+		t.Fatalf("Ada and Ben still share the flat: %v %v", ok, err)
+	}
+
+	cy := env.SignIn(t, "cy@example.com", "Cy").User.ID
+	if _, err := svc.Friends.Add(ctx, ada, "cy@example.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Friends.Remove(ctx, ada, cy); err != nil {
+		t.Fatalf("removing an explicit friend works: %v", err)
+	}
+	if ok, err := svc.Friends.Connected(ctx, ada, cy); err != nil || ok {
+		t.Fatalf("Ada and Cy are no longer connected: %v %v", ok, err)
+	}
+}

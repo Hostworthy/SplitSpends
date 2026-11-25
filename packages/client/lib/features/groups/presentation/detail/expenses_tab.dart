@@ -75,6 +75,14 @@ class _ExpenseFeedListState extends ConsumerState<ExpenseFeedList> {
               }
               rows.add(ExpenseTile(expense: e));
             }
+            if (page.error case final error?) {
+              rows.add(
+                PageError(
+                  error: error,
+                  onRetry: () => ref.read(provider.notifier).retry(),
+                ),
+              );
+            }
             if (page.loadingMore) {
               rows.add(
                 const Padding(

@@ -34,6 +34,7 @@ class ExpenseForm extends ChangeNotifier {
     required this.meId,
     required this.currency,
     this.groupId,
+    this.groupLocked = false,
     List<String> people = const [],
   }) {
     _people = [...people];
@@ -44,6 +45,10 @@ class ExpenseForm extends ChangeNotifier {
 
   final String meId;
   String? groupId;
+
+  /// Whether [groupId] is fixed: an expense keeps the group it was booked
+  /// in, and the server ignores a different one on update.
+  final bool groupLocked;
 
   /// Everyone who can take part (group members, or you + chosen friends).
   List<String> _people = [];
@@ -85,7 +90,7 @@ class ExpenseForm extends ChangeNotifier {
 
   /// Replaces the people list (group switch or friends picked).
   void setPeople(List<String> ids, {String? group}) {
-    groupId = group;
+    if (!groupLocked) groupId = group;
     final next = [...ids];
     if (!next.contains(meId)) next.insert(0, meId);
     _people = next;

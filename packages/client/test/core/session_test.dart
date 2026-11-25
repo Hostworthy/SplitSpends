@@ -128,6 +128,23 @@ void main() {
     expect((await outbox(_bob).pending()).single.label, 'B');
   });
 
+  test('signing in and out clears the offline copies', () async {
+    final container = start();
+    await container.read(sessionProvider.future);
+    final cache = container.read(responseCacheProvider);
+    const key = '$_server/api/v1/groups';
+
+    await cache.write(key, {'items': <Object?>[], 'total': 0});
+    await signIn(container, _ada, 'first');
+    expect(await cache.read(key), isNull);
+
+    await cache.write(key, {'items': <Object?>[], 'total': 0});
+    await container.read(sessionProvider.notifier).signOut();
+    expect(await cache.read(key), isNull);
+    expect(store.token, isNull);
+    expect(server.writes, ['ada POST /api/v1/auth/logout']);
+  });
+
   test('another account signing in never replays earlier writes', () async {
     // Ada's session ended at start-up with a change still queued.
     await outbox(_ada).add('POST', '/expenses', body: {'id': 'e1'}, label: 'A');

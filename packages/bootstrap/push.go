@@ -87,6 +87,14 @@ type pusher interface {
 	Notify(ctx context.Context, n ports.Notification) (push.Report, error)
 }
 
+// pushWorkers send queued push notifications at once, so one recipient
+// whose devices answer slowly does not hold up everyone else's.
+const pushWorkers = 4
+
+// pushBudget bounds one push notification: listing devices and one round
+// of sends, which run together and stop after push.SendTimeout each.
+const pushBudget = 3 * push.SendTimeout
+
 // fanout is the ports.Notifier services use: it sends each notification by
 // email and push, so services call Notify once. Push deliveries go through
 // a bounded queue (like emails) so slow push services never hold up a
@@ -98,13 +106,24 @@ type fanout struct {
 	sync  bool
 	queue chan ports.Notification
 	done  sync.WaitGroup
+	// mu guards closed: requests and jobs still running during shutdown
+	// may call Notify after Close.
+	mu     sync.RWMutex
+	closed bool
+	// drain is how long Close waits for queued notifications; after it,
+	// stop is closed and the workers drop what is left.
+	drain time.Duration
+	stop  chan struct{}
 }
 
 func newFanout(email ports.Notifier, p pusher, log *slog.Logger, sync bool) *fanout {
-	f := &fanout{email: email, push: p, log: log, sync: sync, queue: make(chan ports.Notification, 256)}
+	f := &fanout{email: email, push: p, log: log, sync: sync, queue: make(chan ports.Notification, 256),
+		drain: 2 * pushBudget, stop: make(chan struct{})}
 	if p != nil && !sync {
-		f.done.Add(1)
-		go f.work()
+		f.done.Add(pushWorkers)
+		for range pushWorkers {
+			go f.work()
+		}
 	}
 	return f
 }
@@ -128,6 +147,12 @@ func (f *fanout) Notify(ctx context.Context, n ports.Notification) {
 		f.deliver(n)
 		return
 	}
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if f.closed {
+		f.log.Warn("push.queue.closed", "kind", n.Kind)
+		return
+	}
 	select {
 	case f.queue <- n:
 	default:
@@ -138,27 +163,56 @@ func (f *fanout) Notify(ctx context.Context, n ports.Notification) {
 func (f *fanout) work() {
 	defer f.done.Done()
 	for n := range f.queue {
-		f.deliver(n)
+		select {
+		case <-f.stop:
+			f.log.Warn("push.queue.dropped", "kind", n.Kind)
+		default:
+			f.deliver(n)
+		}
 	}
 }
 
 func (f *fanout) deliver(n ports.Notification) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), pushBudget)
 	defer cancel()
 	r, err := f.push.Notify(ctx, n)
 	if err != nil {
 		f.log.Error("push.deliver.failed", "kind", n.Kind, "error", err)
 		return
 	}
+	if r.Store != nil {
+		f.log.Error("push.deliver.store-failed", "kind", n.Kind, "error", r.Store)
+	}
 	if r.Failed > 0 || r.Removed > 0 {
 		f.log.Warn("push.deliver.partial", "kind", n.Kind, "sent", r.Sent, "failed", r.Failed, "removed", r.Removed, "error", r.Err)
 	}
 }
 
-// Close stops the push worker after draining queued messages.
+// Close stops the push workers after draining queued messages, waiting at
+// most f.drain; later notifications are dropped.
 func (f *fanout) Close() {
-	if f.push != nil && !f.sync {
-		close(f.queue)
+	if f.push == nil || f.sync {
+		return
+	}
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		return
+	}
+	f.closed = true
+	close(f.queue)
+	f.mu.Unlock()
+	drained := make(chan struct{})
+	go func() {
 		f.done.Wait()
+		close(drained)
+	}()
+	timer := time.NewTimer(f.drain)
+	defer timer.Stop()
+	select {
+	case <-drained:
+	case <-timer.C:
+		close(f.stop)
+		f.log.Warn("push.queue.drain.timeout", "waited", f.drain)
 	}
 }

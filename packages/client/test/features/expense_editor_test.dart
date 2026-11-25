@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -34,48 +35,62 @@ class _Flaky extends LocalExpensesRepository {
   }
 }
 
+/// Starts the app on the device as Ada, with a group "Flat" she shares
+/// with Ben.
+Future<(ProviderContainer, Group)> _start(
+  WidgetTester tester, {
+  List<Override> overrides = const [],
+}) async {
+  tester.view.physicalSize = const Size(420, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  await tester.pumpWidget(
+    ProviderScope(
+      retry: (_, _) => null,
+      overrides: [
+        localStoreProvider.overrideWithValue(MemoryLocalStore()),
+        memoryDatabase(),
+        ...overrides,
+      ],
+      child: const SplitSpendsApp(),
+    ),
+  );
+  await settle(tester);
+  await tester.tap(find.text('Start'));
+  await settle(tester);
+  await tester.enterText(find.byKey(const Key('local-name')), 'Ada');
+  await tester.tap(find.byKey(const Key('local-start')));
+  await settle(tester);
+
+  final container = ProviderScope.containerOf(
+    tester.element(find.byType(SplitSpendsApp)),
+  );
+  final flat = await pumpFuture(
+    tester,
+    container
+        .read(groupsRepositoryProvider)
+        .create(
+          const GroupInput(
+            name: 'Flat',
+            members: [MemberInput(name: 'Ben')],
+          ),
+        ),
+  );
+  return (container, flat);
+}
+
 void main() {
   testWidgets('saving again after a failure keeps the same expense id', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(420, 2400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
     late _Flaky flaky;
-    await tester.pumpWidget(
-      ProviderScope(
-        retry: (_, _) => null,
-        overrides: [
-          localStoreProvider.overrideWithValue(MemoryLocalStore()),
-          memoryDatabase(),
-          expensesRepositoryProvider.overrideWith(
-            (ref) => flaky = _Flaky(ref.watch(localLedgerProvider)),
-          ),
-        ],
-        child: const SplitSpendsApp(),
-      ),
-    );
-    await settle(tester);
-    await tester.tap(find.text('Start'));
-    await settle(tester);
-    await tester.enterText(find.byKey(const Key('local-name')), 'Ada');
-    await tester.tap(find.byKey(const Key('local-start')));
-    await settle(tester);
-
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(SplitSpendsApp)),
-    );
-    final flat = await pumpFuture(
+    final (container, flat) = await _start(
       tester,
-      container
-          .read(groupsRepositoryProvider)
-          .create(
-            const GroupInput(
-              name: 'Flat',
-              members: [MemberInput(name: 'Ben')],
-            ),
-          ),
+      overrides: [
+        expensesRepositoryProvider.overrideWith(
+          (ref) => flaky = _Flaky(ref.watch(localLedgerProvider)),
+        ),
+      ],
     );
     unawaited(
       container.read(routerProvider).push('/expenses/new?groupId=${flat.id}'),
@@ -110,5 +125,36 @@ void main() {
           .list(ExpenseQuery(groupId: flat.id)),
     );
     expect(list.items.single.id, flaky.ids.first);
+  });
+
+  testWidgets('editing an expense does not offer a group change', (
+    tester,
+  ) async {
+    final (container, flat) = await _start(tester);
+    final me = container.read(meProvider)!;
+    final taxi = await pumpFuture(
+      tester,
+      container
+          .read(expensesRepositoryProvider)
+          .create(
+            ExpenseInput(
+              groupId: flat.id,
+              description: 'Taxi',
+              currency: 'EUR',
+              total: 1200,
+              date: '2026-11-20',
+              payers: [Payer(userId: me.id, amount: 1200)],
+              splits: [for (final m in flat.members) SplitEntry(userId: m.id)],
+            ),
+          ),
+    );
+    unawaited(container.read(routerProvider).push('/expenses/${taxi.id}/edit'));
+    await settle(tester);
+
+    final chip = tester.widget<ActionChip>(
+      find.widgetWithIcon(ActionChip, Icons.groups_rounded),
+    );
+    expect(chip.onPressed, isNull);
+    expect(chip.tooltip, 'The group of an expense cannot change');
   });
 }

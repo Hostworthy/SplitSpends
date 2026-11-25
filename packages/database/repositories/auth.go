@@ -105,6 +105,15 @@ func (r *Sessions) Delete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+// tokenLocks is the first key of the transaction advisory locks taken per
+// user while an API token is created.
+const tokenLocks = 1_384_203
+
+func (r *Sessions) Lock(ctx context.Context, userID uuid.UUID) error {
+	_, err := r.db.Q(ctx).Exec(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, tokenLocks, userID.String())
+	return err
+}
+
 func (r *Sessions) ListTokens(ctx context.Context, userID uuid.UUID) ([]*auth.Session, error) {
 	rows, err := r.db.Q(ctx).Query(ctx, `SELECT `+sessionColumns+` FROM sessions WHERE user_id=$1 AND kind='token' ORDER BY created_at DESC`, userID)
 	if err != nil {

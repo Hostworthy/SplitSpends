@@ -41,7 +41,7 @@ func TestWriteError(t *testing.T) {
 		{errs.KindForbidden, http.StatusForbidden},
 		{errs.KindConflict, http.StatusConflict},
 		{errs.KindRateLimited, http.StatusTooManyRequests},
-		{errs.KindUnavailable, http.StatusServiceUnavailable},
+		{errs.KindAIDisabled, http.StatusServiceUnavailable},
 		{errs.KindNoRates, http.StatusServiceUnavailable},
 		{errs.KindPending, http.StatusForbidden},
 		{errs.KindDeclined, http.StatusForbidden},
@@ -129,11 +129,13 @@ func TestObserve(t *testing.T) {
 
 func TestSecurity(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Security(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	Security(false, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	for header, want := range map[string]string{
-		"X-Content-Type-Options": "nosniff",
-		"Referrer-Policy":        "strict-origin-when-cross-origin",
-		"X-Frame-Options":        "DENY",
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "strict-origin-when-cross-origin",
+		"X-Frame-Options":         "DENY",
+		"Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+		"Permissions-Policy":      "camera=(self), microphone=(), geolocation=()",
 	} {
 		if got := rec.Header().Get(header); got != want {
 			t.Errorf("%s: want %q, got %q", header, want, got)
@@ -464,5 +466,40 @@ func BenchmarkLimiterManyKeys(b *testing.B) {
 	}
 	for i := 0; b.Loop(); i++ {
 		l.Allow(keys[i%len(keys)])
+	}
+}
+
+// TestSecurityHeaders checks the Content-Security-Policy of API responses
+// and web app pages, and that HSTS is sent only by servers reached over https.
+func TestSecurityHeaders(t *testing.T) {
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	for _, tc := range []struct {
+		name    string
+		handler http.Handler
+		policy  []string
+		hsts    bool
+	}{
+		{"api over http", Security(false, ok), []string{"default-src 'none'", "frame-ancestors 'none'"}, false},
+		{"api over https", Security(true, ok), []string{"default-src 'none'"}, true},
+		{"web app over https", Security(true, Web(true, ok)), []string{
+			"default-src 'self'", "script-src 'self' 'wasm-unsafe-eval';", "style-src 'self' 'unsafe-inline'",
+			"https://*.gravatar.com", "connect-src 'self' https:;", "object-src 'none'", "frame-ancestors 'none'",
+		}, true},
+		{"web app over http", Security(false, Web(false, ok)), []string{"connect-src 'self' https: http:;"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			tc.handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			h := rec.Header()
+			policy := h.Get("Content-Security-Policy")
+			for _, want := range tc.policy {
+				if !strings.Contains(policy, want) {
+					t.Errorf("Content-Security-Policy %q lacks %q", policy, want)
+				}
+			}
+			if got := h.Get("Strict-Transport-Security") != ""; got != tc.hsts {
+				t.Errorf("Strict-Transport-Security %q, want present %v", h.Get("Strict-Transport-Security"), tc.hsts)
+			}
+		})
 	}
 }
