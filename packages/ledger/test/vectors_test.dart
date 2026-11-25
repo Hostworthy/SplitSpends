@@ -18,7 +18,9 @@ void main() {
   };
 
   group('split vectors', () {
-    for (final c in (doc['splits'] as List).cast<Map<String, dynamic>>()) {
+    final cases = (doc['splits'] as List).cast<Map<String, dynamic>>();
+    test('exist', () => expect(cases, isNotEmpty));
+    for (final c in cases) {
       test(c['name'] as String, () {
         final i = c['input'] as Map<String, dynamic>;
         final request = ExpenseRequest(
@@ -55,16 +57,23 @@ void main() {
           expect(
             () => normalize(request, today: today, currencies: currencies),
             throwsA(
-              isA<LedgerError>().having((e) => e.field, 'field', c['error']),
+              isA<LedgerError>()
+                  .having((e) => e.field, 'field', c['error'])
+                  .having((e) => e.message, 'message', c['message']),
             ),
           );
           return;
         }
         final n = normalize(request, today: today, currencies: currencies);
-        final got = {for (final s in n.shares) s.userId: s.owed};
-        (c['owed'] as Map<String, dynamic>).forEach((id, want) {
-          expect(got[id] ?? 0, want, reason: '$id owes');
-        });
+        expect({for (final s in n.shares) s.userId: s.owed}, c['owed']);
+        final paid = <String, int>{};
+        for (final p in request.payers) {
+          paid[p.userId] = (paid[p.userId] ?? 0) + p.amount;
+        }
+        for (final s in n.shares) {
+          expect(s.paid, paid[s.userId] ?? 0, reason: '${s.userId} paid');
+        }
+        expect(n.shares.fold<int>(0, (sum, s) => sum + s.owed), request.total);
         if (c['description'] != null) {
           expect(n.description, c['description']);
         }
@@ -100,7 +109,9 @@ void main() {
   ];
 
   group('balance vectors', () {
-    for (final b in (doc['balances'] as List).cast<Map<String, dynamic>>()) {
+    final cases = (doc['balances'] as List).cast<Map<String, dynamic>>();
+    test('exist', () => expect(cases, isNotEmpty));
+    for (final b in cases) {
       final list = entries(b['entries'] as List);
       List<LedgerDebt> parse(String key) => [
         for (final d in (b[key] as List))
@@ -113,14 +124,16 @@ void main() {
       ];
 
       group(b['name'] as String, () {
-        test('nets', () {
-          final got = nets(list);
-          (b['nets'] as Map<String, dynamic>).forEach((id, want) {
-            (want as Map<String, dynamic>).forEach((cur, amount) {
-              expect(got[id]?[cur] ?? 0, amount, reason: '$id $cur');
-            });
-          });
-        });
+        test(
+          'nets',
+          () => expect(
+            _prune(nets(list)),
+            _prune({
+              for (final n in (b['nets'] as Map).entries)
+                n.key as String: _balances(n.value),
+            }),
+          ),
+        );
 
         test('pairwise', () => expect(pairwise(list), parse('pairwise')));
 
@@ -159,7 +172,7 @@ void main() {
             for (final e in sheet.friends.entries)
               e.key: {
                 'total': _nonZero(e.value.total),
-                'byGroup': _byGroup(e.value.byGroup),
+                'byGroup': _prune(e.value.byGroup),
                 'nonGroup': _nonZero(e.value.nonGroup),
               },
           },
@@ -167,7 +180,7 @@ void main() {
             for (final e in (c['friends'] as Map<String, dynamic>).entries)
               e.key: {
                 'total': _nonZero(_balances(e.value['total'])),
-                'byGroup': _byGroup({
+                'byGroup': _prune({
                   for (final g in (e.value['byGroup'] as Map).entries)
                     g.key as String: _balances(g.value),
                 }),
@@ -175,7 +188,7 @@ void main() {
               },
           },
         );
-        expect(_byGroup(sheet.groups), {
+        expect(_prune(sheet.groups), {
           for (final g in (c['groupNets'] as Map).entries)
             g.key as String: _balances(g.value),
         });
@@ -225,7 +238,9 @@ void main() {
           expect(
             () => validateDefaultSplit(method, values, members),
             throwsA(
-              isA<LedgerError>().having((e) => e.field, 'field', c['error']),
+              isA<LedgerError>()
+                  .having((e) => e.field, 'field', c['error'])
+                  .having((e) => e.message, 'message', c['message']),
             ),
           );
           return;
@@ -253,7 +268,8 @@ Balances _nonZero(Balances b) => {
     if (e.value != 0) e.key: e.value,
 };
 
-Map<String, Balances> _byGroup(Map<String, Balances> groups) => {
-  for (final e in groups.entries)
+/// Drops settled currencies and anyone left with none.
+Map<String, Balances> _prune(Map<String, Balances> byKey) => {
+  for (final e in byKey.entries)
     if (_nonZero(e.value).isNotEmpty) e.key: _nonZero(e.value),
 };

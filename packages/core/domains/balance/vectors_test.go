@@ -25,7 +25,7 @@ func TestSharedVectors(t *testing.T) {
 		Balances []struct {
 			Name       string
 			Entries    []Entry
-			Nets       map[uuid.UUID]map[string]int64
+			Nets       map[uuid.UUID]money.Balances
 			Pairwise   []debt
 			Simplified []debt
 		}
@@ -40,13 +40,12 @@ func TestSharedVectors(t *testing.T) {
 		}
 		return out
 	}
+	if len(doc.Balances) == 0 {
+		t.Fatal("no balance vectors")
+	}
 	for _, b := range doc.Balances {
-		for id, want := range b.Nets {
-			for cur, amount := range want {
-				if got := Nets(b.Entries)[id][cur]; got != amount {
-					t.Errorf("%s: net %s %s = %d, want %d", b.Name, id, cur, got, amount)
-				}
-			}
+		if got, want := prune(Nets(b.Entries)), prune(b.Nets); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: nets:\n got %v\nwant %v", b.Name, got, want)
 		}
 		if got := conv(Pairwise(b.Entries)); !reflect.DeepEqual(got, b.Pairwise) {
 			t.Errorf("%s: pairwise:\n got %+v\nwant %+v", b.Name, got, b.Pairwise)
@@ -130,10 +129,10 @@ func TestSheetVectors(t *testing.T) {
 		for id, f := range sheet.Friends {
 			friends[id] = friend{Total: f.Total, ByGroup: f.ByGroup, NonGroup: f.NonGroup}
 		}
-		if got, want := sheetFriends(friends), sheetFriends(c.Friends); !reflect.DeepEqual(got, want) {
+		if got, want := pruneFriends(friends), pruneFriends(c.Friends); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: friends:\n got %+v\nwant %+v", c.Name, got, want)
 		}
-		if got, want := sheetGroups(sheet.Groups), sheetGroups(c.GroupNets); !reflect.DeepEqual(got, want) {
+		if got, want := prune(sheet.Groups), prune(c.GroupNets); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: group nets:\n got %+v\nwant %+v", c.Name, got, want)
 		}
 		net, owed, owing := sheet.Totals()
@@ -159,7 +158,7 @@ func nonZero(b money.Balances) money.Balances {
 	return out
 }
 
-func sheetGroups(groups map[uuid.UUID]money.Balances) map[uuid.UUID]money.Balances {
+func prune(groups map[uuid.UUID]money.Balances) map[uuid.UUID]money.Balances {
 	out := map[uuid.UUID]money.Balances{}
 	for id, b := range groups {
 		if b := nonZero(b); len(b) > 0 {
@@ -169,10 +168,10 @@ func sheetGroups(groups map[uuid.UUID]money.Balances) map[uuid.UUID]money.Balanc
 	return out
 }
 
-func sheetFriends(friends map[uuid.UUID]friend) map[uuid.UUID]friend {
+func pruneFriends(friends map[uuid.UUID]friend) map[uuid.UUID]friend {
 	out := map[uuid.UUID]friend{}
 	for id, f := range friends {
-		out[id] = friend{Total: nonZero(f.Total), ByGroup: sheetGroups(f.ByGroup), NonGroup: nonZero(f.NonGroup)}
+		out[id] = friend{Total: nonZero(f.Total), ByGroup: prune(f.ByGroup), NonGroup: nonZero(f.NonGroup)}
 	}
 	return out
 }
