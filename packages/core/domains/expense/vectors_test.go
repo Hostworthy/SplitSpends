@@ -24,9 +24,11 @@ func TestSharedVectors(t *testing.T) {
 			Input struct {
 				Description string
 				Notes       string
+				Currency    string
 				Total       int64
 				Date        string
 				Method      Method
+				Recurrence  Recurrence
 				Payers      []struct {
 					UserID uuid.UUID
 					Amount int64
@@ -44,17 +46,25 @@ func TestSharedVectors(t *testing.T) {
 			Description string
 			Notes       string
 			Method      Method
+			Currency    string
 			Error       string
+			Message     string
 		}
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
+	if len(doc.Splits) == 0 {
+		t.Fatal("no split vectors")
+	}
 	for _, c := range doc.Splits {
-		in := Input{Description: c.Input.Description, Notes: c.Input.Notes, Currency: "USD", Total: c.Input.Total,
-			Method: c.Input.Method, Date: c.Input.Date, Items: c.Input.Items, Tax: c.Input.Tax, Tip: c.Input.Tip}
+		in := Input{Description: c.Input.Description, Notes: c.Input.Notes, Currency: c.Input.Currency, Total: c.Input.Total,
+			Method: c.Input.Method, Recurrence: c.Input.Recurrence, Date: c.Input.Date, Items: c.Input.Items, Tax: c.Input.Tax, Tip: c.Input.Tip}
 		if in.Description == "" {
 			in.Description = c.Name
+		}
+		if in.Currency == "" {
+			in.Currency = "USD"
 		}
 		for _, p := range c.Input.Payers {
 			in.Payers = append(in.Payers, Payer{UserID: p.UserID, Amount: p.Amount})
@@ -71,8 +81,8 @@ func TestSharedVectors(t *testing.T) {
 		n, err := Normalize(in, today)
 		if c.Error != "" {
 			de, ok := errs.As(err)
-			if !ok || de.Field != c.Error {
-				t.Errorf("%s: want error on %q, got %v", c.Name, c.Error, err)
+			if !ok || de.Field != c.Error || de.Message != c.Message {
+				t.Errorf("%s: want error on %q saying %q, got %v", c.Name, c.Error, c.Message, err)
 			}
 			continue
 		}
@@ -80,16 +90,32 @@ func TestSharedVectors(t *testing.T) {
 			t.Errorf("%s: %v", c.Name, err)
 			continue
 		}
-		got := map[uuid.UUID]int64{}
-		values := map[uuid.UUID]string{}
-		for _, s := range n.Shares {
-			got[s.UserID] = s.Owed
-			values[s.UserID] = s.Value
+		paid := map[uuid.UUID]int64{}
+		for _, p := range in.Payers {
+			paid[p.UserID] += p.Amount
 		}
-		for id, want := range c.Owed {
-			if got[id] != want {
-				t.Errorf("%s: %s owes %d, want %d", c.Name, id, got[id], want)
+		if len(n.Shares) != len(c.Owed) {
+			t.Errorf("%s: %d shares, want %d", c.Name, len(n.Shares), len(c.Owed))
+		}
+		values := map[uuid.UUID]string{}
+		var sum int64
+		for i, s := range n.Shares {
+			if want, ok := c.Owed[s.UserID]; !ok {
+				t.Errorf("%s: unexpected share for %s", c.Name, s.UserID)
+			} else if s.Owed != want {
+				t.Errorf("%s: %s owes %d, want %d", c.Name, s.UserID, s.Owed, want)
 			}
+			if s.Paid != paid[s.UserID] {
+				t.Errorf("%s: %s paid %d, want %d", c.Name, s.UserID, s.Paid, paid[s.UserID])
+			}
+			if i > 0 && s.UserID.String() <= n.Shares[i-1].UserID.String() {
+				t.Errorf("%s: shares not sorted by user id", c.Name)
+			}
+			values[s.UserID] = s.Value
+			sum += s.Owed
+		}
+		if sum != in.Total {
+			t.Errorf("%s: owed adds up to %d, want %d", c.Name, sum, in.Total)
 		}
 		if c.Description != "" && n.Description != c.Description {
 			t.Errorf("%s: description %q, want %q", c.Name, n.Description, c.Description)
@@ -99,6 +125,9 @@ func TestSharedVectors(t *testing.T) {
 		}
 		if c.Method != "" && n.Method != c.Method {
 			t.Errorf("%s: method %q, want %q", c.Name, n.Method, c.Method)
+		}
+		if c.Currency != "" && n.Currency != c.Currency {
+			t.Errorf("%s: currency %q, want %q", c.Name, n.Currency, c.Currency)
 		}
 		for id, want := range c.Values {
 			if values[id] != want {
