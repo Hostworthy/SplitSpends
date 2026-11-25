@@ -32,7 +32,7 @@ Migrations are embedded in the binary and applied on start. They only go forward
 | `make vuln` | [govulncheck](https://go.dev/doc/security/vuln/) (pinned) on the Go code: fails when code calls a function with a known vulnerability, in a module or the standard library |
 | `make test` | Go tests (including the architecture test), `dart test` for the ledger on the VM and under Node.js (the web build's number rules), `flutter test` for the client |
 | `make fmt` | gofmt, `dart fix --apply` and `dart format` |
-| `make hooks` | Quick gofmt and dart format checks before every commit (`scripts/hooks/pre-commit`) |
+| `make hooks` | Quick gofmt and dart format checks before every commit (`scripts/hooks/pre-commit`; `scripts/ci/pre-commit-test.sh` tests it in a scratch repository, and CI runs that) |
 | `make brand` | Re-render icons, splash images and banners from `scripts/brand/render.py` (see [packages/brand](../packages/brand/README.md)) |
 | `make test-integration` | Database-backed tests against `TEST_DATABASE_URL` (the database is wiped) |
 | `make build` | `bin/splitspends` and `bin/splitspends-mcp` |
