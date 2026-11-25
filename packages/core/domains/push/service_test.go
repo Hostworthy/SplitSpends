@@ -22,6 +22,8 @@ import (
 type memRepo struct {
 	mu   sync.Mutex
 	subs map[uuid.UUID]*Subscription
+	// removeErr, when set, is what Remove fails with.
+	removeErr error
 }
 
 func (m *memRepo) Save(_ context.Context, s *Subscription, limit int) (bool, error) {
@@ -74,25 +76,37 @@ func (m *memRepo) Delete(_ context.Context, userID, id uuid.UUID) error {
 	return nil
 }
 
-func (m *memRepo) Remove(_ context.Context, id uuid.UUID) error {
+func (m *memRepo) Remove(ctx context.Context, id uuid.UUID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.removeErr != nil {
+		return m.removeErr
+	}
 	delete(m.subs, id)
 	return nil
 }
 
-func (m *memRepo) Succeeded(_ context.Context, id uuid.UUID, at time.Time) error {
+func (m *memRepo) Succeeded(ctx context.Context, id uuid.UUID, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if s := m.subs[id]; s != nil {
 		s.LastSuccessAt, s.Failures = &at, 0
 	}
 	return nil
 }
 
-func (m *memRepo) Failed(_ context.Context, id uuid.UUID) (int, error) {
+func (m *memRepo) Failed(ctx context.Context, id uuid.UUID) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	s := m.subs[id]
 	if s == nil {
 		return 0, nil
@@ -366,6 +380,49 @@ func TestSlowDevicesDoNotHoldUpOthers(t *testing.T) {
 	for _, s := range repo.subs {
 		if s.Endpoint == "https://push.example.com/fast" && s.LastSuccessAt == nil {
 			t.Fatal("the working device should be marked delivered")
+		}
+	}
+}
+
+func TestNotifyReportsStoreErrors(t *testing.T) {
+	svc, repo, sender := setup()
+	ctx := context.Background()
+	me := uuid.New()
+	if _, _, err := svc.Register(ctx, me, input("https://push.example.com/gone")); err != nil {
+		t.Fatal(err)
+	}
+	sender.answers["https://push.example.com/gone"] = ErrGone
+	repo.removeErr = errors.New("database.unavailable")
+	r, err := svc.Notify(ctx, ports.Notification{UserID: me, Subject: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(r.Store, repo.removeErr) {
+		t.Fatalf("the failed removal should be reported, got %+v", r)
+	}
+}
+
+// TestNotifyRecordsAfterDeadline checks that outcomes are recorded even
+// when slow devices used up the delivery's time.
+func TestNotifyRecordsAfterDeadline(t *testing.T) {
+	svc, repo, sender := setup()
+	me := uuid.New()
+	if _, _, err := svc.Register(context.Background(), me, input("https://push.example.com/slow")); err != nil {
+		t.Fatal(err)
+	}
+	sender.hang["https://push.example.com/slow"] = true
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	r, err := svc.Notify(ctx, ports.Notification{UserID: me, Subject: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Failed != 1 || r.Store != nil {
+		t.Fatalf("unexpected report %+v", r)
+	}
+	for _, s := range repo.subs {
+		if s.Failures != 1 {
+			t.Fatalf("the timed-out delivery should be counted, failures = %d", s.Failures)
 		}
 	}
 }
