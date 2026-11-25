@@ -10,6 +10,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/admin"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/google/uuid"
 )
 
 // TestAdministration walks through roles, sign-up modes, approvals and
@@ -200,5 +201,63 @@ func TestDisabledAccountCannotUseEarlierCode(t *testing.T) {
 	}
 	if codes != 0 {
 		t.Fatalf("disabling must remove the account's login codes, %d left", codes)
+	}
+}
+
+// TestLastAdminConcurrent runs administrator changes that would each leave
+// one administrator at the same time: exactly one goes through, and the
+// server always keeps an active administrator.
+func TestLastAdminConcurrent(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	svc := env.Services
+	for _, tc := range []struct {
+		name string
+		want errs.Kind
+		act  func(a, b uuid.UUID) (func() error, func() error)
+	}{
+		{"demote each other", errs.KindForbidden, func(a, b uuid.UUID) (func() error, func() error) {
+			return func() error { _, err := svc.Admin.SetRole(ctx, a, b, "user"); return err },
+				func() error { _, err := svc.Admin.SetRole(ctx, b, a, "user"); return err }
+		}},
+		{"step down together", errs.KindConflict, func(a, b uuid.UUID) (func() error, func() error) {
+			return func() error { _, err := svc.Admin.SetRole(ctx, a, a, "manager"); return err },
+				func() error { _, err := svc.Admin.SetRole(ctx, b, b, "manager"); return err }
+		}},
+		{"disable each other", errs.KindForbidden, func(a, b uuid.UUID) (func() error, func() error) {
+			return func() error { _, err := svc.Admin.Disable(ctx, a, b); return err },
+				func() error { _, err := svc.Admin.Disable(ctx, b, a); return err }
+		}},
+	} {
+		for run := range 20 {
+			if _, err := env.DB.Pool.Exec(ctx, `TRUNCATE users, login_challenges CASCADE`); err != nil {
+				t.Fatal(err)
+			}
+			ada := env.SignIn(t, "ada@example.com", "Ada").User
+			ben := env.SignIn(t, "ben@example.com", "Ben").User
+			if _, err := svc.Admin.SetRole(ctx, ada.ID, ben.ID, "admin"); err != nil {
+				t.Fatal(err)
+			}
+			first, second := tc.act(ada.ID, ben.ID)
+			calls := []func() error{first, second}
+			done, refused := 0, 0
+			for _, err := range concurrently(2, func(i int) error { return calls[i]() }) {
+				switch {
+				case err == nil:
+					done++
+				case errs.Is(err, tc.want):
+					refused++
+				default:
+					t.Fatalf("%s, run %d: %v", tc.name, run, err)
+				}
+			}
+			var admins int
+			if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE status = 'active' AND role = 'admin'`).Scan(&admins); err != nil {
+				t.Fatal(err)
+			}
+			if done != 1 || refused != 1 || admins != 1 {
+				t.Fatalf("%s, run %d: %d done, %d refused, %d administrators left, want 1 each", tc.name, run, done, refused, admins)
+			}
+		}
 	}
 }
