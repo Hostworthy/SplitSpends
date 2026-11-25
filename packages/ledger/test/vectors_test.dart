@@ -1,16 +1,16 @@
 // Runs the shared spec/vectors.json against the Dart ledger, exactly like
-// the Go tests in packages/core.
+// the Go tests in packages/core. CI runs it on the VM and under Node.js, where
+// integers follow the web build's JavaScript number rules.
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:test/test.dart';
 
 import 'package:splitspends_ledger/ledger.dart';
 
+import 'support/vectors.dart';
+
 void main() {
-  final doc = jsonDecode(
-    File('../../spec/vectors.json').readAsStringSync(),
-  ) as Map<String, dynamic>;
+  final doc = jsonDecode(readVectors()) as Map<String, dynamic>;
 
   final currencies = {
     for (final c in (doc['currencies'] as List).cast<Map<String, dynamic>>())
