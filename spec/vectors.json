@@ -1,5 +1,5 @@
 {
- "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A case that must be refused gives the failing field as error and the text people see as message. owed lists every person on the expense and adds up to the total; each person's paid is what the input payers give them. A split may give currency (USD when absent), recurrence, date (YYYY-MM-DD) and today, and values, the split values stored for each user after trimming; input description defaults to the name, and description, notes, method and currency give the normalized result; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. balances: named cases of entries with the nets, pairwise debts and simplified debts they produce. sheets: one person's (me) view of their groups, each simplified or not, and of entries outside groups: per friend the total, the amount per group and outside groups, me's net in each group (groupNets), and overall net, owed and owing. recurrence: each series starts on start and books dates in order; monthly and yearly series keep the start day, or use the last day of a shorter month. Pairwise debts within one entry add up to each debtor's and each creditor's net exactly, whatever order the shares are listed in. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members; when current is given, effective says whether the saved split still applies to those members. currencies and categories: the built-in catalogs, currencies sorted by code and categories in display order; the client bundles the same lists for on-device mode.",
+ "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A case that must be refused gives the failing field as error and the text people see as message. owed lists every person on the expense and adds up to the total; each person's paid is what the input payers give them. A split may give currency (USD when absent), recurrence, date (YYYY-MM-DD) and today, and values, the split values stored for each user after trimming; input description defaults to the name, and description, notes, method and currency give the normalized result; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. balances: named cases of entries with the nets, pairwise debts and simplified debts they produce. sheets: one person's (me) view of their groups, each simplified or not, and of entries outside groups: per friend the total, the amount per group and outside groups, me's net in each group (groupNets), and overall net, owed and owing. recurrence: each series starts on start and books dates in order; monthly and yearly series keep the start day, or use the last day of a shorter month. Pairwise debts within one entry add up to each debtor's and each creditor's net exactly, whatever order the shares are listed in. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members; when current is given, effective says whether the saved split still applies to those members. currencies and categories: the built-in catalogs, currencies sorted by code and categories in display order; the client bundles the same lists for on-device mode. activity: the one-line summary of each feed event, from its kind, data and the actor's display name; the client writes the same text for on-device events.",
  "splits": [
   {
    "name": "equal three ways",
@@ -4412,6 +4412,225 @@
    "name": "Payment",
    "group": "Other",
    "icon": "payments"
+  }
+ ],
+ "activity": [
+  {
+   "name": "expense added in a group",
+   "kind": "expense.created",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "description": "Dinner",
+    "groupName": "Flat"
+   },
+   "summary": "Ada added “Dinner” in Flat"
+  },
+  {
+   "name": "expense added outside groups",
+   "kind": "expense.created",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "description": "Taxi"
+   },
+   "summary": "Ada added “Taxi”"
+  },
+  {
+   "name": "expense updated",
+   "kind": "expense.updated",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "description": "Dinner",
+    "groupName": "Flat"
+   },
+   "summary": "Ada updated “Dinner” in Flat"
+  },
+  {
+   "name": "expense deleted",
+   "kind": "expense.deleted",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "description": "Dinner",
+    "groupName": "Flat"
+   },
+   "summary": "Ada deleted “Dinner” in Flat"
+  },
+  {
+   "name": "expense restored",
+   "kind": "expense.restored",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "description": "Dinner",
+    "groupName": "Flat"
+   },
+   "summary": "Ada restored “Dinner” in Flat"
+  },
+  {
+   "name": "series stopped in a group",
+   "kind": "expense.stopped",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "description": "Rent",
+    "groupName": "Flat"
+   },
+   "summary": "“Rent” stopped repeating in Flat because someone in it left the group"
+  },
+  {
+   "name": "series stopped outside groups",
+   "kind": "expense.stopped",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "description": "Gym"
+   },
+   "summary": "“Gym” stopped repeating because someone in it is no longer connected"
+  },
+  {
+   "name": "payment recorded",
+   "kind": "payment.created",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "fromName": "Ben",
+    "toName": "Ada",
+    "groupName": "Flat"
+   },
+   "summary": "Ada recorded a payment from Ben to Ada in Flat"
+  },
+  {
+   "name": "comment added",
+   "kind": "comment.created",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "description": "Dinner",
+    "groupName": "Flat"
+   },
+   "summary": "Ada commented on “Dinner”"
+  },
+  {
+   "name": "group created",
+   "kind": "group.created",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "groupName": "Flat"
+   },
+   "summary": "Ada created the group Flat"
+  },
+  {
+   "name": "group updated",
+   "kind": "group.updated",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "groupName": "Flat"
+   },
+   "summary": "Ada updated the group Flat"
+  },
+  {
+   "name": "group deleted",
+   "kind": "group.deleted",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "groupName": "Flat"
+   },
+   "summary": "Ada deleted the group Flat"
+  },
+  {
+   "name": "member added",
+   "kind": "group.member-added",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "targetName": "Ben",
+    "targetId": "00000000-0000-0000-0000-00000000000b",
+    "groupName": "Flat"
+   },
+   "summary": "Ada added Ben to Flat"
+  },
+  {
+   "name": "member left",
+   "kind": "group.member-removed",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "targetName": "Ada",
+    "targetId": "00000000-0000-0000-0000-00000000000a",
+    "groupName": "Flat"
+   },
+   "summary": "Ada left Flat"
+  },
+  {
+   "name": "member left after a rename",
+   "kind": "group.member-removed",
+   "actor": "Adele",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "targetName": "Ada",
+    "targetId": "00000000-0000-0000-0000-00000000000a",
+    "groupName": "Flat"
+   },
+   "summary": "Adele left Flat"
+  },
+  {
+   "name": "member removed with the same name",
+   "kind": "group.member-removed",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "targetName": "Ada",
+    "targetId": "00000000-0000-0000-0000-00000000000b",
+    "groupName": "Flat"
+   },
+   "summary": "Ada removed Ada from Flat"
+  },
+  {
+   "name": "member joined with a link",
+   "kind": "group.member-joined",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "groupName": "Flat"
+   },
+   "summary": "Ada joined Flat with an invite link"
+  },
+  {
+   "name": "friend added",
+   "kind": "friend.added",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "targetName": "Ben",
+    "targetId": "00000000-0000-0000-0000-00000000000b"
+   },
+   "summary": "Ada added Ben as a friend"
+  },
+  {
+   "name": "reminder sent",
+   "kind": "reminder.sent",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {
+    "targetName": "Ben",
+    "targetId": "00000000-0000-0000-0000-00000000000b",
+    "groupName": "Flat"
+   },
+   "summary": "Ada reminded Ben to settle up in Flat"
+  },
+  {
+   "name": "unknown kind",
+   "kind": "something.new",
+   "actor": "Ada",
+   "actorId": "00000000-0000-0000-0000-00000000000a",
+   "data": {},
+   "summary": "Ada did something"
   }
  ]
 }
