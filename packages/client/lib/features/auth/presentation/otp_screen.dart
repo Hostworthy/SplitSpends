@@ -31,6 +31,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   Timer? _timer;
   int _cooldown = _resendSeconds;
   bool _busy = false;
+  bool _resending = false;
   String? _error;
   LoginResult? _pending;
 
@@ -118,7 +119,12 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
         .signIn(token: login.token, me: login.me);
   }
 
+  /// Starts the cooldown before asking, and keeps it when the request
+  /// fails: every request may send an email and counts towards the
+  /// server's hourly limit, so a slow or failed send must not invite more.
   Future<void> _resend() async {
+    _startCooldown();
+    setState(() => _resending = true);
     try {
       await ref
           .read(authRepositoryProvider)
@@ -127,7 +133,6 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
             widget.email,
             inviteToken: ref.read(pendingInviteProvider)?.token,
           );
-      _startCooldown();
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('New code sent')));
@@ -135,6 +140,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = describeError(error));
+    } finally {
+      if (mounted) setState(() => _resending = false);
     }
   }
 
@@ -258,7 +265,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                 child: const Text('Use another email'),
               ),
               TextButton(
-                onPressed: _cooldown > 0 || _busy ? null : _resend,
+                onPressed: _cooldown > 0 || _busy || _resending
+                    ? null
+                    : _resend,
                 child: Text(
                   _cooldown > 0 ? 'Resend in ${_cooldown}s' : 'Resend code',
                 ),
