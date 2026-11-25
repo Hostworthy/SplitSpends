@@ -167,23 +167,9 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	if err := s.room(ctx, actor, me); err != nil {
 		return nil, err
 	}
-	name := ""
-	if in.Name != nil {
-		name = *in.Name
-	}
 	now := s.clock.Now()
-	g, err := New(name, actor, me.DefaultCurrency, now)
+	g, split, err := start(in, me, now)
 	if err != nil {
-		return nil, err
-	}
-	if in.ID != nil && *in.ID != uuid.Nil {
-		g.ID = *in.ID
-	}
-	// The default split is checked against the members, so it is applied
-	// once they are known.
-	split := in.DefaultSplit
-	in.Name, in.DefaultSplit = nil, nil
-	if err := g.Apply(in.Patch, now); err != nil {
 		return nil, err
 	}
 	var added, invited []*user.User
@@ -195,41 +181,8 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 			return err
 		}
 		g.Members = []uuid.UUID{actor}
-		for _, inv := range in.Members {
-			u, created, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
-			if err != nil {
-				return err
-			}
-			if created {
-				invited = append(invited, u)
-			}
-			if g.HasMember(u.ID) {
-				continue
-			}
-			if err := s.room(ctx, actor, u); err != nil {
-				return err
-			}
-			if err := s.repo.AddMember(ctx, g.ID, u.ID, now); err != nil {
-				return err
-			}
-			g.Members = append(g.Members, u.ID)
-			added = append(added, u)
-		}
-		for _, id := range in.People {
-			if g.HasMember(id) {
-				continue
-			}
-			u, err := s.users.Get(ctx, id)
-			if err != nil {
-				return err
-			}
-			if err := s.room(ctx, actor, u); err != nil {
-				return err
-			}
-			if err := s.repo.AddMember(ctx, g.ID, id, now); err != nil {
-				return err
-			}
-			g.Members = append(g.Members, id)
+		if added, invited, err = s.populate(ctx, g, me, in, now); err != nil {
+			return err
 		}
 		if split != nil {
 			if err := g.Apply(Patch{DefaultSplit: split}, now); err != nil {
@@ -258,6 +211,75 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		s.notifyAdded(ctx, u, me, g)
 	}
 	return s.View(ctx, actor, g.ID)
+}
+
+// start builds the group in asks for, created by me, without its default
+// split: that is checked against the members, so it is returned to apply
+// once they are known.
+func start(in CreateInput, me *user.User, now time.Time) (*Group, *DefaultSplit, error) {
+	name := ""
+	if in.Name != nil {
+		name = *in.Name
+	}
+	g, err := New(name, me.ID, me.DefaultCurrency, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if in.ID != nil && *in.ID != uuid.Nil {
+		g.ID = *in.ID
+	}
+	split := in.DefaultSplit
+	in.Name, in.DefaultSplit = nil, nil
+	if err := g.Apply(in.Patch, now); err != nil {
+		return nil, nil, err
+	}
+	return g, split, nil
+}
+
+// populate adds the invitees and people of a new group, returning the
+// invitees who were added and those who got an account just now.
+func (s *Service) populate(ctx context.Context, g *Group, me *user.User, in CreateInput, now time.Time) (added, invited []*user.User, err error) {
+	for _, inv := range in.Members {
+		u, created, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
+		if err != nil {
+			return nil, nil, err
+		}
+		if created {
+			invited = append(invited, u)
+		}
+		if g.HasMember(u.ID) {
+			continue
+		}
+		if err := s.enroll(ctx, me.ID, g, u, now); err != nil {
+			return nil, nil, err
+		}
+		added = append(added, u)
+	}
+	for _, id := range in.People {
+		if g.HasMember(id) {
+			continue
+		}
+		u, err := s.users.Get(ctx, id)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := s.enroll(ctx, me.ID, g, u, now); err != nil {
+			return nil, nil, err
+		}
+	}
+	return added, invited, nil
+}
+
+// enroll adds u to g, unless they are in as many groups as one person may be.
+func (s *Service) enroll(ctx context.Context, actor uuid.UUID, g *Group, u *user.User, now time.Time) error {
+	if err := s.room(ctx, actor, u); err != nil {
+		return err
+	}
+	if err := s.repo.AddMember(ctx, g.ID, u.ID, now); err != nil {
+		return err
+	}
+	g.Members = append(g.Members, u.ID)
+	return nil
 }
 
 // room refuses to add u to another group once they belong to MaxPerUser.
@@ -444,13 +466,9 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 		if g.HasMember(u.ID) {
 			return errs.Conflict(u.Name + " is already in this group.")
 		}
-		if err := s.room(ctx, actor, u); err != nil {
+		if err := s.enroll(ctx, actor, g, u, s.clock.Now()); err != nil {
 			return err
 		}
-		if err := s.repo.AddMember(ctx, g.ID, u.ID, s.clock.Now()); err != nil {
-			return err
-		}
-		g.Members = append(g.Members, u.ID)
 		added = u
 		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: &g.ID, Kind: activity.GroupMemberAdded,
 			Involved: g.Members, Data: map[string]any{"groupName": g.Name, "targetName": u.Name, "targetId": u.ID.String()}})

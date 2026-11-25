@@ -199,45 +199,64 @@ func (s *Service) Draft(ctx context.Context, actor uuid.UUID, req Request) (*Dra
 func build(k *known, req Request, ext ports.DraftExtract, today, currency string, table func() *rates.Table) (*Draft, error) {
 	d := &Draft{ReceiptID: req.ReceiptID, Description: strings.TrimSpace(ext.Description), Date: today,
 		Category: expense.DefaultCategory, Method: expense.MethodEqual}
-	warn := func(msg string) { d.Warnings = append(d.Warnings, msg) }
-
-	// Group: what the user picked wins, then a group the model chose.
-	var g *group.Group
-	if req.GroupID != nil {
-		g = k.groups[*req.GroupID]
-	} else if id, err := uuid.Parse(ext.GroupID); err == nil && k.groups[id] != nil {
-		g = k.groups[id]
-	}
+	g := chooseGroup(k, req, ext)
 	if g != nil {
 		d.GroupID = &g.ID
 		currency = g.DefaultCurrency
 	}
 	d.Currency = currency
-	source := currency
-	if c, ok := money.Lookup(ext.Currency); ok {
-		source = c.Code
+	conv, err := converter(ext.Currency, currency, table)
+	if err != nil {
+		return nil, err
 	}
-	from, _ := money.Lookup(source)
-	var rate *rates.Table
-	if source != currency {
-		rate = table()
-		if rate == nil || !rate.Has(source) || !rate.Has(currency) {
-			return nil, errs.NoRates("These amounts are in " + source + ", and exchange rates are not available right now to convert them to " +
-				currency + ". Try again later, or enter the expense yourself.")
+	d.details(ext)
+
+	r := &roster{k: k, g: g, dropped: map[uuid.UUID]bool{}, warn: d.warn}
+	participants, preset := r.participants(ext.ParticipantIDs)
+	if len(ext.Items) > 0 {
+		if err := d.itemize(ext, conv, r, participants); err != nil {
+			return nil, err
 		}
-	}
-	amount := func(s string) int64 {
-		v, ok := expense.ParseDecimal(s, from.Exponent)
-		if !ok || v < 0 {
-			return 0
-		}
-		if rate != nil {
-			if v, ok = rate.Convert(rates.Amount{Currency: source, Minor: v}, currency); !ok || v > expense.MaxTotal {
-				return 0
+		if len(d.Items) == 0 {
+			d.Method = expense.MethodEqual
+			if preset != nil {
+				d.warn("Could not read any items, so the group's default split is used.")
+			} else {
+				d.warn("Could not read any items, so the total is split equally.")
 			}
 		}
-		return v
 	}
+	if d.Method == expense.MethodEqual {
+		if d.Total, err = conv.amount(ext.Amount); err != nil {
+			return nil, err
+		}
+		d.share(participants, preset, g)
+	}
+	if d.Total == 0 {
+		d.warn("Could not find an amount.")
+	}
+
+	payer := k.me.ID
+	if id, err := uuid.Parse(ext.PayerID); err == nil && r.allowed(id) {
+		payer = id
+	}
+	d.Payers = []expense.Payer{{UserID: payer, Amount: d.Total}}
+	for _, name := range ext.Unmatched {
+		if name = strings.TrimSpace(name); name != "" {
+			d.warn("Could not match “" + name + "” to anyone you know.")
+		}
+	}
+	if note := conv.note(ext.Amount); note != "" {
+		d.warn(note)
+	}
+	return d, nil
+}
+
+func (d *Draft) warn(msg string) { d.Warnings = append(d.Warnings, msg) }
+
+// details keeps the date and category the model read when they are valid,
+// and names an expense it found no description for.
+func (d *Draft) details(ext ports.DraftExtract) {
 	if _, err := time.Parse(time.DateOnly, ext.Date); err == nil {
 		d.Date = ext.Date
 	}
@@ -247,125 +266,206 @@ func build(k *known, req Request, ext ports.DraftExtract, today, currency string
 	if d.Description == "" {
 		d.Description = "Expense"
 	}
+}
 
-	// Who may take part: group members, or you and your friends.
-	allowed := func(id uuid.UUID) bool {
-		if id == k.me.ID {
-			return true
-		}
-		if g != nil {
-			return g.HasMember(id)
-		}
-		return k.friends[id]
+// chooseGroup is the group the draft belongs to: the one the user picked,
+// else one of theirs the model chose, else none.
+func chooseGroup(k *known, req Request, ext ports.DraftExtract) *group.Group {
+	if req.GroupID != nil {
+		return k.groups[*req.GroupID]
 	}
-	dropped := map[uuid.UUID]bool{}
-	resolve := func(raw []string) []uuid.UUID {
-		out := []uuid.UUID{}
-		seen := map[uuid.UUID]bool{}
-		for _, r := range raw {
-			id, err := uuid.Parse(strings.TrimSpace(r))
-			if err != nil || seen[id] {
-				continue
-			}
-			if !allowed(id) {
-				if u := k.people[id]; u != nil && !dropped[id] && g != nil {
-					warn(u.Name + " is not in " + g.Name + ", so they were left out.")
-				}
-				dropped[id] = true
-				continue
-			}
-			seen[id] = true
-			out = append(out, id)
-		}
-		return out
+	if id, err := uuid.Parse(ext.GroupID); err == nil {
+		return k.groups[id]
 	}
-	participants := resolve(ext.ParticipantIDs)
-	// The group's default split (say rent 60/40) applies when the
-	// instructions name nobody, as it does in the editor and in MCP.
-	var preset *group.DefaultSplit
-	if g != nil && len(participants) == 0 {
-		if p := g.Effective(); p != nil && p.Method != group.SplitEqual {
-			preset = p
-		}
-	}
-	if len(participants) == 0 {
-		if g != nil {
-			participants = append(participants, g.Members...)
-		} else {
-			participants = []uuid.UUID{k.me.ID}
-		}
-	}
+	return nil
+}
 
-	if len(ext.Items) > 0 {
-		d.Method = expense.MethodItemized
-		var sum int64
-		for _, it := range ext.Items {
-			a := amount(it.Amount)
-			if a == 0 {
-				continue
-			}
-			ids := resolve(it.ParticipantIDs)
-			if len(ids) == 0 {
-				ids = participants
-			}
-			name := strings.TrimSpace(it.Name)
-			if name == "" {
-				name = "Item"
-			}
-			d.Items = append(d.Items, expense.Item{Name: name, Amount: a, UserIDs: ids})
-			sum += a
-		}
-		d.Tax, d.Tip = amount(ext.Tax), amount(ext.Tip)
-		d.Total = sum + d.Tax + d.Tip
-		if want := amount(ext.Amount); want > 0 && want != d.Total && len(d.Items) > 0 && !reconcile(d, want) {
-			warn("The receipt total did not match its lines; check the amounts.")
-		}
-		if len(d.Items) == 0 {
-			d.Method = expense.MethodEqual
-			if preset != nil {
-				warn("Could not read any items, so the group's default split is used.")
-			} else {
-				warn("Could not read any items, so the total is split equally.")
-			}
-		}
-	}
-	if d.Method == expense.MethodEqual {
-		d.Total = amount(ext.Amount)
-		if preset != nil {
-			d.Method, d.Splits = expense.Method(preset.Method), defaults(preset, g.Members)
-		} else {
-			for _, id := range participants {
-				d.Splits = append(d.Splits, expense.SplitInput{UserID: id})
-			}
-		}
-	}
-	if d.Total == 0 {
-		warn("Could not find an amount.")
-	}
+// conversion reads the model's amounts, written in source, as minor units of
+// target, converting them exactly when the two differ.
+type conversion struct {
+	source, target string
+	exponent       int
+	// rate is nil when source is target.
+	rate *rates.Table
+}
 
-	payer := k.me.ID
-	if id, err := uuid.Parse(ext.PayerID); err == nil && allowed(id) {
-		payer = id
+// converter reads amounts in the currency the model named, or in target when
+// it named none it knows, and fetches today's rates when that differs from
+// target.
+func converter(read, target string, table func() *rates.Table) (*conversion, error) {
+	c := &conversion{source: target, target: target}
+	if cur, ok := money.Lookup(read); ok {
+		c.source = cur.Code
 	}
-	d.Payers = []expense.Payer{{UserID: payer, Amount: d.Total}}
+	from, _ := money.Lookup(c.source)
+	c.exponent = from.Exponent
+	if c.source == target {
+		return c, nil
+	}
+	c.rate = table()
+	if c.rate == nil || !c.rate.Has(c.source) || !c.rate.Has(target) {
+		return nil, errs.NoRates("These amounts are in " + c.source + ", and exchange rates are not available right now to convert them to " +
+			target + ". Try again later, or enter the expense yourself.")
+	}
+	return c, nil
+}
 
-	for _, name := range ext.Unmatched {
-		if name = strings.TrimSpace(name); name != "" {
-			warn("Could not match “" + name + "” to anyone you know.")
+// amount is s in minor units of the target currency. Text that is not an
+// amount, or is negative, reads as zero so the caller can leave it out. An
+// amount too large for an expense once converted is an error, not a zero.
+func (c *conversion) amount(s string) (int64, error) {
+	v, ok := expense.ParseDecimal(s, c.exponent)
+	if !ok || v < 0 {
+		return 0, nil
+	}
+	if c.rate == nil {
+		return v, nil
+	}
+	if v, ok = c.rate.Convert(rates.Amount{Currency: c.source, Minor: v}, c.target); !ok || v > expense.MaxTotal {
+		return 0, errs.Validation("", "These amounts are too large for one expense once converted to "+c.target+".")
+	}
+	return v, nil
+}
+
+// note explains a conversion, quoting total as the receipt showed it, and is
+// empty when nothing was converted.
+func (c *conversion) note(total string) string {
+	if c.rate == nil {
+		return ""
+	}
+	note := "Converted from " + c.source + " to " + c.target + " at 1 " + c.source + " = " + unitRate(c.rate, c.source, c.target) + " " + c.target
+	if !c.rate.Published.IsZero() {
+		note += " (rates of " + c.rate.Published.Format("2 Jan 2006") + ")"
+	}
+	if original, _ := expense.ParseDecimal(total, c.exponent); original > 0 {
+		note += "; the receipt total was " + money.Format(original, c.source)
+	}
+	return note + "."
+}
+
+// roster decides who may take part in the draft: the group's members, or
+// the user and their friends outside groups.
+type roster struct {
+	k       *known
+	g       *group.Group
+	dropped map[uuid.UUID]bool
+	warn    func(string)
+}
+
+func (r *roster) allowed(id uuid.UUID) bool {
+	if id == r.k.me.ID {
+		return true
+	}
+	if r.g != nil {
+		return r.g.HasMember(id)
+	}
+	return r.k.friends[id]
+}
+
+// resolve keeps the ids in raw that may take part, once each, and warns
+// once about each known person left out of the group.
+func (r *roster) resolve(raw []string) []uuid.UUID {
+	out := []uuid.UUID{}
+	seen := map[uuid.UUID]bool{}
+	for _, s := range raw {
+		id, err := uuid.Parse(strings.TrimSpace(s))
+		if err != nil || seen[id] {
+			continue
+		}
+		if !r.allowed(id) {
+			if u := r.k.people[id]; u != nil && !r.dropped[id] && r.g != nil {
+				r.warn(u.Name + " is not in " + r.g.Name + ", so they were left out.")
+			}
+			r.dropped[id] = true
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
+// participants resolves the people the instructions name. When they name
+// nobody, everyone in the group takes part (or the user alone outside
+// groups), and the group's default split, say rent 60/40, applies as it
+// does in the editor and in MCP.
+func (r *roster) participants(raw []string) ([]uuid.UUID, *group.DefaultSplit) {
+	if ids := r.resolve(raw); len(ids) > 0 {
+		return ids, nil
+	}
+	if r.g == nil {
+		return []uuid.UUID{r.k.me.ID}, nil
+	}
+	ids := append([]uuid.UUID{}, r.g.Members...)
+	if p := r.g.Effective(); p != nil && p.Method != group.SplitEqual {
+		return ids, p
+	}
+	return ids, nil
+}
+
+// itemize fills the draft from the receipt lines the model read. Lines
+// without an amount are left out, and lines that name nobody are shared by
+// participants.
+func (d *Draft) itemize(ext ports.DraftExtract, c *conversion, r *roster, participants []uuid.UUID) error {
+	d.Method = expense.MethodItemized
+	var sum int64
+	for _, it := range ext.Items {
+		a, err := c.amount(it.Amount)
+		if err != nil {
+			return err
+		}
+		if a == 0 {
+			continue
+		}
+		ids := r.resolve(it.ParticipantIDs)
+		if len(ids) == 0 {
+			ids = participants
+		}
+		name := strings.TrimSpace(it.Name)
+		if name == "" {
+			name = "Item"
+		}
+		d.Items = append(d.Items, expense.Item{Name: name, Amount: a, UserIDs: ids})
+		// Each amount is at most MaxTotal, so stopping here keeps the sum
+		// far from overflowing.
+		if sum += a; sum > expense.MaxTotal {
+			return tooLarge()
 		}
 	}
-	if rate != nil {
-		original, _ := expense.ParseDecimal(ext.Amount, from.Exponent)
-		note := "Converted from " + source + " to " + currency + " at 1 " + source + " = " + unitRate(rate, source, currency) + " " + currency
-		if !rate.Published.IsZero() {
-			note += " (rates of " + rate.Published.Format("2 Jan 2006") + ")"
-		}
-		if original > 0 {
-			note += "; the receipt total was " + money.Format(original, source)
-		}
-		warn(note + ".")
+	var err error
+	if d.Tax, err = c.amount(ext.Tax); err != nil {
+		return err
 	}
-	return d, nil
+	if d.Tip, err = c.amount(ext.Tip); err != nil {
+		return err
+	}
+	want, err := c.amount(ext.Amount)
+	if err != nil {
+		return err
+	}
+	if d.Total = sum + d.Tax + d.Tip; d.Total > expense.MaxTotal {
+		return tooLarge()
+	}
+	if want > 0 && want != d.Total && len(d.Items) > 0 && !reconcile(d, want) {
+		d.warn("The receipt total did not match its lines; check the amounts.")
+	}
+	return nil
+}
+
+// share splits the total between participants, by the group's default split
+// when one applies and equally otherwise.
+func (d *Draft) share(participants []uuid.UUID, preset *group.DefaultSplit, g *group.Group) {
+	if preset != nil {
+		d.Method, d.Splits = expense.Method(preset.Method), defaults(preset, g.Members)
+		return
+	}
+	for _, id := range participants {
+		d.Splits = append(d.Splits, expense.SplitInput{UserID: id})
+	}
+}
+
+func tooLarge() error {
+	return errs.Validation("", "These amounts are too large for one expense.")
 }
 
 // defaults returns the splits a percent or shares default gives the members,

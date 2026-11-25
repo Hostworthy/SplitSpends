@@ -120,16 +120,9 @@ func Normalize(in Input, today time.Time) (*Normalized, error) {
 	if !in.Recurrence.Valid() {
 		return nil, errs.Validation("recurrence", "Unknown recurrence.")
 	}
-	date := today
-	if in.Date != "" {
-		d, err := time.Parse(time.DateOnly, in.Date)
-		if err != nil {
-			return nil, errs.Validation("date", "Use a YYYY-MM-DD date.")
-		}
-		date = d
-	}
-	if date.Before(FirstDay) || date.After(today.AddDate(1, 0, 0)) {
-		return nil, errs.Validation("date", "Choose a date from 2000 up to a year from today.")
+	date, err := checkDate(in.Date, today)
+	if err != nil {
+		return nil, err
 	}
 
 	paid, err := payers(in.Payers, in.Total)
@@ -144,6 +137,23 @@ func Normalize(in Input, today time.Time) (*Normalized, error) {
 		in.Items, in.Tax, in.Tip = nil, 0, 0
 	}
 	return &Normalized{Input: in, Date: date, Shares: merge(paid, owed, values)}, nil
+}
+
+// checkDate reads an expense date, today when it is empty, and keeps it between
+// FirstDay and a year from today.
+func checkDate(s string, today time.Time) (time.Time, error) {
+	date := today
+	if s != "" {
+		d, err := time.Parse(time.DateOnly, s)
+		if err != nil {
+			return time.Time{}, errs.Validation("date", "Use a YYYY-MM-DD date.")
+		}
+		date = d
+	}
+	if date.Before(FirstDay) || date.After(today.AddDate(1, 0, 0)) {
+		return time.Time{}, errs.Validation("date", "Choose a date from 2000 up to a year from today.")
+	}
+	return date, nil
 }
 
 func payers(list []Payer, total int64) (map[uuid.UUID]int64, error) {
@@ -198,78 +208,103 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 	}
 
 	var parts []int64
-	values = make(map[uuid.UUID]string, len(in.Splits))
 	switch in.Method {
 	case MethodEqual, "":
 		parts = money.Even(in.Total, len(ids))
 	case MethodExact:
-		parts = make([]int64, len(ids))
-		var sum int64
-		for i, s := range in.Splits {
-			v, err := integer(raw[i], "splits")
-			if err != nil {
-				return nil, nil, err
-			}
-			if v < 0 {
-				return nil, nil, errs.Validation("splits", "Amounts cannot be negative.")
-			}
-			parts[i] = v
-			sum += v
-			values[s.UserID] = raw[i]
-		}
-		if sum != in.Total {
-			return nil, nil, errs.Validation("splits", "Amounts must add up to the total.")
-		}
+		parts, err = exact(raw, in.Total)
 	case MethodPercent, MethodShares:
-		weights := make([]*big.Rat, len(ids))
-		sum := new(big.Rat)
-		for i, s := range in.Splits {
-			w, ok := money.Decimal(raw[i])
-			if !ok || w.Sign() < 0 {
-				return nil, nil, errs.Validation("splits", "Use positive numbers.")
-			}
-			weights[i] = w
-			sum.Add(sum, w)
-			values[s.UserID] = raw[i]
-		}
-		if in.Method == MethodPercent && sum.Cmp(big.NewRat(100, 1)) != 0 {
-			return nil, nil, errs.Validation("splits", "Percentages must add up to 100.")
-		}
-		if sum.Sign() == 0 {
-			return nil, nil, errs.Validation("splits", "At least one share must be above zero.")
-		}
-		parts, _ = money.Allocate(in.Total, weights)
+		parts, err = weighted(raw, in.Total, in.Method == MethodPercent)
 	case MethodAdjustment:
-		adjust := make([]int64, len(ids))
-		var sum int64
-		for i, s := range in.Splits {
-			v := int64(0)
-			if raw[i] != "" {
-				if v, err = integer(raw[i], "splits"); err != nil {
-					return nil, nil, err
-				}
-			}
-			adjust[i] = v
-			sum += v
-			values[s.UserID] = raw[i]
-		}
-		even := money.Even(in.Total-sum, len(ids))
-		parts = make([]int64, len(ids))
-		for i := range ids {
-			parts[i] = adjust[i] + even[i]
-			if parts[i] < 0 {
-				return nil, nil, errs.Validation("splits", "Adjustments leave someone owing a negative amount.")
-			}
-		}
+		parts, err = adjusted(raw, in.Total)
 	default:
-		return nil, nil, errs.Validation("splitMethod", "Unknown split method.")
+		err = errs.Validation("splitMethod", "Unknown split method.")
+	}
+	if err != nil {
+		return nil, nil, err
 	}
 
 	owed = make(map[uuid.UUID]int64, len(ids))
+	values = make(map[uuid.UUID]string, len(ids))
 	for i, id := range ids {
 		owed[id] = parts[i]
+		if in.Method != MethodEqual && in.Method != "" {
+			values[id] = raw[i]
+		}
 	}
 	return owed, values, nil
+}
+
+// exact takes each person's amount in minor units; they must add up to the
+// total.
+func exact(raw []string, total int64) ([]int64, error) {
+	parts := make([]int64, len(raw))
+	var sum int64
+	for i, r := range raw {
+		v, err := integer(r, "splits")
+		if err != nil {
+			return nil, err
+		}
+		if v < 0 {
+			return nil, errs.Validation("splits", "Amounts cannot be negative.")
+		}
+		parts[i] = v
+		sum += v
+	}
+	if sum != total {
+		return nil, errs.Validation("splits", "Amounts must add up to the total.")
+	}
+	return parts, nil
+}
+
+// weighted shares the total in proportion to each person's decimal weight:
+// percentages that must add up to 100, or shares.
+func weighted(raw []string, total int64, percent bool) ([]int64, error) {
+	weights := make([]*big.Rat, len(raw))
+	sum := new(big.Rat)
+	for i, r := range raw {
+		w, ok := money.Decimal(r)
+		if !ok || w.Sign() < 0 {
+			return nil, errs.Validation("splits", "Use positive numbers.")
+		}
+		weights[i] = w
+		sum.Add(sum, w)
+	}
+	if percent && sum.Cmp(big.NewRat(100, 1)) != 0 {
+		return nil, errs.Validation("splits", "Percentages must add up to 100.")
+	}
+	if sum.Sign() == 0 {
+		return nil, errs.Validation("splits", "At least one share must be above zero.")
+	}
+	parts, _ := money.Allocate(total, weights)
+	return parts, nil
+}
+
+// adjusted adds each person's adjustment in minor units (empty means none)
+// to an even split of what the adjustments leave.
+func adjusted(raw []string, total int64) ([]int64, error) {
+	adjust := make([]int64, len(raw))
+	var sum int64
+	for i, r := range raw {
+		if r == "" {
+			continue
+		}
+		v, err := integer(r, "splits")
+		if err != nil {
+			return nil, err
+		}
+		adjust[i] = v
+		sum += v
+	}
+	even := money.Even(total-sum, len(raw))
+	parts := make([]int64, len(raw))
+	for i := range raw {
+		parts[i] = adjust[i] + even[i]
+		if parts[i] < 0 {
+			return nil, errs.Validation("splits", "Adjustments leave someone owing a negative amount.")
+		}
+	}
+	return parts, nil
 }
 
 // itemized shares each item evenly among its users, then spreads tax and tip
@@ -293,28 +328,8 @@ func itemized(in Input) (map[uuid.UUID]int64, map[uuid.UUID]string, error) {
 	var itemsSum int64
 	for i := range in.Items {
 		item := &in.Items[i]
-		item.Name = strings.Join(strings.Fields(item.Name), " ")
-		if item.Name == "" {
-			item.Name = "Item"
-		}
-		if utf8.RuneCountInString(item.Name) > 120 {
-			return nil, nil, errs.Validation("items", "Item names are limited to 120 characters.")
-		}
-		if item.Amount <= 0 || item.Amount > MaxTotal {
-			return nil, nil, errs.Validation("items", "Item amounts must be greater than zero.")
-		}
-		if len(item.UserIDs) == 0 {
-			return nil, nil, errs.Validation("items", "Assign every item to at least one person.")
-		}
-		if len(item.UserIDs) > MaxPeople {
-			return nil, nil, errs.Validation("items", fmt.Sprintf("An item can be shared by at most %d people.", MaxPeople))
-		}
-		seen := map[uuid.UUID]bool{}
-		for _, id := range item.UserIDs {
-			if id == uuid.Nil || seen[id] {
-				return nil, nil, errs.Validation("items", "Each person can be assigned to an item once.")
-			}
-			seen[id] = true
+		if err := checkItem(item); err != nil {
+			return nil, nil, err
 		}
 		parts := money.Even(item.Amount, len(item.UserIDs))
 		for j, id := range item.UserIDs {
@@ -341,6 +356,34 @@ func itemized(in Input) (map[uuid.UUID]int64, map[uuid.UUID]string, error) {
 		owed[id] = subtotals[id] + extra[i]
 	}
 	return owed, map[uuid.UUID]string{}, nil
+}
+
+// checkItem tidies an item's name and checks its amount and people.
+func checkItem(item *Item) error {
+	item.Name = strings.Join(strings.Fields(item.Name), " ")
+	if item.Name == "" {
+		item.Name = "Item"
+	}
+	if utf8.RuneCountInString(item.Name) > 120 {
+		return errs.Validation("items", "Item names are limited to 120 characters.")
+	}
+	if item.Amount <= 0 || item.Amount > MaxTotal {
+		return errs.Validation("items", "Item amounts must be greater than zero.")
+	}
+	if len(item.UserIDs) == 0 {
+		return errs.Validation("items", "Assign every item to at least one person.")
+	}
+	if len(item.UserIDs) > MaxPeople {
+		return errs.Validation("items", fmt.Sprintf("An item can be shared by at most %d people.", MaxPeople))
+	}
+	seen := map[uuid.UUID]bool{}
+	for _, id := range item.UserIDs {
+		if id == uuid.Nil || seen[id] {
+			return errs.Validation("items", "Each person can be assigned to an item once.")
+		}
+		seen[id] = true
+	}
+	return nil
 }
 
 func merge(paid, owed map[uuid.UUID]int64, values map[uuid.UUID]string) []Share {

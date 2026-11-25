@@ -70,34 +70,13 @@ func (s *Service) Send(ctx context.Context, actor, to uuid.UUID, groupID *uuid.U
 	if to == actor {
 		return nil, errs.Validation("userId", "You cannot remind yourself.")
 	}
-	var g *group.Group
-	var connected bool
-	if groupID != nil {
-		var err error
-		if g, err = s.groups.Member(ctx, actor, *groupID); err != nil {
-			if errs.Is(err, errs.KindNotFound) {
-				return nil, errs.Validation("groupId", "Group not found.")
-			}
-			return nil, err
-		}
-		connected = g.HasMember(to)
-	} else {
-		var err error
-		if connected, err = s.connections.Connected(ctx, actor, to); err != nil {
-			return nil, err
-		}
-	}
-	sheet, err := s.balances.For(ctx, actor)
+	g, connected, err := s.scope(ctx, actor, to, groupID)
 	if err != nil {
 		return nil, err
 	}
-	owed := money.Balances{}
-	if view := sheet.Friends[to]; view != nil {
-		if g != nil {
-			owed = Owed(view.ByGroup[g.ID])
-		} else {
-			owed = Owed(view.Total)
-		}
+	owed, err := s.owed(ctx, actor, to, g)
+	if err != nil {
+		return nil, err
 	}
 	if !connected && owed.Settled() {
 		// Do not reveal anything about people the caller has no link with.
@@ -128,35 +107,78 @@ func (s *Service) Send(ctx context.Context, actor, to uuid.UUID, groupID *uuid.U
 	notify = notify && !ports.IsQuiet(ctx)
 	r := &Reminder{ID: uuid.New(), FromID: actor, ToID: to, GroupID: groupID, Owed: owed, SentAt: now,
 		Emailed: notify && note.To != ""}
-	err = s.tx.Do(ctx, func(ctx context.Context) error {
-		ok, err := s.repo.Claim(ctx, r, now.Add(-Window))
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errs.RateLimited("You already reminded " + target.Name + in + " in the last 24 hours. Try again tomorrow.")
-		}
-		ok, err = s.quota.Take(ctx, "remind:"+actor.String()+":"+to.String(), MaxPerPerson, Window, now)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errs.RateLimited(fmt.Sprintf("You already sent %s %d reminders in the last 24 hours. Try again tomorrow.", target.Name, MaxPerPerson))
-		}
-		data := map[string]any{"targetName": target.Name, "targetId": target.ID.String(), "balances": toData(owed)}
-		if groupName != "" {
-			data["groupName"] = groupName
-		}
-		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: groupID, Kind: activity.ReminderSent,
-			Involved: []uuid.UUID{to}, Data: data})
-	})
-	if err != nil {
+	if err := s.claim(ctx, r, target, groupName); err != nil {
 		return nil, err
 	}
 	if notify {
 		s.notifier.Notify(ctx, note)
 	}
 	return r, nil
+}
+
+// scope is the group a reminder is about, when groupID is set, and whether
+// to shares it with actor, or else is connected to them at all.
+func (s *Service) scope(ctx context.Context, actor, to uuid.UUID, groupID *uuid.UUID) (*group.Group, bool, error) {
+	if groupID == nil {
+		connected, err := s.connections.Connected(ctx, actor, to)
+		return nil, connected, err
+	}
+	g, err := s.groups.Member(ctx, actor, *groupID)
+	if errs.Is(err, errs.KindNotFound) {
+		return nil, false, errs.Validation("groupId", "Group not found.")
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return g, g.HasMember(to), nil
+}
+
+// owed is what to owes actor, in g or, when g is nil, overall.
+func (s *Service) owed(ctx context.Context, actor, to uuid.UUID, g *group.Group) (money.Balances, error) {
+	sheet, err := s.balances.For(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+	view := sheet.Friends[to]
+	switch {
+	case view == nil:
+		return money.Balances{}, nil
+	case g != nil:
+		return Owed(view.ByGroup[g.ID]), nil
+	default:
+		return Owed(view.Total), nil
+	}
+}
+
+// claim saves r unless its sender already reminded target in the same
+// scope within Window, or sent them MaxPerPerson reminders in any scope.
+func (s *Service) claim(ctx context.Context, r *Reminder, target *user.User, groupName string) error {
+	in := ""
+	if groupName != "" {
+		in = " in " + groupName
+	}
+	return s.tx.Do(ctx, func(ctx context.Context) error {
+		ok, err := s.repo.Claim(ctx, r, r.SentAt.Add(-Window))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errs.RateLimited("You already reminded " + target.Name + in + " in the last 24 hours. Try again tomorrow.")
+		}
+		ok, err = s.quota.Take(ctx, "remind:"+r.FromID.String()+":"+r.ToID.String(), MaxPerPerson, Window, r.SentAt)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errs.RateLimited(fmt.Sprintf("You already sent %s %d reminders in the last 24 hours. Try again tomorrow.", target.Name, MaxPerPerson))
+		}
+		data := map[string]any{"targetName": target.Name, "targetId": target.ID.String(), "balances": toData(r.Owed)}
+		if groupName != "" {
+			data["groupName"] = groupName
+		}
+		return s.activity.Record(ctx, activity.Activity{ActorID: r.FromID, GroupID: r.GroupID, Kind: activity.ReminderSent,
+			Involved: []uuid.UUID{r.ToID}, Data: data})
+	})
 }
 
 // link opens the group, or the sender's page in the recipient's friend list.
