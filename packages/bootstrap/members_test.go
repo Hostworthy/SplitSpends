@@ -7,6 +7,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/google/uuid"
 )
@@ -134,5 +135,54 @@ func TestRemovedMemberCannotRejoinWithOwnLink(t *testing.T) {
 	}
 	if v.HasMember(ben) {
 		t.Fatal("Ben is back in the group")
+	}
+}
+
+// TestFailedCreateInvitesNobody checks invitations go out only once the
+// group is saved: a create that fails on its second invitee neither keeps
+// the first one nor emails them.
+func TestFailedCreateInvitesNobody(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	env.Notifier.Reset()
+	name := "Trip"
+	_, err := env.Services.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name},
+		Members: []group.Invitee{{Email: "new@example.com"}, {Email: "not an email"}}})
+	if !errs.Is(err, errs.KindValidation) {
+		t.Fatalf("want a validation error for the second invitee, got %v", err)
+	}
+	if got := env.Notifier.Invites(); len(got) != 0 {
+		t.Fatalf("a group that was not saved must invite nobody, got %v", got)
+	}
+	var kept int
+	if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE email = 'new@example.com'`).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	if kept != 0 {
+		t.Fatal("the first invitee must not be kept when the group is not saved")
+	}
+}
+
+// TestQuietAddMemberSendsNothing checks adding someone to a group honours a
+// quiet context the way creating a group with them does.
+func TestQuietAddMemberSendsNothing(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	env.SignIn(t, "ben@example.com", "Ben")
+	name := "Trip"
+	g, err := env.Services.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.Notifier.Reset()
+	for _, email := range []string{"ben@example.com", "new@example.com"} {
+		if _, err := env.Services.Groups.AddMember(ports.Quiet(ctx), ada, g.ID, group.Invitee{Email: email}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sent, invites := env.Notifier.Sent(), env.Notifier.Invites(); len(sent) != 0 || len(invites) != 0 {
+		t.Fatalf("a quiet add must send nothing, got %d notifications and invitations %v", len(sent), invites)
 	}
 }
