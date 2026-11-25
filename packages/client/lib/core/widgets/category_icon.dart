@@ -1,8 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
-/// Icons a custom category may use, by Material Symbols name: the icons of
-/// the built-in categories plus a few general ones. Same list and order as
-/// `category.Icons` on the server.
+/// The Material icon for each name a custom category may use, in the order
+/// of `categoryIconNames` in the categories domain.
 const categoryIcons = <String, IconData>{
   'restaurant': Icons.restaurant_rounded,
   'local_grocery_store': Icons.local_grocery_store_rounded,
