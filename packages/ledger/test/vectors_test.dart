@@ -17,7 +17,8 @@ void main() {
       test(c['name'] as String, () {
         final i = c['input'] as Map<String, dynamic>;
         final request = ExpenseRequest(
-          description: c['name'] as String,
+          description: (i['description'] as String?) ?? c['name'] as String,
+          notes: (i['notes'] as String?) ?? '',
           currency: 'USD',
           total: i['total'] as int,
           method: (i['method'] as String?) ?? '',
@@ -57,6 +58,15 @@ void main() {
         final got = {for (final s in n.shares) s.userId: s.owed};
         (c['owed'] as Map<String, dynamic>).forEach((id, want) {
           expect(got[id] ?? 0, want, reason: '$id owes');
+        });
+        if (c['description'] != null) {
+          expect(n.description, c['description']);
+        }
+        if (c['notes'] != null) expect(n.notes, c['notes']);
+        if (c['method'] != null) expect(n.method, c['method']);
+        final values = {for (final s in n.shares) s.userId: s.value};
+        (c['values'] as Map<String, dynamic>? ?? const {}).forEach((id, want) {
+          expect(values[id], want, reason: '$id value');
         });
         expect(
           n.shares.map((s) => s.userId).toList(),

@@ -34,6 +34,28 @@ void main() {
     expect(Rational.tryParseDecimal('.5'), Rational(BigInt.one, BigInt.two));
   });
 
+  test('split values parse like money.Decimal in Go', () {
+    expect(splitDecimal('+5'), Rational.integer(5));
+    expect(splitDecimal('1.'), Rational.integer(1));
+    expect(splitDecimal('9' * decimalLength), isNotNull);
+    for (final bad in [
+      '',
+      ' 5',
+      '0x10',
+      '1_000',
+      '0x1p4',
+      '1e3',
+      '1/2',
+      '1.23456',
+      '\ufeff5',
+      '9' * (decimalLength + 1),
+    ]) {
+      expect(splitDecimal(bad), isNull, reason: bad);
+    }
+    expect(trimSpace('\u0085 5\u3000'), '5');
+    expect(trimSpace('\ufeff5'), '\ufeff5');
+  });
+
   test('normalize validates like the server', () {
     ExpenseRequest req({
       String desc = 'Taxi',
@@ -60,6 +82,57 @@ void main() {
     expect(n.category, 'general');
     expect(formatDay(n.date), '2026-03-04');
     expect(n.shares.single.value, '2');
+  });
+
+  test('normalize caps people and items like the server', () {
+    final many = [
+      for (var i = 1; i <= maxPeople + 1; i++)
+        '00000000-0000-0000-0000-${i.toRadixString(16).padLeft(12, '0')}',
+    ];
+    final a = many.first;
+    final cases = {
+      'payers': ExpenseRequest(
+        description: 'Taxi',
+        currency: 'USD',
+        total: 100,
+        payers: [
+          PayerInput(a, 100),
+          for (final id in many.skip(1)) PayerInput(id, 0),
+        ],
+        splits: [SplitValueInput(a)],
+      ),
+      'items': ExpenseRequest(
+        description: 'Tea',
+        currency: 'USD',
+        total: maxItems + 1,
+        method: 'itemized',
+        payers: [PayerInput(a, maxItems + 1)],
+        items: [
+          for (var i = 0; i <= maxItems; i++) ItemInput('Tea', 1, [a]),
+        ],
+      ),
+      'item users': ExpenseRequest(
+        description: 'Cake',
+        currency: 'USD',
+        total: 100,
+        method: 'itemized',
+        payers: [PayerInput(a, 100)],
+        items: [ItemInput('Cake', 100, many)],
+      ),
+    };
+    cases.forEach((name, request) {
+      expect(
+        () => normalize(request, today: DateTime.utc(2026)),
+        throwsA(
+          isA<LedgerError>().having(
+            (e) => e.field,
+            'field',
+            name == 'payers' ? 'payers' : 'items',
+          ),
+        ),
+        reason: name,
+      );
+    });
   });
 
   test('recurrence overflows months like Go AddDate', () {

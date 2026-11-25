@@ -1,7 +1,10 @@
 package expense
 
 import (
+	"bytes"
+	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -14,6 +17,14 @@ import (
 // MaxTotal caps a single expense (about 10 billion major units in 2-decimal
 // currencies) so sums never approach int64 overflow.
 const MaxTotal int64 = 1_000_000_000_000
+
+// MaxPeople caps the payers, the splits and the people on one item, and
+// MaxItems the items, so the work one expense costs stays small. Groups hold
+// far fewer people (group.MaxMembers).
+const (
+	MaxPeople = 200
+	MaxItems  = 200
+)
 
 // Payer says how much one user paid.
 type Payer struct {
@@ -65,7 +76,8 @@ type Normalized struct {
 }
 
 // Normalize validates in and computes every participant's owed amount. An
-// empty date means today.
+// empty date means today and an empty method means equal. The Dart ledger
+// ports this function, so every rule on the input belongs here.
 func Normalize(in Input, today time.Time) (*Normalized, error) {
 	in.Description = strings.Join(strings.Fields(in.Description), " ")
 	if in.Description == "" {
@@ -74,6 +86,7 @@ func Normalize(in Input, today time.Time) (*Normalized, error) {
 	if utf8.RuneCountInString(in.Description) > 120 {
 		return nil, errs.Validation("description", "Keep the description under 120 characters.")
 	}
+	in.Notes = strings.TrimSpace(in.Notes)
 	if utf8.RuneCountInString(in.Notes) > 2000 {
 		return nil, errs.Validation("notes", "Notes are limited to 2000 characters.")
 	}
@@ -96,6 +109,9 @@ func Normalize(in Input, today time.Time) (*Normalized, error) {
 	}
 	if in.Category == PaymentCategory {
 		return nil, errs.Validation("category", "That category is only for payments. Choose another one.")
+	}
+	if in.Method == "" {
+		in.Method = MethodEqual
 	}
 	if in.Recurrence == "" {
 		in.Recurrence = RecurNone
@@ -133,6 +149,9 @@ func payers(list []Payer, total int64) (map[uuid.UUID]int64, error) {
 	if len(list) == 0 {
 		return nil, errs.Validation("payers", "Choose who paid.")
 	}
+	if len(list) > MaxPeople {
+		return nil, errs.Validation("payers", fmt.Sprintf("At most %d people can pay for one expense.", MaxPeople))
+	}
 	out := make(map[uuid.UUID]int64, len(list))
 	var sum int64
 	for _, p := range list {
@@ -161,7 +180,12 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 	if len(in.Splits) == 0 {
 		return nil, nil, errs.Validation("splits", "Choose who this expense is split between.")
 	}
+	if len(in.Splits) > MaxPeople {
+		return nil, nil, errs.Validation("splits", fmt.Sprintf("An expense can be split between at most %d people.", MaxPeople))
+	}
 	ids := make([]uuid.UUID, len(in.Splits))
+	// raw holds the trimmed values: what is stored is what was parsed.
+	raw := make([]string, len(in.Splits))
 	seen := make(map[uuid.UUID]bool, len(in.Splits))
 	for i, s := range in.Splits {
 		if s.UserID == uuid.Nil || seen[s.UserID] {
@@ -169,6 +193,7 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 		}
 		seen[s.UserID] = true
 		ids[i] = s.UserID
+		raw[i] = strings.TrimSpace(s.Value)
 	}
 
 	var parts []int64
@@ -180,7 +205,7 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 		parts = make([]int64, len(ids))
 		var sum int64
 		for i, s := range in.Splits {
-			v, err := integer(s.Value, "splits")
+			v, err := integer(raw[i], "splits")
 			if err != nil {
 				return nil, nil, err
 			}
@@ -189,7 +214,7 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 			}
 			parts[i] = v
 			sum += v
-			values[s.UserID] = s.Value
+			values[s.UserID] = raw[i]
 		}
 		if sum != in.Total {
 			return nil, nil, errs.Validation("splits", "Amounts must add up to the total.")
@@ -198,13 +223,13 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 		weights := make([]*big.Rat, len(ids))
 		sum := new(big.Rat)
 		for i, s := range in.Splits {
-			w, err := decimal(s.Value)
-			if err != nil || w.Sign() < 0 {
+			w, ok := money.Decimal(raw[i])
+			if !ok || w.Sign() < 0 {
 				return nil, nil, errs.Validation("splits", "Use positive numbers.")
 			}
 			weights[i] = w
 			sum.Add(sum, w)
-			values[s.UserID] = s.Value
+			values[s.UserID] = raw[i]
 		}
 		if in.Method == MethodPercent && sum.Cmp(big.NewRat(100, 1)) != 0 {
 			return nil, nil, errs.Validation("splits", "Percentages must add up to 100.")
@@ -218,14 +243,14 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 		var sum int64
 		for i, s := range in.Splits {
 			v := int64(0)
-			if strings.TrimSpace(s.Value) != "" {
-				if v, err = integer(s.Value, "splits"); err != nil {
+			if raw[i] != "" {
+				if v, err = integer(raw[i], "splits"); err != nil {
 					return nil, nil, err
 				}
 			}
 			adjust[i] = v
 			sum += v
-			values[s.UserID] = s.Value
+			values[s.UserID] = raw[i]
 		}
 		even := money.Even(in.Total-sum, len(ids))
 		parts = make([]int64, len(ids))
@@ -252,8 +277,15 @@ func itemized(in Input) (map[uuid.UUID]int64, map[uuid.UUID]string, error) {
 	if len(in.Items) == 0 {
 		return nil, nil, errs.Validation("items", "Add at least one item.")
 	}
+	if len(in.Items) > MaxItems {
+		return nil, nil, errs.Validation("items", fmt.Sprintf("An expense can have at most %d items.", MaxItems))
+	}
 	if in.Tax < 0 || in.Tip < 0 {
 		return nil, nil, errs.Validation("tax", "Tax and tip cannot be negative.")
+	}
+	// Bounding each term keeps items plus tax and tip far from overflow.
+	if in.Tax > MaxTotal || in.Tip > MaxTotal {
+		return nil, nil, errs.Validation("tax", "Tax and tip are too large.")
 	}
 	subtotals := map[uuid.UUID]int64{}
 	order := []uuid.UUID{}
@@ -272,6 +304,9 @@ func itemized(in Input) (map[uuid.UUID]int64, map[uuid.UUID]string, error) {
 		}
 		if len(item.UserIDs) == 0 {
 			return nil, nil, errs.Validation("items", "Assign every item to at least one person.")
+		}
+		if len(item.UserIDs) > MaxPeople {
+			return nil, nil, errs.Validation("items", fmt.Sprintf("An item can be shared by at most %d people.", MaxPeople))
 		}
 		seen := map[uuid.UUID]bool{}
 		for _, id := range item.UserIDs {
@@ -320,7 +355,9 @@ func merge(paid, owed map[uuid.UUID]int64, values map[uuid.UUID]string) []Share 
 	}
 	add(paid)
 	add(owed)
-	sortIDs(order)
+	// Byte order equals the order of the lowercase hex strings, which is how
+	// the Dart ledger sorts.
+	slices.SortFunc(order, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
 	shares := make([]Share, 0, len(order))
 	for _, id := range order {
 		shares = append(shares, Share{UserID: id, Paid: paid[id], Owed: owed[id], Value: values[id]})
@@ -328,31 +365,9 @@ func merge(paid, owed map[uuid.UUID]int64, values map[uuid.UUID]string) []Share 
 	return shares
 }
 
-func sortIDs(ids []uuid.UUID) {
-	for i := 1; i < len(ids); i++ {
-		for j := i; j > 0 && ids[j].String() < ids[j-1].String(); j-- {
-			ids[j], ids[j-1] = ids[j-1], ids[j]
-		}
-	}
-}
-
-func decimal(s string) (*big.Rat, error) {
-	s = strings.TrimSpace(s)
-	r, ok := new(big.Rat).SetString(s)
-	if !ok || s == "" || strings.ContainsAny(s, "/eE") {
-		return nil, errs.Validation("splits", "Use plain decimal numbers.")
-	}
-	// At most 4 decimal places keeps inputs human-sized.
-	scaled := new(big.Rat).Mul(r, big.NewRat(10000, 1))
-	if !scaled.IsInt() {
-		return nil, errs.Validation("splits", "Use at most four decimal places.")
-	}
-	return r, nil
-}
-
 func integer(s, field string) (int64, error) {
-	r, err := decimal(s)
-	if err != nil || !r.IsInt() || !r.Num().IsInt64() {
+	r, ok := money.Decimal(s)
+	if !ok || !r.IsInt() || !r.Num().IsInt64() {
 		return 0, errs.Validation(field, "Amounts must be whole numbers of minor units.")
 	}
 	v := r.Num().Int64()

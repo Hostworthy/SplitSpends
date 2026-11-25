@@ -2,10 +2,10 @@ package group
 
 import (
 	"math/big"
-	"regexp"
 	"strings"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/money"
 	"github.com/google/uuid"
 )
 
@@ -65,7 +65,7 @@ func (d DefaultSplit) Validate(members []uuid.UUID) (*DefaultSplit, error) {
 			return nil, errs.Validation(splitField, "Only current members can be part of the default split.")
 		}
 		v := strings.TrimSpace(raw)
-		r, ok := splitDecimal(v)
+		r, ok := money.Decimal(v)
 		if !ok {
 			return nil, errs.Validation(splitField, "Use plain decimal numbers with at most four decimal places.")
 		}
@@ -111,22 +111,4 @@ func (g *Group) Effective() *DefaultSplit {
 		return nil
 	}
 	return g.DefaultSplit
-}
-
-var plainDecimal = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)$`)
-
-// splitDecimal parses a plain decimal such as "60", "33.3333" or ".5" with at
-// most four decimal places, the same inputs expense splits accept.
-func splitDecimal(s string) (*big.Rat, bool) {
-	if !plainDecimal.MatchString(s) {
-		return nil, false
-	}
-	r, ok := new(big.Rat).SetString(s)
-	if !ok {
-		return nil, false
-	}
-	if !new(big.Rat).Mul(r, big.NewRat(10000, 1)).IsInt() {
-		return nil, false
-	}
-	return r, true
 }

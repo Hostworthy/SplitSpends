@@ -22,10 +22,12 @@ func TestSharedVectors(t *testing.T) {
 			Name  string
 			Today string
 			Input struct {
-				Total  int64
-				Date   string
-				Method Method
-				Payers []struct {
+				Description string
+				Notes       string
+				Total       int64
+				Date        string
+				Method      Method
+				Payers      []struct {
 					UserID uuid.UUID
 					Amount int64
 				}
@@ -37,16 +39,23 @@ func TestSharedVectors(t *testing.T) {
 				Tax   int64
 				Tip   int64
 			}
-			Owed  map[uuid.UUID]int64
-			Error string
+			Owed        map[uuid.UUID]int64
+			Values      map[uuid.UUID]string
+			Description string
+			Notes       string
+			Method      Method
+			Error       string
 		}
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range doc.Splits {
-		in := Input{Description: c.Name, Currency: "USD", Total: c.Input.Total, Method: c.Input.Method,
-			Date: c.Input.Date, Items: c.Input.Items, Tax: c.Input.Tax, Tip: c.Input.Tip}
+		in := Input{Description: c.Input.Description, Notes: c.Input.Notes, Currency: "USD", Total: c.Input.Total,
+			Method: c.Input.Method, Date: c.Input.Date, Items: c.Input.Items, Tax: c.Input.Tax, Tip: c.Input.Tip}
+		if in.Description == "" {
+			in.Description = c.Name
+		}
 		for _, p := range c.Input.Payers {
 			in.Payers = append(in.Payers, Payer{UserID: p.UserID, Amount: p.Amount})
 		}
@@ -72,12 +81,28 @@ func TestSharedVectors(t *testing.T) {
 			continue
 		}
 		got := map[uuid.UUID]int64{}
+		values := map[uuid.UUID]string{}
 		for _, s := range n.Shares {
 			got[s.UserID] = s.Owed
+			values[s.UserID] = s.Value
 		}
 		for id, want := range c.Owed {
 			if got[id] != want {
 				t.Errorf("%s: %s owes %d, want %d", c.Name, id, got[id], want)
+			}
+		}
+		if c.Description != "" && n.Description != c.Description {
+			t.Errorf("%s: description %q, want %q", c.Name, n.Description, c.Description)
+		}
+		if c.Notes != "" && n.Notes != c.Notes {
+			t.Errorf("%s: notes %q, want %q", c.Name, n.Notes, c.Notes)
+		}
+		if c.Method != "" && n.Method != c.Method {
+			t.Errorf("%s: method %q, want %q", c.Name, n.Method, c.Method)
+		}
+		for id, want := range c.Values {
+			if values[id] != want {
+				t.Errorf("%s: %s value %q, want %q", c.Name, id, values[id], want)
 			}
 		}
 	}

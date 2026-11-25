@@ -7,6 +7,13 @@ import 'package:splitspends_ledger/rational.dart';
 /// Caps a single expense so sums never approach integer limits.
 const maxTotal = 1000000000000;
 
+/// Caps the payers, the splits and the people on one item, so the work one
+/// expense costs stays small.
+const maxPeople = 200;
+
+/// Caps the items of an itemized expense.
+const maxItems = 200;
+
 /// The earliest date an expense can have. Dates also stop a year after
 /// today, so a typo cannot start a series that runs for centuries.
 final firstDay = DateTime.utc(2000);
@@ -150,7 +157,8 @@ NormalizedExpense normalize(
       'Keep the description under 120 characters.',
     );
   }
-  if (input.notes.runes.length > 2000) {
+  final notes = trimSpace(input.notes);
+  if (notes.runes.length > 2000) {
     throw const LedgerError('notes', 'Notes are limited to 2000 characters.');
   }
   final currency = input.currency.trim().toUpperCase();
@@ -195,7 +203,7 @@ NormalizedExpense normalize(
     total: input.total,
     date: date,
     category: category,
-    notes: input.notes,
+    notes: notes,
     method: input.method.isEmpty ? 'equal' : input.method,
     recurrence: recurrence,
     items: itemized ? items : const [],
@@ -207,6 +215,12 @@ NormalizedExpense normalize(
 
 Map<String, int> _payers(List<PayerInput> list, int total) {
   if (list.isEmpty) throw const LedgerError('payers', 'Choose who paid.');
+  if (list.length > maxPeople) {
+    throw const LedgerError(
+      'payers',
+      'At most $maxPeople people can pay for one expense.',
+    );
+  }
   final out = <String, int>{};
   var sum = 0;
   for (final p in list) {
@@ -238,7 +252,15 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
       'Choose who this expense is split between.',
     );
   }
+  if (input.splits.length > maxPeople) {
+    throw const LedgerError(
+      'splits',
+      'An expense can be split between at most $maxPeople people.',
+    );
+  }
   final ids = <String>[];
+  // The trimmed values: what is stored is what was parsed.
+  final raw = <String>[];
   final seen = <String>{};
   for (final s in input.splits) {
     if (_isNil(s.userId) || !seen.add(s.userId)) {
@@ -248,6 +270,7 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
       );
     }
     ids.add(s.userId);
+    raw.add(trimSpace(s.value ?? ''));
   }
 
   final values = <String, String>{};
@@ -259,14 +282,14 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
     case 'exact':
       parts = [];
       var sum = 0;
-      for (final s in input.splits) {
-        final v = _integer(s.value ?? '', 'splits');
+      for (var i = 0; i < ids.length; i++) {
+        final v = _integer(raw[i], 'splits');
         if (v < 0) {
           throw const LedgerError('splits', 'Amounts cannot be negative.');
         }
         parts.add(v);
         sum += v;
-        values[s.userId] = s.value ?? '';
+        values[ids[i]] = raw[i];
       }
       if (sum != input.total) {
         throw const LedgerError('splits', 'Amounts must add up to the total.');
@@ -275,19 +298,14 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
     case 'shares':
       final weights = <Rational>[];
       var sum = Rational.zero;
-      for (final s in input.splits) {
-        Rational? w;
-        try {
-          w = _decimal(s.value ?? '');
-        } on LedgerError {
-          w = null;
-        }
+      for (var i = 0; i < ids.length; i++) {
+        final w = splitDecimal(raw[i]);
         if (w == null || w.sign < 0) {
           throw const LedgerError('splits', 'Use positive numbers.');
         }
         weights.add(w);
         sum = sum + w;
-        values[s.userId] = s.value ?? '';
+        values[ids[i]] = raw[i];
       }
       if (input.method == 'percent' && sum != Rational.integer(100)) {
         throw const LedgerError('splits', 'Percentages must add up to 100.');
@@ -302,12 +320,11 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
     case 'adjustment':
       final adjust = <int>[];
       var sum = 0;
-      for (final s in input.splits) {
-        final raw = s.value ?? '';
-        final v = raw.trim().isEmpty ? 0 : _integer(raw, 'splits');
+      for (var i = 0; i < ids.length; i++) {
+        final v = raw[i].isEmpty ? 0 : _integer(raw[i], 'splits');
         adjust.add(v);
         sum += v;
-        values[s.userId] = raw;
+        values[ids[i]] = raw[i];
       }
       final spread = even(input.total - sum, ids.length);
       parts = [];
@@ -340,8 +357,18 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
   if (input.items.isEmpty) {
     throw const LedgerError('items', 'Add at least one item.');
   }
+  if (input.items.length > maxItems) {
+    throw const LedgerError(
+      'items',
+      'An expense can have at most $maxItems items.',
+    );
+  }
   if (input.tax < 0 || input.tip < 0) {
     throw const LedgerError('tax', 'Tax and tip cannot be negative.');
+  }
+  // Bounding each term keeps items plus tax and tip far from overflow.
+  if (input.tax > maxTotal || input.tip > maxTotal) {
+    throw const LedgerError('tax', 'Tax and tip are too large.');
   }
   final subtotals = <String, int>{};
   final order = <String>[];
@@ -366,6 +393,12 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
       throw const LedgerError(
         'items',
         'Assign every item to at least one person.',
+      );
+    }
+    if (raw.userIds.length > maxPeople) {
+      throw const LedgerError(
+        'items',
+        'An item can be shared by at most $maxPeople people.',
       );
     }
     final seen = <String>{};
@@ -427,26 +460,26 @@ List<ShareResult> _merge(
   ];
 }
 
-/// A plain decimal with at most four decimal places (split values).
-Rational _decimal(String input) {
+/// The longest split value accepted: room for a sign, the 13 digits of
+/// [maxTotal], a point and four decimals. Mirrors Go's money.DecimalLength.
+const decimalLength = 20;
+
+/// Parses a split value like Go's money.Decimal: a plain decimal such as
+/// `60`, `-3.5`, `1.` or `.25` with at most [decimalLength] characters and
+/// four decimal places. Returns null for anything else. Trim the input with
+/// [trimSpace] first.
+Rational? splitDecimal(String input) {
+  // Rational.tryParseDecimal trims more than Go does (U+FEFF), so anything
+  // left around the value after trimSpace is refused here.
+  if (input.length > decimalLength || input.trim() != input) return null;
   final r = Rational.tryParseDecimal(input);
-  if (r == null) {
-    throw const LedgerError('splits', 'Use plain decimal numbers.');
-  }
-  if (!(r * Rational.integer(10000)).isInteger) {
-    throw const LedgerError('splits', 'Use at most four decimal places.');
-  }
+  if (r == null || !(r * Rational.integer(10000)).isInteger) return null;
   return r;
 }
 
 int _integer(String input, String field) {
-  Rational r;
-  try {
-    r = _decimal(input);
-  } on LedgerError {
-    throw LedgerError(field, 'Amounts must be whole numbers of minor units.');
-  }
-  if (!r.isInteger || r.numerator.bitLength > 63) {
+  final r = splitDecimal(input);
+  if (r == null || !r.isInteger || r.numerator.bitLength > 63) {
     throw LedgerError(field, 'Amounts must be whole numbers of minor units.');
   }
   final v = r.numerator.toInt();
@@ -456,8 +489,21 @@ int _integer(String input, String field) {
   return v;
 }
 
+/// The characters Go's unicode.IsSpace accepts. Dart's String.trim and
+/// RegExp `\s` use a different set, so the rules name it explicitly.
+const _space =
+    '\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000';
+
+final _edges = RegExp('^[$_space]+|[$_space]+\$');
+
+/// Trims like Go's strings.TrimSpace.
+String trimSpace(String s) => s.replaceAll(_edges, '');
+
+final _runs = RegExp('[$_space]+');
+
+/// Collapses whitespace like Go's strings.Fields joined with single spaces.
 String _collapse(String s) =>
-    s.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).join(' ');
+    s.split(_runs).where((p) => p.isNotEmpty).join(' ');
 
 bool _isNil(String id) => id.isEmpty || id == _nilId;
 
