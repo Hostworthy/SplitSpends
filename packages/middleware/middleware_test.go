@@ -152,8 +152,8 @@ func TestObserve(t *testing.T) {
 		}))
 		rec := httptest.NewRecorder()
 		defer func() {
-			if v := recover(); v != http.ErrAbortHandler {
-				t.Fatalf("want http.ErrAbortHandler to propagate, got %v", v)
+			if err, _ := recover().(error); !errors.Is(err, http.ErrAbortHandler) {
+				t.Fatalf("want http.ErrAbortHandler to propagate, got %v", err)
 			}
 			if rec.Body.Len() != 0 {
 				t.Fatalf("an aborted response must get no error body: %s", rec.Body)
