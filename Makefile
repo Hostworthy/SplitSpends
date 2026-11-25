@@ -81,7 +81,7 @@ vuln:
 
 test:
 	go test -count=1 ./...
-	cd packages/ledger && dart test
+	cd packages/ledger && dart test -p vm,node
 	cd packages/client && flutter test
 
 test-integration:

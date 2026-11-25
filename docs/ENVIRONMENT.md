@@ -19,6 +19,7 @@ The server reads everything from the environment. Invalid or missing required va
 | `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API from elsewhere, or `*` |
 | `TRUST_PROXY` | `false` | How many reverse proxies sit in front of the server, each appending the address it was connected from to `X-Forwarded-For`. Rate limits use the entry that many places from the right; entries further left are written by the client and ignored. `true` means `1`, `false` means `0` (use the connecting address). See [Client Addresses](#client-addresses) |
 | `MCP_ENABLED` | `true` | Serve the MCP endpoint at `/mcp` |
+| `MCP_ADMIN_TOOLS` | `false` | Offer the `admin_` tools on `/mcp`. Leave off unless you administer the instance through an assistant; see [MCP](MCP.md#tools) |
 | `GRAVATAR` | `on` | `off` hides the "Use my Gravatar picture" option and stops sending picture links. People opt in one by one; their app then loads the picture from gravatar.com, which sees a hash of their email and who views it |
 
 ### Client Addresses
@@ -60,7 +61,7 @@ Buckets stay private: the API checks access and streams receipts itself.
 | -------- | ------- | ------- |
 | `SIGNUP_MODE` | `invite` | Starting sign-up mode until an administrator changes it in the app (Account, Administration). `open`: anyone. `invite`: the allowed list, people a member added by email, group invite links, and people an administrator or manager approved. `approval`: anyone can ask and an administrator or manager approves them. `closed`: no new accounts. The very first account can always sign up and becomes the administrator (see `ADMIN_EMAIL`). `domain` is still read, as `invite` with the domains below |
 | `ADMIN_EMAIL` | empty | The email address of the person who runs the server. While no account is active, only this address can sign in, and it becomes the administrator; nobody else can claim a new server first. Empty: whoever signs in first becomes the administrator, whatever `SIGNUP_MODE` says, and the server logs `auth.bootstrap.open` at start until someone has |
-| `SIGNUP_ALLOWED_DOMAINS` | empty | Comma-separated domains that start out on the allowed list |
+| `SIGNUP_ALLOWED_DOMAINS` | empty | Comma-separated domains (`example.com` or `@example.com`) that start out on the allowed list. The server refuses to start when an entry is not a domain |
 | `SESSION_TTL_DAYS` | `90` | How long app sessions last. API tokens do not expire until revoked |
 
 Login codes are 6 digits, valid for 10 minutes, allow 5 attempts, and at most 5 codes per email per hour from one network and 10 per email per hour in total. Requests for unknown emails in `invite` mode get the same response as real ones and send nothing.
@@ -108,7 +109,7 @@ The private key in the database is stored like the rest of your data: it only le
 
 Push is on whenever a key pair is available; `GET /api/v1/config` reports `pushEnabled` and `vapidPublicKey`. With `SERVERLESS=true`, notifications are pushed before the response returns, like emails.
 
-Outgoing requests: push endpoints come from devices, so the server refuses endpoints that resolve to loopback, private, link-local (cloud metadata) or carrier-grade NAT addresses and does not follow redirects; an endpoint whose host is such an address is refused when the device registers. `PUSH_ALLOW_PRIVATE=true` lifts the private and loopback part (link-local stays blocked). When the server reaches the internet through an `HTTPS_PROXY`, the proxy resolves endpoints, so the address check applies only to direct connections.
+Outgoing requests: push endpoints come from devices, so the server refuses endpoints that resolve to loopback, private, carrier-grade NAT, link-local, multicast or other reserved addresses, or to a cloud metadata service, and does not follow redirects; IPv6 addresses that carry an IPv4 address (mapped, NAT64, 6to4) are judged by that address. An endpoint whose host is such an address is refused when the device registers. `PUSH_ALLOW_PRIVATE=true` lifts the private, carrier-grade NAT and loopback part; reserved ranges and the metadata services (including AWS's `fd00:ec2::254` and Alibaba Cloud's `100.100.100.200`, which sit inside private ranges) stay blocked. When the server reaches the internet through an `HTTPS_PROXY`, the proxy connects to endpoints itself: the server still refuses an endpoint whose host is such an address or resolves to one with the server's own DNS, but a host it cannot resolve is handed to the proxy, so restrict what the proxy may reach as well.
 
 ## AI (Optional)
 
@@ -121,6 +122,7 @@ Split Spends does not run a model. When a provider is configured, the server sen
 | `AI_MODEL` | `claude-opus-5-5` for `anthropic` | Model id. Required for `openai` |
 | `AI_BASE_URL` | empty | For `openai`: the API root before `/chat/completions` (examples below) |
 | `AI_EFFORT` | model default | Anthropic only: `low`, `medium`, `high`, `xhigh`, `max` |
+| `AI_RATE_LIMIT` | `30` | AI requests (receipt scans and expense drafts together) each person may make per hour. Each server instance counts on its own, so with several instances (serverless) a person can make this many on each |
 
 Examples:
 

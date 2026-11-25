@@ -10,6 +10,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/invite"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/reminder"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/transfer"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
@@ -192,5 +193,135 @@ func TestPlaceholderLimit(t *testing.T) {
 	}
 	if _, err := svc.Friends.Add(ctx, ben, "", "Sam"); err != nil {
 		t.Fatalf("the limit is per account: %v", err)
+	}
+}
+
+// TestCommentLimit checks that an expense holds at most expense.MaxComments
+// comments, also when people post at the same time, and that comments come
+// a page at a time, oldest first.
+func TestCommentLimit(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	svc := env.Services.Expenses
+	in := rent(ada, ben, 1000, nil)
+	in.GroupID = &g.ID
+	e, err := svc.Create(ctx, ada, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ben wrote all but one in the hour before, a second apart; the last
+	// place is raced for.
+	_, err = env.DB.Pool.Exec(ctx, `INSERT INTO comments (id, expense_id, user_id, created_at, body)
+		SELECT gen_random_uuid(), $1, $2, $3::timestamptz - interval '1 hour' + n * interval '1 second', 'Note ' || n FROM generate_series(1, $4::int) n`,
+		e.ID, ben, env.Clock.Now(), expense.MaxComments-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list, total, err := svc.Comments(ctx, ada, e.ID, 10, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != expense.MaxComments-1 || len(list) != 10 || list[0].Body != "Note 21" || list[9].Body != "Note 30" {
+		t.Fatalf("want comments 21 to 30 of %d, got %d of %d starting %q", expense.MaxComments-1, len(list), total, list[0].Body)
+	}
+
+	results := concurrently(5, func(int) error {
+		_, err := svc.Comment(ctx, ada, e.ID, "Last word")
+		return err
+	})
+	posted := 0
+	for _, err := range results {
+		switch {
+		case err == nil:
+			posted++
+		case !errs.Is(err, errs.KindConflict):
+			t.Fatal(err)
+		}
+	}
+	all, total, err := svc.Comments(ctx, ada, e.ID, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if posted != 1 || total != expense.MaxComments || len(all) != expense.MaxComments {
+		t.Fatalf("want exactly one more comment up to %d, got %d posted and %d stored (%d listed)", expense.MaxComments, posted, total, len(all))
+	}
+	if all[len(all)-1].Body != "Last word" {
+		t.Fatalf("the newest comment comes last, got %q", all[len(all)-1].Body)
+	}
+}
+
+// TestInviteLimitIsAtomic checks that links made at the same time cannot
+// take a group past invite.MaxActive.
+func TestInviteLimitIsAtomic(t *testing.T) {
+	ctx := context.Background()
+	env, ada, _, g := flat(t)
+	svc := env.Services.Invites
+	for i := range invite.MaxActive - 1 {
+		if _, err := svc.Create(ctx, ada, g.ID); err != nil {
+			t.Fatalf("link %d: %v", i+1, err)
+		}
+	}
+	results := concurrently(10, func(int) error {
+		_, err := svc.Create(ctx, ada, g.ID)
+		return err
+	})
+	made := 0
+	for _, err := range results {
+		switch {
+		case err == nil:
+			made++
+		case !errs.Is(err, errs.KindConflict):
+			t.Fatal(err)
+		}
+	}
+	list, err := svc.List(ctx, ada, g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if made != 1 || len(list) != invite.MaxActive {
+		t.Fatalf("want exactly one more link up to %d, got %d made and %d listed", invite.MaxActive, made, len(list))
+	}
+}
+
+// TestGroupLimit checks that nobody joins more than group.MaxPerUser groups:
+// not by creating one, joining one or being added to one.
+func TestGroupLimit(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
+	_, err := env.DB.Pool.Exec(ctx, `WITH made AS (
+			INSERT INTO groups (id, created_by, created_at, updated_at, name, kind, default_currency)
+			SELECT gen_random_uuid(), $1, $2, $2, 'Group ' || n, 'other', 'EUR' FROM generate_series(1, $3::int) n RETURNING id)
+		INSERT INTO group_members (group_id, user_id, joined_at) SELECT id, $1, $2 FROM made`,
+		ada, env.Clock.Now(), group.MaxPerUser-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "Last one"
+	if _, err := svc.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name}}); err != nil {
+		t.Fatalf("group %d: %v", group.MaxPerUser, err)
+	}
+	if _, err := svc.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name}}); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("creating group %d must be refused, got %v", group.MaxPerUser+1, err)
+	}
+	bens, err := svc.Groups.Create(ctx, ben, group.CreateInput{Patch: group.Patch{Name: &name}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Groups.Join(ctx, ada, bens.ID); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("joining group %d must be refused, got %v", group.MaxPerUser+1, err)
+	}
+	if _, err := svc.Groups.AddMember(ctx, ben, bens.ID, group.Invitee{Email: "ada@example.com"}); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("adding Ada to group %d must be refused, got %v", group.MaxPerUser+1, err)
+	}
+	_, err = svc.Groups.Create(ctx, ben, group.CreateInput{Patch: group.Patch{Name: &name}, Members: []group.Invitee{{Email: "ada@example.com"}}})
+	if !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("a new group with Ada must be refused, got %v", err)
+	}
+	if mine, err := svc.Groups.Mine(ctx, ben); err != nil || len(mine) != 1 {
+		t.Fatalf("the refused group must not be saved: %d groups, %v", len(mine), err)
 	}
 }

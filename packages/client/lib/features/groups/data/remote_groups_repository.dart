@@ -16,7 +16,7 @@ class RemoteGroupsRepository implements GroupsRepository {
       (await _api.getList(
         '/groups',
         Group.fromJson,
-        query: {'archived': archived ? 'true' : null, 'limit': 200},
+        query: {'archived': archived ? 'true' : null},
       )).items;
 
   @override

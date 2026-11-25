@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sembast/sembast_memory.dart';
 
@@ -10,6 +12,7 @@ import 'package:splitspends/features/activity/data/local_activity_repository.dar
 import 'package:splitspends/features/expenses/data/local_expenses_repository.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
+import 'package:splitspends/features/expenses/domain/optimistic.dart';
 import 'package:splitspends/features/friends/data/local_friends_repository.dart';
 import 'package:splitspends/features/groups/data/local_groups_repository.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
@@ -299,6 +302,168 @@ void main() {
     ]);
   });
 
+  test('local list filters by friend, text and category with paging', () async {
+    final expenses = LocalExpensesRepository(ledger);
+    final friends = LocalFriendsRepository(ledger);
+    final sam = (await friends.add(name: 'Sam')).user.id;
+    final kim = (await friends.add(name: 'Kim')).user.id;
+    Future<Expense> add(
+      String description,
+      String date, {
+      required String friend,
+      String notes = '',
+      String? category,
+    }) {
+      // Later entries on the same day are created later.
+      now = now.add(const Duration(minutes: 1));
+      return expenses.create(
+        ExpenseInput(
+          description: description,
+          currency: 'EUR',
+          total: 1000,
+          date: date,
+          notes: notes,
+          category: category,
+          payers: const [Payer(userId: meId, amount: 1000)],
+          splits: [
+            const SplitEntry(userId: meId),
+            SplitEntry(userId: friend),
+          ],
+        ),
+      );
+    }
+
+    await add('Taxi', '2026-11-20', friend: sam, category: 'transport.taxi');
+    await add('Lunch', '2026-11-22', friend: kim, notes: 'Taxi home after');
+    await add('Dinner', '2026-11-20', friend: sam, category: 'food.dining');
+    final gone = await add('Taxi back', '2026-11-21', friend: kim);
+    await add('Snacks', '2026-11-19', friend: sam, category: 'food.dining');
+    await expenses.delete(gone.id);
+
+    Future<void> lists(
+      ExpenseQuery query,
+      List<String> descriptions, {
+      required int total,
+      int limit = 50,
+      int offset = 0,
+    }) async {
+      final page = await expenses.list(query, limit: limit, offset: offset);
+      expect([for (final e in page.items) e.description], descriptions);
+      expect(page.total, total);
+    }
+
+    // Newest date first, then the one created last on the same day.
+    await lists(const ExpenseQuery(), [
+      'Lunch',
+      'Dinner',
+      'Taxi',
+      'Snacks',
+    ], total: 4);
+    await lists(ExpenseQuery(friendId: sam), [
+      'Dinner',
+      'Taxi',
+      'Snacks',
+    ], total: 3);
+    await lists(ExpenseQuery(friendId: kim), ['Lunch'], total: 1);
+    // Description or notes, ignoring case and spaces around the text.
+    await lists(const ExpenseQuery(q: ' tAXi '), ['Lunch', 'Taxi'], total: 2);
+    await lists(const ExpenseQuery(category: 'food.dining'), [
+      'Dinner',
+      'Snacks',
+    ], total: 2);
+    await lists(
+      ExpenseQuery(friendId: sam, category: 'food.dining', q: 'snack'),
+      ['Snacks'],
+      total: 1,
+    );
+    await lists(const ExpenseQuery(), ['Lunch', 'Dinner'], total: 4, limit: 2);
+    await lists(
+      const ExpenseQuery(),
+      ['Taxi', 'Snacks'],
+      total: 4,
+      limit: 2,
+      offset: 2,
+    );
+    await lists(const ExpenseQuery(), [], total: 4, offset: 4);
+  });
+
+  test('offline and on-device results agree for every split method', () async {
+    final expenses = LocalExpensesRepository(ledger);
+    final friends = LocalFriendsRepository(ledger);
+    final sam = (await friends.add(name: 'Sam')).user.id;
+    final kim = (await friends.add(name: 'Kim')).user.id;
+    for (final method in SplitMethod.values) {
+      final input = ExpenseInput(
+        description: 'Dinner',
+        currency: 'EUR',
+        total: 1000,
+        date: '2026-11-20',
+        category: 'food.dining',
+        splitMethod: method,
+        recurrence: Recurrence.monthly,
+        payers: [
+          const Payer(userId: meId, amount: 700),
+          Payer(userId: sam, amount: 300),
+        ],
+        splits: [
+          SplitEntry(
+            userId: meId,
+            value: switch (method) {
+              SplitMethod.exact => '500',
+              SplitMethod.percent => '50',
+              SplitMethod.shares => '2',
+              SplitMethod.adjustment => '100',
+              _ => null,
+            },
+          ),
+          SplitEntry(
+            userId: sam,
+            value: switch (method) {
+              SplitMethod.exact => '200',
+              SplitMethod.percent => '20',
+              SplitMethod.shares => '1',
+              _ => null,
+            },
+          ),
+          SplitEntry(
+            userId: kim,
+            value: switch (method) {
+              SplitMethod.exact => '300',
+              SplitMethod.percent => '30',
+              SplitMethod.shares => '1',
+              _ => null,
+            },
+          ),
+        ],
+        items: [
+          LineItem(name: 'Pasta', amount: 600, userIds: [meId, sam]),
+          LineItem(name: 'Wine', amount: 300, userIds: [kim]),
+        ],
+        tax: 60,
+        tip: 40,
+      );
+      final local = await expenses.create(input);
+      final offline = optimisticExpense(
+        input,
+        id: local.id,
+        meId: meId,
+        today: ledger.today(),
+      );
+      List<Object?> shape(Expense e) => [
+        e.kind,
+        e.splitMethod,
+        e.category,
+        [for (final s in e.shares) (s.userId, s.paid, s.owed, s.value)],
+        [for (final i in e.items) (i.name, i.amount, i.userIds.join(','))],
+        e.tax,
+        e.tip,
+        e.recurrence,
+        e.myBalance,
+      ];
+      expect(shape(offline), shape(local), reason: method.wire);
+    }
+  });
+
   test('restore is refused after a participant left the group', () async {
     final groups = LocalGroupsRepository(ledger);
     final expenses = LocalExpensesRepository(ledger);
@@ -528,5 +693,39 @@ void main() {
       feed.items.first.summary,
       '“Rent” stopped repeating in Flat because someone in it left the group',
     );
+  });
+
+  test('export neutralises formulas in names and descriptions', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final group = await groups.create(
+      const GroupInput(
+        name: 'Flat',
+        members: [MemberInput(name: '=1+1')],
+      ),
+    );
+    final sam = group.members[1].id;
+    await LocalExpensesRepository(ledger).create(
+      ExpenseInput(
+        groupId: group.id,
+        description: '@SUM(A1)',
+        currency: 'EUR',
+        total: 200,
+        date: '2026-11-20',
+        payers: const [Payer(userId: meId, amount: 200)],
+        splits: [
+          const SplitEntry(userId: meId),
+          SplitEntry(userId: sam),
+        ],
+      ),
+    );
+    final rows = [
+      for (final line in const LineSplitter().convert(
+        utf8.decode(await groups.export(group.id)),
+      ))
+        line.split(','),
+    ];
+    expect(rows[0].sublist(6), ['Ada', "'=1+1"]);
+    expect(rows[1][1], "'@SUM(A1)");
+    expect(rows[1].sublist(6), ['100', '-100']);
   });
 }

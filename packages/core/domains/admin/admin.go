@@ -4,17 +4,20 @@ package admin
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
-	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/google/uuid"
 )
 
-// MaxAllowed bounds the allowed list.
-const MaxAllowed = 500
+// MaxPending bounds the requests waiting for a decision, so the queue stays
+// one administrators can work through.
+const MaxPending = 500
+
+// PendingTTL is how long a request waits for a decision before it is
+// removed. The person can ask again.
+const PendingTTL = 30 * 24 * time.Hour
 
 // Settings are the sign-up rules an administrator chose.
 type Settings struct {
@@ -55,8 +58,14 @@ type RequestRepository interface {
 	// Find returns nil when email never asked to join.
 	Find(ctx context.Context, email string) (*Request, error)
 	Get(ctx context.Context, id uuid.UUID) (*Request, error)
+	// Save updates the request with r.ID, or files r as a new one. A new
+	// request for an email that already has one is ignored.
 	Save(ctx context.Context, r *Request) error
-	List(ctx context.Context, status Status) ([]*Request, error)
+	// List returns a page of requests with status, newest first, and how
+	// many there are in all.
+	List(ctx context.Context, status Status, limit, offset int) ([]*Request, int, error)
+	// Expire removes pending requests filed before before.
+	Expire(ctx context.Context, before time.Time) error
 	// Delete removes the request of email, if there is one.
 	Delete(ctx context.Context, email string) error
 }
@@ -74,61 +83,4 @@ type Accounts interface {
 // too; tokens stored anywhere else must be removed here as well.
 type Credentials interface {
 	Revoke(ctx context.Context, userID uuid.UUID, email string) error
-}
-
-// Normalize checks the mode and cleans the allowed list: addresses are
-// lowercased, "example.com" becomes "@example.com", duplicates go.
-func Normalize(mode string, allowed []string) (auth.Signup, error) {
-	s := auth.Signup{Mode: auth.SignupMode(strings.ToLower(strings.TrimSpace(mode)))}
-	valid := false
-	for _, m := range auth.Modes {
-		valid = valid || m == s.Mode
-	}
-	if !valid {
-		return s, errs.Validation("mode", "Choose open, invite, approval or closed.")
-	}
-	if len(allowed) > MaxAllowed {
-		return s, errs.Validation("allowed", "The allowed list is limited to 500 entries.")
-	}
-	seen := map[string]bool{}
-	s.Allowed = []string{}
-	for _, raw := range allowed {
-		entry := strings.ToLower(strings.TrimSpace(raw))
-		if entry == "" {
-			continue
-		}
-		switch {
-		case strings.HasPrefix(entry, "@") || !strings.Contains(entry, "@"):
-			domain := strings.TrimPrefix(entry, "@")
-			if !domainPattern(domain) {
-				return s, errs.Validation("allowed", "“"+raw+"” is not an email address or a domain like @example.com.")
-			}
-			entry = "@" + domain
-		default:
-			email, err := user.NormalizeEmail(entry)
-			if err != nil {
-				return s, errs.Validation("allowed", "“"+raw+"” is not an email address or a domain like @example.com.")
-			}
-			entry = email
-		}
-		if !seen[entry] {
-			seen[entry] = true
-			s.Allowed = append(s.Allowed, entry)
-		}
-	}
-	return s, nil
-}
-
-func domainPattern(d string) bool {
-	if len(d) < 3 || len(d) > 253 || !strings.Contains(d, ".") || strings.HasPrefix(d, ".") || strings.HasSuffix(d, ".") {
-		return false
-	}
-	for _, r := range d {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '.':
-		default:
-			return false
-		}
-	}
-	return true
 }

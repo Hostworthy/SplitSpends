@@ -2,6 +2,8 @@
 
 All endpoints live under `/api/v1`. JSON field names are **camelCase**. The same contract is used by the Flutter app, the MCP server, and any third-party client.
 
+A JSON request body holds exactly one JSON value of at most 1 MB (16 MB for `POST /import`); a larger body, an empty one where a body is required, or anything after the value answers 422 `VALIDATION_ERROR` with a message saying which. Fields the server does not know are ignored, so a newer client keeps working against an older server; a misspelled field is therefore ignored too, so clients send field names exactly as documented here.
+
 ## Conventions
 
 ### Authentication
@@ -31,9 +33,11 @@ When AI reads amounts in another currency (a receipt from abroad), `POST /ai/exp
 
 Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `CONFLICT` (409), `RATE_LIMITED` (429), `AI_DISABLED` (503), `RATES_UNAVAILABLE` (503), `APPROVAL_PENDING` (403, the account waits for an administrator), `APPROVAL_DECLINED` (403), `INTERNAL` (500). Several codes share a status, so clients read `code`, never the status alone; a 502, 503 or 504 without the error envelope comes from a proxy in front of the API (a timeout or an outage), not from the API.
 
+Every response carries an `X-Request-Id` header, the same id as `requestId` in an error body and in the server log. A client may send its own `X-Request-Id` of 1 to 64 letters, digits, `.`, `_` or `-`; any other value is replaced by one the server makes. The server log records each request's method and path, with the invite token in `/join/{token}` and `/invites/{token}` replaced by `{token}`.
+
 An object the caller may not see answers 404 `NOT_FOUND`, exactly as an id that does not exist, so ids of other people's groups, expenses, comments, categories and people reveal nothing. 403 `FORBIDDEN` is only for objects the caller can see but may not change.
 
-Lists accept `limit` (default 50, max 200) and `offset` (default 0).
+Every list accepts `limit` (max 200) and `offset` (default 0), and `total` counts the whole list. `GET /expenses`, `GET /activity`, `GET /admin/requests` and `GET /admin/accounts` return 50 items when `limit` is left out. The other lists return all their items when `limit` is left out, as they did before they took one. Limits keep the largest of them in check: a person belongs to at most 1000 groups (archived ones included), an expense holds at most 500 comments and a group at most 20 usable invite links.
 
 Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
@@ -53,8 +57,9 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 // are email (as before push existed); push has the same keys.
 { ...User, "timezone": "Europe/Berlin", "gravatar": false, "role": "user" | "manager" | "admin",
   "notifications": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true,
-                     "reminders": true,
-                     "push": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true, "reminders": true } } }
+                     "reminders": true, "approvals": true,
+                     "push": { "expenseAdded": true, "expenseUpdated": true, "paymentReceived": true, "addedToGroup": true, "reminders": true,
+                               "approvals": true } } }
 
 // PushSubscription (one of your devices; the endpoint is only shown to you)
 { "id": "uuid", "platform": "web" | "unifiedpush", "label": "Firefox on Linux",
@@ -172,7 +177,7 @@ A `percent` or `shares` default applies only while its members are exactly the g
 | DELETE | `/me/push-subscriptions/{subscriptionId}` | | 204 |
 | POST | `/me/push-subscriptions/test` | | `{ data: { sent, failed, removed } }` after sending a test notification to every device of the caller |
 
-Notification preferences: `PATCH /me` with `notifications` merges, so omitted keys keep their value. `{ "notifications": { "push": { "paymentReceived": false } } }` turns off push for payments and leaves everything else as it was. Unknown kinds added later default to on.
+Notification preferences: `PATCH /me` with `notifications` merges, so omitted keys keep their value. `{ "notifications": { "push": { "paymentReceived": false } } }` turns off push for payments and leaves everything else as it was. Unknown kinds added later default to on. `approvals` is about people waiting to join, which only administrators and managers are told about (see Administration).
 
 Push subscriptions follow the Web Push standards: the body of `POST /me/push-subscriptions` is what `PushSubscription.toJSON()` returns in a browser (plus `platform` and `label`), and UnifiedPush on Android provides the same endpoint and keys. Rules: the endpoint must be an `https` URL (any port), and a URL whose host is an IP address the server would refuse to contact (see `PUSH_ALLOW_PRIVATE` in ENVIRONMENT.md) is rejected with 422; `p256dh` is an uncompressed P-256 public key and `auth` 16 bytes, both base64url. Registering is idempotent on the endpoint: the existing row is refreshed (its failure count is reset only when the keys changed), and it moves to the caller if another account registered it (the device now belongs to whoever is signed in). A device belongs to the session or API token that registered it (or last refreshed it): signing out (`POST /auth/logout`), revoking the token or the session expiring removes the device, so it stops getting the account's notifications. At most 25 devices per user, counting a device moved from another account (409 beyond that). `POST .../test` returns 409 when push is off or no device is registered, and waits at most 15 seconds. Each account may register devices 20 times a minute and send 5 test notifications a minute (429 `RATE_LIMITED`). When push is off on the server, `POST` returns 409.
 
@@ -196,16 +201,16 @@ Each account may have up to 1000 people it added by name only (placeholders, fro
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| GET | `/groups` | `?archived=true` | List of `Group` |
-| POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, defaultSplit?, members?: [{ email, name? }] }` | 201 `{ data: Group }`; `defaultSplit` is checked against the members after they are added |
+| GET | `/groups` | `?archived=true&limit=&offset=` | List of `Group`, most recently changed first |
+| POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, defaultSplit?, members?: [{ email, name? }] }` | 201 `{ data: Group }`; `defaultSplit` is checked against the members after they are added. 409 when the caller or someone added is already in 1000 groups |
 | GET | `/groups/{groupId}` | | `{ data: Group }` |
 | PATCH | `/groups/{groupId}` | `{ name?, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, archived?, defaultSplit? }` | `{ data: Group }`; `defaultSplit: null` clears it, leaving it out keeps it |
 | DELETE | `/groups/{groupId}` | | 204; 403 when the caller may not delete it; 409 when not settled |
-| POST | `/groups/{groupId}/members` | `{ email?, name? }` | 201 `{ data: Group }` (name only adds a placeholder) |
+| POST | `/groups/{groupId}/members` | `{ email?, name? }` | 201 `{ data: Group }` (name only adds a placeholder); 409 when that person is already in 1000 groups |
 | DELETE | `/groups/{groupId}/members/{userId}` | | 204; 409 when that member is not settled. A member may remove themselves (leave). 409 when nobody who can sign in would be left (only people added by name remain): delete the group instead |
 | GET | `/groups/{groupId}/balances` | | `{ data: { members: [{ userId, balances: [Balance] }], debts: [Debt] } }` (debts are simplified when `simplifyDebts` is on) |
-| GET | `/groups/{groupId}/export` | | `text/csv` of all expenses and payments |
-| POST | `/groups/{groupId}/invites` | | 201 `{ data: Invite }` with `token` and `url` (shown once). 409 for archived groups |
+| GET | `/groups/{groupId}/export` | | `text/csv` of all expenses and payments, oldest first |
+| POST | `/groups/{groupId}/invites` | | 201 `{ data: Invite }` with `token` and `url` (shown once). 409 for archived groups, and when the group already has 20 usable links (revoke one first) |
 | GET | `/groups/{groupId}/invites` | | List of usable `Invite` (unexpired, created by a current member), without `token` and `url` |
 | DELETE | `/groups/{groupId}/invites/{inviteId}` | | 204; the link stops working |
 
@@ -228,8 +233,8 @@ Any group member can create a link that lets anyone who has it join the group. L
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens, and links whose creator has left the group, alike |
-| POST | `/invites/{token}/accept` | | `{ data: Group }`; adds the caller to the group and records `group.member-joined`. Accepting again, or as a member, returns the group unchanged |
+| GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens, links whose creator has left the group or was disabled, and links to archived groups, alike |
+| POST | `/invites/{token}/accept` | | `{ data: Group }`; adds the caller to the group and records `group.member-joined`. Accepting again, or as a member, returns the group unchanged. 409 when the caller is already in 1000 groups |
 
 People without an account follow the link, request a login code with `inviteToken`, sign in, then accept.
 
@@ -243,8 +248,8 @@ People without an account follow the link, request a login code with `inviteToke
 | PUT | `/expenses/{expenseId}` | same as POST (full replace), plus `updatedAt?` | `{ data: Expense }`; 409 when `updatedAt` is set and the expense has changed since |
 | DELETE | `/expenses/{expenseId}` | | 204 (soft delete); 409 when someone in it has left the group |
 | POST | `/expenses/{expenseId}/restore` | | `{ data: Expense }`; 409 when someone in it has left the group |
-| GET | `/expenses/{expenseId}/comments` | | List of `{ id, expenseId, user: User, body, createdAt }` |
-| POST | `/expenses/{expenseId}/comments` | `{ body }` | 201 `{ data: Comment }` |
+| GET | `/expenses/{expenseId}/comments` | `?limit=&offset=` | List of `{ id, expenseId, user: User, body, createdAt }`, oldest first |
+| POST | `/expenses/{expenseId}/comments` | `{ body }` | 201 `{ data: Comment }`; 409 when the expense already has 500 comments |
 | DELETE | `/comments/{commentId}` | | 204 (author only; 403 for someone else's comment you can see, 404 when you cannot see the expense) |
 | POST | `/payments` | `{ id?, groupId?, fromUserId, toUserId, amount, currency?, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
 
@@ -291,6 +296,8 @@ Deleting hides a category from listings and from new expenses but never rewrites
 | POST | `/receipts/{receiptId}/scan` | `{ currency? }` | `{ data: ReceiptScan }`; 503 `AI_DISABLED` when the host did not configure AI |
 | POST | `/ai/expense-draft` | `{ text?, groupId?, receiptId? }` | `{ data: ExpenseDraft }` in the group's (or your) currency, converted when the receipt is in another one; 503 `AI_DISABLED` when the host did not configure AI, 503 `RATES_UNAVAILABLE` when a conversion is needed but no rate is available |
 
+Every AI request is billed to the host, so `POST /receipts/{receiptId}/scan` and `POST /ai/expense-draft` share a budget per account of `AI_RATE_LIMIT` requests an hour (30 unless the host changed it), and one server runs at most 8 of them at once. Beyond either limit the request answers 429 `RATE_LIMITED` without reaching the provider.
+
 ```jsonc
 // ReceiptScan
 { "merchant": "Cafe Lua", "date": "2026-11-20" | null, "currency": "EUR",
@@ -333,7 +340,7 @@ Deleting hides a category from listings and from new expenses but never rewrites
 
 Rules: runs in one transaction and sends no emails. People with an email resolve to the existing (or a newly invited) user, so their server id may differ from the local id: use the returned `people` map to rewrite local references. People without an email become placeholders that keep the local id. The caller becomes friends with everyone imported. Payments use `kind: "payment"` with one payer and one split (the recipient). Custom categories are created first with their device ids, so expenses can use them; deleted ones are created too and deleted once the expenses are in. A group's `defaultSplit` has its person ids remapped like `memberIds` and must match the group's members (send it only while it still applies). Two people in the bundle who resolve to the same server user (the same email, or your own email) are refused with 422 when both appear in one default split, among one expense's payers or splits, or in one item; as group members they simply join once. Validation errors name the failing item in `field`, for example `expenses[3].total`. Retrying the same import is safe.
 
-Limits: one import may hold at most 1000 people, 200 custom categories, 500 groups and 20,000 expenses. Each account runs one import at a time (409 `CONFLICT` while another is running) and at most 10 an hour (429 `RATE_LIMITED`); the server runs at most two imports at once and answers 429 `RATE_LIMITED` to a third until one ends.
+Limits: one import may hold at most 1000 people, 200 custom categories, 500 groups and 20,000 expenses, and is refused with 409 when it would put someone in more than 1000 groups. Each account runs one import at a time (409 `CONFLICT` while another is running) and at most 10 an hour (429 `RATE_LIMITED`); the server runs at most two imports at once and answers 429 `RATE_LIMITED` to a third until one ends.
 
 ### Administration
 
@@ -354,15 +361,15 @@ Existing active accounts always sign in. The allowed list holds addresses and wh
 | --- | --- | --- | --- |
 | GET | `/admin/signup` | | admin: `{ data: { mode, allowed: [], updatedAt } }` |
 | PUT | `/admin/signup` | `{ mode, allowed: [] }` | admin: the saved settings (entries lowercased, `example.com` becomes `@example.com`) |
-| GET | `/admin/requests` | `?status=pending\|approved\|declined` (pending by default) | admin or manager: list of `{ id, email, name, status, requestedAt, decidedAt }` |
+| GET | `/admin/requests` | `?status=pending\|approved\|declined&limit=&offset=` (pending by default) | admin or manager: list of `{ id, email, name, status, requestedAt, decidedAt }`, newest first |
 | POST | `/admin/requests/{requestId}/approve` | | admin or manager: the request; the person is emailed and can sign in. 409 while the sign-up mode is `closed` |
 | POST | `/admin/requests/{requestId}/decline` | | admin or manager: the request |
-| GET | `/admin/accounts` | `?status=active\|invited\|disabled&q=&limit=&offset=` | admin: list of `{ ...User, role, createdAt }` (everyone except people added by name only) |
+| GET | `/admin/accounts` | `?status=active\|invited\|disabled&q=&limit=&offset=` | admin: list of `{ ...User, role, createdAt }` (everyone except people added by name only). `q` matches part of a name or address; a whole address also finds disabled and re-enabled accounts, which keep only its hash |
 | PATCH | `/admin/accounts/{userId}` | `{ role }` | admin: the account |
 | POST | `/admin/accounts/{userId}/disable` | | admin: removes sessions, API tokens and push devices, deletes the email (keeping its SHA-256 hash so the same address is recognised) and sets `status: "disabled"`. The name stays on shared expenses |
-| POST | `/admin/accounts/{userId}/enable` | | admin: the person signs in again with their old email, which is stored again |
+| POST | `/admin/accounts/{userId}/enable` | | admin: the person signs in again with their old email, whatever the sign-up mode, and the email is stored again. Until then the account is listed as `status: "invited"` without an email |
 
-Administrators and managers get an `approvals` notification (email and push) for each new request.
+Administrators and managers get an `approvals` notification (email and push, each unless they turned `approvals` off in their notification preferences) for a new request, unless another request was already waiting from less than an hour before; a burst of requests sends one notification. At most 500 requests wait at a time: beyond that, signing in as someone new answers 429 `RATE_LIMITED` until administrators decide some. A request nobody decides within 30 days is removed by the cleanup job, and the person can ask again.
 
 ### Maintenance
 
@@ -372,4 +379,4 @@ Administrators and managers get an `approvals` notification (email and push) for
 
 ## MCP
 
-The MCP server speaks Streamable HTTP at `/mcp` on the same host (send the same `Authorization: Bearer <api token>` header) and stdio via the `splitspends-mcp` binary. See [MCP.md](MCP.md).
+The MCP server speaks Streamable HTTP at `/mcp` on the same host (send the same `Authorization: Bearer <api token>` header; without it `/mcp` answers 401) and stdio via the `splitspends-mcp` binary. See [MCP.md](MCP.md).

@@ -16,6 +16,7 @@ type Details[T any] struct {
 // List wraps a page of objects.
 type List[T any] struct {
 	Items []T `json:"items"`
+	// Total counts the whole list, not only this page.
 	Total int `json:"total"`
 }
 
@@ -62,6 +63,9 @@ type NotificationSwitches struct {
 	PaymentReceived bool `json:"paymentReceived"`
 	AddedToGroup    bool `json:"addedToGroup"`
 	Reminders       bool `json:"reminders"`
+	// Approvals are people waiting to join; only administrators and
+	// managers get them.
+	Approvals bool `json:"approvals"`
 }
 
 // Notifications are the caller's preferences. The top-level switches are
@@ -79,6 +83,7 @@ type NotificationSwitchesPatch struct {
 	PaymentReceived *bool `json:"paymentReceived,omitempty"`
 	AddedToGroup    *bool `json:"addedToGroup,omitempty"`
 	Reminders       *bool `json:"reminders,omitempty"`
+	Approvals       *bool `json:"approvals,omitempty"`
 }
 
 // NotificationsPatch changes some preferences: top-level keys are email,

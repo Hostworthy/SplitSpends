@@ -4,6 +4,7 @@
 
 - Go 1.26+
 - Flutter 3.50+ (Dart 3.14+)
+- Node.js 18+ for `make test`, which also runs the ledger tests as compiled JavaScript
 - Docker (for the local PostgreSQL), or any PostgreSQL 14+
 - [ShellCheck](https://www.shellcheck.net) for `make lint`
 - Xcode for iOS builds, Android Studio for Android builds
@@ -29,7 +30,7 @@ Migrations are embedded in the binary and applied on start.
 | `make check` | `make lint`, `make vuln` and `make test` |
 | `make lint` | gofmt, go vet, golangci-lint, `dart format`, `flutter analyze` on every Dart member, web fallback fonts, shellcheck |
 | `make vuln` | [govulncheck](https://go.dev/doc/security/vuln/) (pinned) on the Go code: fails when code calls a function with a known vulnerability, in a module or the standard library |
-| `make test` | Go tests (including the architecture test), `dart test` for the ledger, `flutter test` for the client |
+| `make test` | Go tests (including the architecture test), `dart test` for the ledger on the VM and under Node.js (the web build's number rules), `flutter test` for the client |
 | `make fmt` | gofmt, `dart fix --apply` and `dart format` |
 | `make hooks` | Quick gofmt and dart format checks before every commit (`scripts/hooks/pre-commit`) |
 | `make brand` | Re-render icons, splash images and banners from `scripts/brand/render.py` (see [packages/brand](../packages/brand/README.md)) |
@@ -44,7 +45,7 @@ Migrations are embedded in the binary and applied on start.
 - Dart: every workspace member includes `analysis_options.yaml` at the root on top of its base set: strict casts and raw types, unawaited futures and unclosed streams as errors, final locals, single quotes and more. `dart format` uses the default style.
 - Shell scripts (`scripts/*/*.sh` and the pre-commit hook): [ShellCheck](https://www.shellcheck.net).
 - `.editorconfig` sets UTF-8, LF, final newlines and indentation for every editor.
-- CI runs the same checks: the `backend` job runs gofmt, vet, golangci-lint and shellcheck; the `app` job runs dart format and flutter analyze; the `vuln` job runs govulncheck, also weekly so new advisories show up without a push; the `deployment files` job runs `terraform fmt -check`, `terraform validate` and `terraform test` (plans against mocked providers) on `deploy/aws` and `deploy/gcp`, `docker compose config` on the three Compose files, and parses `render.yaml`.
+- CI runs the same checks: the `backend` job runs gofmt, vet, golangci-lint and shellcheck; the `app` job runs dart format and flutter analyze, the ledger tests on the VM and under Node.js, and the client tests with a development server, so the server parity test (`packages/client/test/e2e`) runs; the `vuln` job runs govulncheck, also weekly so new advisories show up without a push; the `deployment files` job runs `terraform fmt -check`, `terraform validate` and `terraform test` (plans against mocked providers) on `deploy/aws` and `deploy/gcp`, `docker compose config` on the three Compose files, and parses `render.yaml`.
 - CI, the release workflow and the Docker image run `flutter pub get --enforce-lockfile`, which fails when `pubspec.lock` does not match the pubspec files or a package archive does not match its recorded hash. Commit the updated `pubspec.lock` with every dependency change.
 - Dependabot (`.github/dependabot.yml`) proposes weekly update pull requests for Go modules, pub packages, workflow actions and the Dockerfile base images.
 - The Dockerfile pins its base images by digest and checks the Flutter archive against `FLUTTER_SHA256`. When you change `.flutter-version`, set `FLUTTER_SHA256` to that release's `sha256` from [releases_linux.json](https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json); the image build fails until the two match.
@@ -97,8 +98,10 @@ Follow [ADR-001](adr/001-domain-driven-design.md):
 5. Request and response shapes in `packages/platform/contract.go`; document them in [API.md](API.md).
 6. Handler and serializer in `apps/api/routes/`, route in `router.go`.
 7. Client models and screens in `packages/client/lib/features/<feature>/`.
-8. MCP tool in `packages/mcp/server.go` if assistants should use it.
+8. MCP tool in `packages/mcp/server.go` (admin tools in `admin.go`), registered in `tools.go`, if assistants should use it.
 9. `make check`.
+
+A check and the write it guards run in one `tx.Do`, after taking the lock that the competing write takes too, so nothing changes between them. Anything that changes a group's members or deletes the group locks it first (`group.Repository.Lock`); anything that books or changes a group expense holds it first (`Hold`, which other bookings share), before locking the expense. Outside groups, ending a friendship locks the pair and booking an expense holds each pair it checks (`friend.Repository.Lock` and `Hold`).
 
 ## Testing
 

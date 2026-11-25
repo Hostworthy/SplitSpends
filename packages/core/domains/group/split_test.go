@@ -26,6 +26,7 @@ func TestDefaultSplitVectors(t *testing.T) {
 			}
 			Members   []uuid.UUID
 			Error     string
+			Message   string
 			Current   []uuid.UUID
 			Effective *bool
 		}
@@ -40,8 +41,8 @@ func TestDefaultSplitVectors(t *testing.T) {
 		d, err := DefaultSplit{Method: c.Split.Method, Values: c.Split.Values}.Validate(c.Members)
 		if c.Error != "" {
 			de, ok := errs.As(err)
-			if !ok || de.Field != c.Error {
-				t.Errorf("%s: want error on %q, got %v", c.Name, c.Error, err)
+			if !ok || de.Field != c.Error || de.Message != c.Message {
+				t.Errorf("%s: want error on %q saying %q, got %v", c.Name, c.Error, c.Message, err)
 			}
 			continue
 		}

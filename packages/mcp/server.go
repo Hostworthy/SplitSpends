@@ -2,10 +2,7 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -17,140 +14,50 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 )
 
-const instructions = `Split Spends tracks shared expenses between friends and groups, like Splitwise.
-Start with get_overview to learn who the user is, their groups, friends and balances.
-Ids are UUIDs; always look them up with list_groups or list_friends instead of guessing.
-Amounts you send are decimal strings in the currency's normal units ("12.50"). Amounts you read are already formatted.
-Positive balances mean the user is owed money; negative means the user owes.
-Confirm with the user before deleting anything.
-Tools starting with admin_ work only for administrators (managers can list and decide requests); the user's role is in get_overview.`
-
-// NewServer builds an MCP server bound to one API client.
-func NewServer(c *Client, version string) *sdk.Server {
-	s := sdk.NewServer(&sdk.Implementation{Name: "splitspends", Title: "Split Spends", Version: version}, &sdk.ServerOptions{Instructions: instructions})
-	t := &tools{c: c}
-
-	readOnly := &sdk.ToolAnnotations{ReadOnlyHint: true}
-	add := func(name, desc string, annotations *sdk.ToolAnnotations) *sdk.Tool {
-		return &sdk.Tool{Name: name, Description: desc, Annotations: annotations}
-	}
-	sdk.AddTool(s, add("get_overview", "Who the user is, their total balances, groups and friends with balances.", readOnly), t.overview)
-	sdk.AddTool(s, add("list_groups", "List the user's groups with ids, members and the user's balance in each.", readOnly), t.listGroups)
-	sdk.AddTool(s, add("get_group", "Group details: members, every member's balance, suggested settle-up payments and recent expenses.", readOnly), t.getGroup)
-	sdk.AddTool(s, add("list_friends", "List friends with ids, emails and the balance with each.", readOnly), t.listFriends)
-	sdk.AddTool(s, add("list_expenses", "Search expenses and payments, newest first. Filter by group, friend, text or dates.", readOnly), t.listExpenses)
-	sdk.AddTool(s, add("get_expense", "Full details of one expense, including who paid and who owes what.", readOnly), t.getExpense)
-	sdk.AddTool(s, add("list_activity", "Recent activity feed.", readOnly), t.listActivity)
-	sdk.AddTool(s, add("list_categories", "Expense category ids for add_expense: the built-in ones plus the user's own custom categories.", readOnly), t.listCategories)
-	sdk.AddTool(s, add("add_expense", "Add a shared expense. Defaults: paid by the user, split equally between the user and the participants given (or, when a group is given and no participants or split are listed, the group's default split, else every group member equally).", nil), t.addExpense)
-	sdk.AddTool(s, add("record_payment", "Record that one person paid another back (settle up).", nil), t.recordPayment)
-	sdk.AddTool(s, add("remind_to_settle", "Email someone who owes the user money a friendly reminder to settle up, in one group or across everything. At most one reminder per person and group every 24 hours.", nil), t.remind)
-	destructive := true
-	sdk.AddTool(s, add("delete_expense", "Delete an expense or payment. It can be restored from the app.", &sdk.ToolAnnotations{DestructiveHint: &destructive}), t.deleteExpense)
-	t.register(s)
-	return s
-}
-
-// HTTPHandler serves MCP over streamable HTTP. Each request uses the
-// caller's own bearer token against the API at apiBase.
-func HTTPHandler(apiBase, version string, hc *http.Client, log *slog.Logger) http.Handler {
-	return sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
-		token := ""
-		if h := r.Header.Get("Authorization"); len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
-			token = strings.TrimSpace(h[7:])
-		}
-		return NewServer(NewClient(apiBase, token, hc), version)
-	}, &sdk.StreamableHTTPOptions{
-		Stateless:    true,
-		JSONResponse: true,
-		Logger:       log,
-		// Every call needs a bearer token (no cookies), so DNS rebinding cannot
-		// borrow credentials; this lets the server sit behind a local proxy.
-		DisableLocalhostProtection: true,
-	})
-}
-
-type tools struct{ c *Client }
-
-func text(s string) *sdk.CallToolResult {
-	return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: s}}}
-}
-
-func fail(err error) (*sdk.CallToolResult, any, error) {
-	var apiErr *APIError
-	if errors.As(err, &apiErr) && apiErr.Status == http.StatusUnauthorized {
-		err = errors.New("not signed in: create an API token in Split Spends under Settings, API tokens, and configure it as the bearer token")
-	}
-	res := text("Error: " + err.Error())
-	res.IsError = true
-	return res, nil, nil
-}
-
-// people indexes names by id from friends and groups.
-type people map[string]string
-
-func (p people) name(id string) string {
-	if n, ok := p[id]; ok {
-		return n
-	}
-	return id
-}
-
 func (t *tools) index(ctx context.Context) (platform.Me, people, error) {
 	me, err := get[platform.Me](ctx, t.c, "/me", nil)
 	if err != nil {
 		return me, nil, err
 	}
-	idx := people{me.ID: me.Name + " (you)"}
+	idx := people{me.ID: strconv.Quote(me.Name) + " (you)"}
 	friends, err := getList[platform.Friend](ctx, t.c, "/friends", nil)
 	if err != nil {
 		return me, nil, err
 	}
 	for _, f := range friends.Items {
-		idx[f.User.ID] = f.User.Name
+		idx[f.User.ID] = strconv.Quote(f.User.Name)
 	}
 	return me, idx, nil
-}
-
-func (t *tools) balances(ctx context.Context, bs []platform.Balance) string {
-	if len(bs) == 0 {
-		return "settled up"
-	}
-	parts := make([]string, 0, len(bs))
-	for _, b := range bs {
-		parts = append(parts, t.c.format(ctx, b.Amount, b.Currency))
-	}
-	return strings.Join(parts, ", ")
 }
 
 type empty struct{}
 
 func (t *tools) overview(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
-	me, _, err := t.index(ctx)
+	me, err := get[platform.Me](ctx, t.c, "/me", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	totals, err := get[platform.MyBalances](ctx, t.c, "/me/balances", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	groups, err := getList[platform.Group](ctx, t.c, "/groups", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	friends, err := getList[platform.Friend](ctx, t.c, "/friends", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are %s <%s> (id %s), default currency %s, role %s.\n", me.Name, email(me.Email), me.ID, me.DefaultCurrency, me.Role)
+	fmt.Fprintf(&b, "You are %q <%s> (id %s), default currency %s, role %s.\n", me.Name, email(me.Email), me.ID, me.DefaultCurrency, me.Role)
 	fmt.Fprintf(&b, "Net balance: %s. Owed to you: %s. You owe: %s.\n\nGroups:\n", t.balances(ctx, totals.Balances), t.balances(ctx, totals.Owed), t.balances(ctx, totals.Owing))
 	for _, g := range groups.Items {
-		fmt.Fprintf(&b, "- %s %s (id %s, %d members): %s\n", g.Emoji, g.Name, g.ID, len(g.Members), t.balances(ctx, g.Balances))
+		fmt.Fprintf(&b, "- %s %q (id %s, %d members): %s\n", g.Emoji, g.Name, g.ID, len(g.Members), t.balances(ctx, g.Balances))
 	}
 	b.WriteString("\nFriends:\n")
 	for _, f := range friends.Items {
-		fmt.Fprintf(&b, "- %s <%s> (id %s): %s\n", f.User.Name, email(f.User.Email), f.User.ID, t.balances(ctx, f.Balances))
+		fmt.Fprintf(&b, "- %q <%s> (id %s): %s\n", f.User.Name, email(f.User.Email), f.User.ID, t.balances(ctx, f.Balances))
 	}
 	return text(b.String()), nil, nil
 }
@@ -158,15 +65,15 @@ func (t *tools) overview(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (
 func (t *tools) listGroups(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
 	groups, err := getList[platform.Group](ctx, t.c, "/groups", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
 	for _, g := range groups.Items {
 		names := make([]string, 0, len(g.Members))
 		for _, m := range g.Members {
-			names = append(names, m.Name+" ("+m.ID+")")
+			names = append(names, strconv.Quote(m.Name)+" ("+m.ID+")")
 		}
-		fmt.Fprintf(&b, "%s %s\n  id: %s, currency %s, simplify debts %v\n  members: %s\n  your balance: %s\n",
+		fmt.Fprintf(&b, "%s %q\n  id: %s, currency %s, simplify debts %v\n  members: %s\n  your balance: %s\n",
 			g.Emoji, g.Name, g.ID, g.DefaultCurrency, g.SimplifyDebts, strings.Join(names, ", "), t.balances(ctx, g.Balances))
 	}
 	if b.Len() == 0 {
@@ -183,22 +90,22 @@ func (t *tools) getGroup(ctx context.Context, _ *sdk.CallToolRequest, in groupAr
 	path := "/groups/" + url.PathEscape(in.GroupID)
 	g, err := get[platform.Group](ctx, t.c, path, nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	sheet, err := get[platform.GroupBalances](ctx, t.c, path+"/balances", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	recent, err := getList[platform.Expense](ctx, t.c, "/expenses", url.Values{"groupId": {g.ID}, "limit": {"10"}})
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	idx := people{}
 	for _, m := range g.Members {
-		idx[m.ID] = m.Name
+		idx[m.ID] = strconv.Quote(m.Name)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s %s (id %s), default currency %s, simplify debts %v\n\nBalances:\n", g.Emoji, g.Name, g.ID, g.DefaultCurrency, g.SimplifyDebts)
+	fmt.Fprintf(&b, "%s %q (id %s), default currency %s, simplify debts %v\n\nBalances:\n", g.Emoji, g.Name, g.ID, g.DefaultCurrency, g.SimplifyDebts)
 	for _, m := range sheet.Members {
 		fmt.Fprintf(&b, "- %s (%s): %s\n", idx.name(m.UserID), m.UserID, t.balances(ctx, m.Balances))
 	}
@@ -219,45 +126,16 @@ func (t *tools) getGroup(ctx context.Context, _ *sdk.CallToolRequest, in groupAr
 func (t *tools) listFriends(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
 	friends, err := getList[platform.Friend](ctx, t.c, "/friends", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
 	for _, f := range friends.Items {
-		fmt.Fprintf(&b, "- %s <%s> (id %s): %s\n", f.User.Name, email(f.User.Email), f.User.ID, t.balances(ctx, f.Balances))
+		fmt.Fprintf(&b, "- %q <%s> (id %s): %s\n", f.User.Name, email(f.User.Email), f.User.ID, t.balances(ctx, f.Balances))
 	}
 	if b.Len() == 0 {
 		return text("No friends yet."), nil, nil
 	}
 	return text(b.String()), nil, nil
-}
-
-func (t *tools) line(ctx context.Context, e platform.Expense, idx people) string {
-	payer := ""
-	var best int64
-	for _, s := range e.Shares {
-		if s.Paid > best {
-			best, payer = s.Paid, s.UserID
-		}
-	}
-	var mine string
-	switch {
-	case e.MyBalance > 0:
-		mine = "you lent " + t.c.format(ctx, e.MyBalance, e.Currency)
-	case e.MyBalance < 0:
-		mine = "you borrowed " + t.c.format(ctx, -e.MyBalance, e.Currency)
-	default:
-		mine = "not involved or even"
-	}
-	if e.Kind == "payment" {
-		to := ""
-		for _, s := range e.Shares {
-			if s.Owed > 0 {
-				to = s.UserID
-			}
-		}
-		return fmt.Sprintf("- %s payment: %s paid %s %s (id %s)\n", e.Date, idx.name(payer), idx.name(to), t.c.format(ctx, e.Total, e.Currency), e.ID)
-	}
-	return fmt.Sprintf("- %s %s: %s paid by %s, %s [%s] (id %s)\n", e.Date, e.Description, t.c.format(ctx, e.Total, e.Currency), idx.name(payer), mine, e.Category, e.ID)
 }
 
 type listArgs struct {
@@ -272,7 +150,7 @@ type listArgs struct {
 func (t *tools) listExpenses(ctx context.Context, _ *sdk.CallToolRequest, in listArgs) (*sdk.CallToolResult, any, error) {
 	_, idx, err := t.index(ctx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	q := url.Values{}
 	for k, v := range map[string]string{"groupId": in.GroupID, "friendId": in.FriendID, "q": in.Query, "from": in.From, "to": in.To} {
@@ -286,7 +164,7 @@ func (t *tools) listExpenses(ctx context.Context, _ *sdk.CallToolRequest, in lis
 	q.Set("limit", strconv.Itoa(min(in.Limit, 200)))
 	res, err := getList[platform.Expense](ctx, t.c, "/expenses", q)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d of %d matching expenses:\n", len(res.Items), res.Total)
@@ -303,19 +181,19 @@ type expenseArgs struct {
 func (t *tools) getExpense(ctx context.Context, _ *sdk.CallToolRequest, in expenseArgs) (*sdk.CallToolResult, any, error) {
 	_, idx, err := t.index(ctx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	e, err := get[platform.Expense](ctx, t.c, "/expenses/"+url.PathEscape(in.ExpenseID), nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s (%s), %s on %s, category %s, split %s\n", e.Description, e.Kind, t.c.format(ctx, e.Total, e.Currency), e.Date, e.Category, e.SplitMethod)
+	fmt.Fprintf(&b, "%q (%s), %s on %s, category %s, split %s\n", e.Description, e.Kind, t.c.format(ctx, e.Total, e.Currency), e.Date, e.Category, e.SplitMethod)
 	if e.GroupID != nil {
 		fmt.Fprintf(&b, "Group id: %s\n", *e.GroupID)
 	}
 	if e.Notes != "" {
-		fmt.Fprintf(&b, "Notes: %s\n", e.Notes)
+		fmt.Fprintf(&b, "Notes: %q\n", e.Notes)
 	}
 	for _, s := range e.Shares {
 		fmt.Fprintf(&b, "- %s paid %s, owes %s\n", idx.name(s.UserID), t.c.format(ctx, s.Paid, e.Currency), t.c.format(ctx, s.Owed, e.Currency))
@@ -325,7 +203,7 @@ func (t *tools) getExpense(ctx context.Context, _ *sdk.CallToolRequest, in expen
 		for i, id := range it.UserIDs {
 			names[i] = idx.name(id)
 		}
-		fmt.Fprintf(&b, "  item %s %s: %s\n", it.Name, t.c.format(ctx, it.Amount, e.Currency), strings.Join(names, ", "))
+		fmt.Fprintf(&b, "  item %q %s: %s\n", it.Name, t.c.format(ctx, it.Amount, e.Currency), strings.Join(names, ", "))
 	}
 	if e.Deleted {
 		b.WriteString("This expense is deleted.\n")
@@ -343,11 +221,11 @@ func (t *tools) listActivity(ctx context.Context, _ *sdk.CallToolRequest, in act
 	}
 	res, err := getList[platform.Activity](ctx, t.c, "/activity", url.Values{"limit": {strconv.Itoa(min(in.Limit, 200))}})
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	var b strings.Builder
 	for _, a := range res.Items {
-		fmt.Fprintf(&b, "- %s %s\n", a.CreatedAt[:10], a.Summary)
+		fmt.Fprintf(&b, "- %s %q\n", day(a.CreatedAt), a.Summary)
 	}
 	return text(b.String()), nil, nil
 }
@@ -355,7 +233,7 @@ func (t *tools) listActivity(ctx context.Context, _ *sdk.CallToolRequest, in act
 func (t *tools) listCategories(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
 	res, err := getList[platform.CategoryEntry](ctx, t.c, "/categories", nil)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	groups := map[string][]string{}
 	for _, c := range res.Items {
@@ -402,86 +280,62 @@ type addArgs struct {
 func (t *tools) addExpense(ctx context.Context, _ *sdk.CallToolRequest, in addArgs) (*sdk.CallToolResult, any, error) {
 	me, idx, err := t.index(ctx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
-	currency := strings.ToUpper(in.Currency)
+	g, err := t.group(ctx, in.GroupID, idx)
+	if err != nil {
+		return t.fail(ctx, err)
+	}
 	var members []string
 	var preset *platform.DefaultSplit
-	if in.GroupID != "" {
-		g, err := get[platform.Group](ctx, t.c, "/groups/"+url.PathEscape(in.GroupID), nil)
-		if err != nil {
-			return fail(err)
-		}
-		if currency == "" {
-			currency = g.DefaultCurrency
-		}
+	if g != nil {
 		preset = g.DefaultSplit
 		for _, m := range g.Members {
 			members = append(members, m.ID)
-			idx[m.ID] = m.Name
 		}
 	}
-	if currency == "" {
-		currency = me.DefaultCurrency
-	}
-	total, err := t.c.minor(ctx, in.Amount, currency)
+	cur, err := t.c.unit(ctx, currency(in.Currency, g, me))
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
+	}
+	total, err := cur.minor(in.Amount)
+	if err != nil {
+		return t.fail(ctx, err)
+	}
+	method, shares, err := splits(in, me.ID, members, preset, cur)
+	if err != nil {
+		return t.fail(ctx, err)
 	}
 	payer := in.PaidBy
 	if payer == "" {
 		payer = me.ID
 	}
-	body := platform.ExpenseInput{Description: in.Description, Currency: currency, Total: total, Date: in.Date, Category: in.Category,
-		Notes: in.Notes, SplitMethod: "equal", Payers: []platform.Payer{{UserID: payer, Amount: total}}}
+	body := platform.ExpenseInput{Description: in.Description, Currency: cur.code, Total: total, Date: in.Date, Category: in.Category,
+		Notes: in.Notes, SplitMethod: method, Payers: []platform.Payer{{UserID: payer, Amount: total}}, Splits: shares}
 	if in.GroupID != "" {
 		body.GroupID = &in.GroupID
 	}
-	method := strings.ToLower(in.SplitMethod)
-	if method == "" && len(in.Participants) == 0 && len(in.SplitValues) == 0 && preset != nil && preset.Method != "equal" {
-		// The group's default split (for example rent 60/40) applies when
-		// the assistant gives no split of its own.
-		method = preset.Method
-		for _, id := range sortedKeys(preset.Values) {
-			if v := preset.Values[id]; strings.Trim(v, "0.") != "" {
-				in.SplitValues = append(in.SplitValues, splitValue{UserID: id, Value: v})
-			}
-		}
-	}
-	switch method {
-	case "", "equal":
-		ids := in.Participants
-		if len(ids) == 0 {
-			ids = members
-		}
-		if in.GroupID == "" {
-			ids = append([]string{me.ID}, ids...)
-		}
-		for _, id := range unique(ids) {
-			body.Splits = append(body.Splits, platform.Split{UserID: id})
-		}
-	case "exact", "percent", "shares":
-		body.SplitMethod = method
-		for _, v := range in.SplitValues {
-			value := v.Value
-			if method == "exact" {
-				m, err := t.c.minor(ctx, v.Value, currency)
-				if err != nil {
-					return fail(err)
-				}
-				value = strconv.FormatInt(m, 10)
-			}
-			n := json.Number(value)
-			body.Splits = append(body.Splits, platform.Split{UserID: v.UserID, Value: &n})
-		}
-	default:
-		return fail(fmt.Errorf("splitMethod must be equal, exact, percent or shares"))
-	}
 	e, err := send[platform.Expense](ctx, t.c, http.MethodPost, "/expenses", body)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	return text("Added.\n" + t.line(ctx, e, idx)), nil, nil
+}
+
+// group fetches the group with id, if one is given, and adds its members to
+// idx so that entries in it name everyone.
+func (t *tools) group(ctx context.Context, id string, idx people) (*platform.Group, error) {
+	if id == "" {
+		return nil, nil
+	}
+	g, err := get[platform.Group](ctx, t.c, "/groups/"+url.PathEscape(id), nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range g.Members {
+		idx[m.ID] = strconv.Quote(m.Name)
+	}
+	return &g, nil
 }
 
 type paymentArgs struct {
@@ -496,33 +350,24 @@ type paymentArgs struct {
 func (t *tools) recordPayment(ctx context.Context, _ *sdk.CallToolRequest, in paymentArgs) (*sdk.CallToolResult, any, error) {
 	me, idx, err := t.index(ctx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
-	currency := strings.ToUpper(in.Currency)
-	if currency == "" && in.GroupID != "" {
-		g, err := get[platform.Group](ctx, t.c, "/groups/"+url.PathEscape(in.GroupID), nil)
-		if err != nil {
-			return fail(err)
-		}
-		currency = g.DefaultCurrency
-		for _, m := range g.Members {
-			idx[m.ID] = m.Name
-		}
-	}
-	if currency == "" {
-		currency = me.DefaultCurrency
-	}
-	amount, err := t.c.minor(ctx, in.Amount, currency)
+	g, err := t.group(ctx, in.GroupID, idx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
-	body := platform.PaymentInput{FromUserID: in.FromUserID, ToUserID: in.ToUserID, Amount: amount, Currency: currency, Notes: in.Notes}
+	code := currency(in.Currency, g, me)
+	amount, err := t.c.minor(ctx, in.Amount, code)
+	if err != nil {
+		return t.fail(ctx, err)
+	}
+	body := platform.PaymentInput{FromUserID: in.FromUserID, ToUserID: in.ToUserID, Amount: amount, Currency: code, Notes: in.Notes}
 	if in.GroupID != "" {
 		body.GroupID = &in.GroupID
 	}
 	e, err := send[platform.Expense](ctx, t.c, http.MethodPost, "/payments", body)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	return text("Recorded.\n" + t.line(ctx, e, idx)), nil, nil
 }
@@ -535,7 +380,7 @@ type remindArgs struct {
 func (t *tools) remind(ctx context.Context, _ *sdk.CallToolRequest, in remindArgs) (*sdk.CallToolResult, any, error) {
 	_, idx, err := t.index(ctx)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	body := platform.ReminderInput{UserID: in.UserID}
 	if in.GroupID != "" {
@@ -543,7 +388,7 @@ func (t *tools) remind(ctx context.Context, _ *sdk.CallToolRequest, in remindArg
 	}
 	r, err := send[platform.Reminder](ctx, t.c, http.MethodPost, "/reminders", body)
 	if err != nil {
-		return fail(err)
+		return t.fail(ctx, err)
 	}
 	out := "Reminded " + idx.name(r.UserID) + " that they owe you " + t.balances(ctx, r.Balances) + "."
 	if !r.Emailed {
@@ -553,36 +398,8 @@ func (t *tools) remind(ctx context.Context, _ *sdk.CallToolRequest, in remindArg
 }
 
 func (t *tools) deleteExpense(ctx context.Context, _ *sdk.CallToolRequest, in expenseArgs) (*sdk.CallToolResult, any, error) {
-	if err := t.c.do(ctx, http.MethodDelete, "/expenses/"+url.PathEscape(in.ExpenseID), nil, nil, nil); err != nil {
-		return fail(err)
+	if _, err := t.c.do(ctx, http.MethodDelete, "/expenses/"+url.PathEscape(in.ExpenseID), nil, nil); err != nil {
+		return t.fail(ctx, err)
 	}
 	return text("Deleted expense " + in.ExpenseID + ". It can be restored from the app."), nil, nil
-}
-
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func unique(list []string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(list))
-	for _, x := range list {
-		if x != "" && !seen[x] {
-			seen[x] = true
-			out = append(out, x)
-		}
-	}
-	return out
-}
-
-func email(e *string) string {
-	if e == nil {
-		return "no email"
-	}
-	return *e
 }

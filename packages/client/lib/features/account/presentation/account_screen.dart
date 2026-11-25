@@ -291,7 +291,7 @@ class AccountScreen extends ConsumerWidget {
                   ),
                 ] else ...[
                   const SectionHeader('Notifications'),
-                  for (final kind in NotificationKind.values)
+                  for (final kind in me.notificationKinds)
                     _KindTile(
                       kind: kind,
                       prefs: prefs,

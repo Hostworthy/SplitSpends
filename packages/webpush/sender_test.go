@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -231,6 +232,25 @@ func TestSendStatuses(t *testing.T) {
 	}
 }
 
+func TestSendRefusesOversizePayload(t *testing.T) {
+	srv, got := pushService(t)
+	public, private, _ := Keys()
+	sender, err := New(Config{PublicKey: public, PrivateKey: private, Subject: "mailto:a@b.c", Client: srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := newDevice(t)
+	if err := sender.Send(context.Background(), dev.subscription(srv.URL+"/push/abc"), make([]byte, push.MaxPayload)); err != nil {
+		t.Fatalf("a payload of exactly MaxPayload bytes should be sent: %v", err)
+	}
+	if err := sender.Send(context.Background(), dev.subscription(srv.URL+"/push/abc"), make([]byte, push.MaxPayload+1)); !errors.Is(err, push.ErrTooLarge) {
+		t.Fatalf("want ErrTooLarge, got %v", err)
+	}
+	if len(got()) != 1 {
+		t.Fatalf("only the payload that fits should reach the push service, got %d requests", len(got()))
+	}
+}
+
 func TestDefaultClientRefusesLoopback(t *testing.T) {
 	srv, got := pushService(t)
 	public, private, _ := Keys()
@@ -244,6 +264,139 @@ func TestDefaultClientRefusesLoopback(t *testing.T) {
 	}
 	if len(got()) != 0 {
 		t.Fatal("the request must not reach a loopback endpoint")
+	}
+}
+
+// noProxy clears the proxy environment so the guarded client dials the
+// endpoint itself.
+func noProxy(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"} {
+		t.Setenv(key, "")
+	}
+}
+
+func TestDefaultClientRefusesResolvedLoopback(t *testing.T) {
+	noProxy(t)
+	srv, got := pushService(t)
+	public, private, _ := Keys()
+	sender, err := New(Config{PublicKey: public, PrivateKey: private, Subject: "mailto:a@b.c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := "https://localhost:" + srv.URL[strings.LastIndex(srv.URL, ":")+1:] + "/push/abc"
+	err = sender.Send(context.Background(), newDevice(t).subscription(endpoint), []byte(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "webpush.endpoint.blocked") {
+		t.Fatalf("a host name that resolves to loopback must be refused, got %v", err)
+	}
+	if len(got()) != 0 {
+		t.Fatal("the request must not reach a loopback endpoint")
+	}
+}
+
+func TestSendDoesNotFollowRedirects(t *testing.T) {
+	noProxy(t)
+	target, got := pushService(t)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/push/abc", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirect.Close)
+	public, private, _ := Keys()
+	sender, err := New(Config{PublicKey: public, PrivateKey: private, Subject: "mailto:a@b.c", AllowPrivate: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The default client does not trust the test certificate, so a followed
+	// redirect would fail too; trusting it makes the request count decide.
+	sender.client.Transport.(*http.Transport).TLSClientConfig = target.Client().Transport.(*http.Transport).TLSClientConfig
+	err = sender.Send(context.Background(), newDevice(t).subscription(redirect.URL+"/push/abc"), []byte(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "status 307") {
+		t.Fatalf("a redirect should be reported as a rejection, got %v", err)
+	}
+	if len(got()) != 0 {
+		t.Fatal("the redirect target must receive no request")
+	}
+}
+
+// TestProxyRefusesBlockedEndpoints checks that behind HTTPS_PROXY, where
+// the proxy and not this server connects to the endpoint, an endpoint at a
+// blocked address never reaches the proxy, while others go through it.
+func TestProxyRefusesBlockedEndpoints(t *testing.T) {
+	var mu sync.Mutex
+	var connects []string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		connects = append(connects, r.Method+" "+r.Host)
+		mu.Unlock()
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(proxy.Close)
+	for _, key := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("HTTPS_PROXY", proxy.URL)
+	public, private, _ := Keys()
+	sender, err := New(Config{PublicKey: public, PrivateKey: private, Subject: "mailto:a@b.c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := newDevice(t)
+	for _, endpoint := range []string{"https://169.254.169.254/latest", "https://10.0.0.5:6443/x", "https://[::ffff:10.0.0.5]/x"} {
+		err := sender.Send(context.Background(), dev.subscription(endpoint), []byte(`{}`))
+		if err == nil || !strings.Contains(err.Error(), "webpush.endpoint.blocked") {
+			t.Errorf("%s: want a blocked error, got %v", endpoint, err)
+		}
+	}
+	mu.Lock()
+	if len(connects) != 0 {
+		t.Errorf("blocked endpoints must not reach the proxy, got %v", connects)
+	}
+	mu.Unlock()
+
+	if err := sender.Send(context.Background(), dev.subscription("https://142.250.74.106/push"), []byte(`{}`)); err == nil {
+		t.Fatal("the test proxy refuses every tunnel, so the send should fail")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(connects) != 1 || connects[0] != "CONNECT 142.250.74.106:443" {
+		t.Fatalf("a public endpoint should be tunnelled through the proxy, got %v", connects)
+	}
+}
+
+func TestScreen(t *testing.T) {
+	names := map[string][]netip.Addr{
+		"push.example.com": {netip.MustParseAddr("142.250.74.106")},
+		"metadata.test":    {netip.MustParseAddr("169.254.169.254")},
+		"mixed.test":       {netip.MustParseAddr("142.250.74.106"), netip.MustParseAddr("10.0.0.5")},
+		"lan.test":         {netip.MustParseAddr("192.168.1.20")},
+	}
+	lookup := func(_ context.Context, _, host string) ([]netip.Addr, error) {
+		if addrs, ok := names[host]; ok {
+			return addrs, nil
+		}
+		return nil, errors.New("no such host")
+	}
+	cases := []struct {
+		host         string
+		allowPrivate bool
+		blocked      bool
+	}{
+		{"push.example.com", false, false},
+		{"142.250.74.106", false, false},
+		{"unresolvable.test", false, false},
+		{"metadata.test", false, true},
+		{"metadata.test", true, true},
+		{"mixed.test", false, true},
+		{"lan.test", false, true},
+		{"lan.test", true, false},
+		{"10.0.0.5", false, true},
+		{"::ffff:169.254.169.254", true, true},
+	}
+	for _, tc := range cases {
+		err := screen(context.Background(), tc.host, tc.allowPrivate, lookup)
+		if (err != nil) != tc.blocked {
+			t.Errorf("screen(%s, %v) = %v, want blocked %v", tc.host, tc.allowPrivate, err, tc.blocked)
+		}
 	}
 }
 

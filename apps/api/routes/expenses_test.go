@@ -1,7 +1,10 @@
 package routes
 
 import (
+	"bytes"
+	"encoding/csv"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -36,4 +39,65 @@ func TestUpdateVersion(t *testing.T) {
 		t.Fatalf("want an error on updatedAt, got %+v", f)
 	}
 	s.call(t, http.MethodPut, path, ada.Token, edit(5000, saved.UpdatedAt)).want(t, http.StatusOK)
+}
+
+func TestSafeCell(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"", ""},
+		{"Ada", "Ada"},
+		{"=1+1", "'=1+1"},
+		{"+1", "'+1"},
+		{"-1", "'-1"},
+		{"@SUM(A1)", "'@SUM(A1)"},
+		{"\tTab", "'\tTab"},
+		{"\rReturn", "'\rReturn"},
+		{"Ada = Ben", "Ada = Ben"},
+	} {
+		if got := safeCell(c.in); got != c.want {
+			t.Errorf("safeCell(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestDecimalString(t *testing.T) {
+	for _, c := range []struct {
+		amount   int64
+		exponent int
+		want     string
+	}{
+		{0, 2, "0.00"},
+		{5, 2, "0.05"},
+		{-100, 2, "-1.00"},
+		{123456, 2, "1234.56"},
+		{-1500, 0, "-1500"},
+		{1, 3, "0.001"},
+	} {
+		if got := decimalString(c.amount, c.exponent); got != c.want {
+			t.Errorf("decimalString(%d, %d) = %q, want %q", c.amount, c.exponent, got, c.want)
+		}
+	}
+}
+
+func TestExportNeutralisesNames(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	ben := s.signIn(t, "ben@example.com", "=1+1")
+	g := s.group(t, ada.Token, "Flat", "ben@example.com")
+	s.expense(t, ada.Token, g.ID, 200, ada.User.ID, ada.User.ID, ben.User.ID)
+
+	res := s.call(t, http.MethodGet, platform.Prefix+"/groups/"+g.ID+"/export", ada.Token, nil).want(t, http.StatusOK)
+	rows, err := csv.NewReader(bytes.NewReader(res.body)).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("want a header and one row, got %q", rows)
+	}
+	column := slices.Index(rows[0], "'=1+1")
+	if column < 0 {
+		t.Fatalf("header %q does not carry the neutralised name", rows[0])
+	}
+	if got := rows[1][column]; got != "-1.00" {
+		t.Errorf("Ben's net is %q, want -1.00", got)
+	}
 }

@@ -57,3 +57,21 @@ func TestServerLimits(t *testing.T) {
 		t.Errorf("WriteTimeout %v would cut off long handlers", srv.WriteTimeout)
 	}
 }
+
+func TestLoopback(t *testing.T) {
+	tests := []struct{ addr, want string }{
+		{":8080", "http://127.0.0.1:8080"},
+		{"0.0.0.0:80", "http://127.0.0.1:80"},
+		{"[::]:8080", "http://127.0.0.1:8080"},
+		{"127.0.0.1:9000", "http://127.0.0.1:9000"},
+		{"[::1]:9000", "http://[::1]:9000"},
+		{"localhost:3000", "http://localhost:3000"},
+		{"8080", "http://127.0.0.1:8080"},
+		{"", "http://127.0.0.1:8080"},
+	}
+	for _, tt := range tests {
+		if got := loopback(tt.addr); got != tt.want {
+			t.Errorf("loopback(%q) = %q, want %q", tt.addr, got, tt.want)
+		}
+	}
+}

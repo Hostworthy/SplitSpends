@@ -109,6 +109,9 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	if err != nil {
 		return nil, err
 	}
+	if err := s.room(ctx, actor, me); err != nil {
+		return nil, err
+	}
 	name := ""
 	if in.Name != nil {
 		name = *in.Name
@@ -148,6 +151,9 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 			if g.HasMember(u.ID) {
 				continue
 			}
+			if err := s.room(ctx, actor, u); err != nil {
+				return err
+			}
 			if err := s.repo.AddMember(ctx, g.ID, u.ID, now); err != nil {
 				return err
 			}
@@ -157,6 +163,13 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		for _, id := range in.People {
 			if g.HasMember(id) {
 				continue
+			}
+			u, err := s.users.Get(ctx, id)
+			if err != nil {
+				return err
+			}
+			if err := s.room(ctx, actor, u); err != nil {
+				return err
 			}
 			if err := s.repo.AddMember(ctx, g.ID, id, now); err != nil {
 				return err
@@ -192,6 +205,18 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		}
 	}
 	return s.View(ctx, actor, g.ID)
+}
+
+// room refuses to add u to another group once they belong to MaxPerUser.
+func (s *Service) room(ctx context.Context, actor uuid.UUID, u *user.User) error {
+	n, err := s.repo.Joined(ctx, u.ID)
+	if err != nil || n < MaxPerUser {
+		return err
+	}
+	if u.ID == actor {
+		return errs.Conflict(fmt.Sprintf("You are already in %d groups, the most one person can be in. Leave or delete a group you no longer use first.", MaxPerUser))
+	}
+	return errs.Conflict(fmt.Sprintf("%s is already in %d groups, the most one person can be in.", u.Name, MaxPerUser))
 }
 
 func full() error {
@@ -244,15 +269,22 @@ func (s *Service) view(ctx context.Context, actor uuid.UUID, g *Group) (*View, e
 	return &View{Group: g, People: people, Balances: mine}, nil
 }
 
-// List returns the actor's groups with their balances.
-func (s *Service) List(ctx context.Context, actor uuid.UUID, archived bool) ([]*View, error) {
+// List returns a page of the actor's groups with their balances, most
+// recently changed first, and how many there are. A limit of 0 returns them
+// all.
+func (s *Service) List(ctx context.Context, actor uuid.UUID, archived bool, limit, offset int) ([]*View, int, error) {
 	groups, err := s.repo.ForUser(ctx, actor, archived)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	total := len(groups)
+	groups = groups[min(offset, total):]
+	if limit > 0 && limit < len(groups) {
+		groups = groups[:limit]
 	}
 	sheet, err := s.balances.For(ctx, actor)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	ids := []uuid.UUID{}
 	for _, g := range groups {
@@ -260,7 +292,7 @@ func (s *Service) List(ctx context.Context, actor uuid.UUID, archived bool) ([]*
 	}
 	people, err := s.users.Index(ctx, ids)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	out := make([]*View, 0, len(groups))
 	for _, g := range groups {
@@ -275,7 +307,7 @@ func (s *Service) List(ctx context.Context, actor uuid.UUID, archived bool) ([]*
 		}
 		out = append(out, v)
 	}
-	return out, nil
+	return out, total, nil
 }
 
 // Update applies a patch.
@@ -356,6 +388,9 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 		if g.HasMember(u.ID) {
 			return errs.Conflict(u.Name + " is already in this group.")
 		}
+		if err := s.room(ctx, actor, u); err != nil {
+			return err
+		}
 		if err := s.repo.AddMember(ctx, g.ID, u.ID, s.clock.Now()); err != nil {
 			return err
 		}
@@ -375,7 +410,8 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 }
 
 // Join adds the actor to a group, for example through an invite link.
-// Joining a group you already belong to changes nothing.
+// Joining a group you already belong to changes nothing; an archived group
+// takes no new members.
 func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) {
 	g, err := s.repo.Get(ctx, id)
 	if err != nil {
@@ -384,11 +420,17 @@ func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) 
 	if g.HasMember(actor) {
 		return s.view(ctx, actor, g)
 	}
+	if g.ArchivedAt != nil {
+		return nil, errs.Conflict(g.Name + " is archived, so nobody new can join it.")
+	}
 	if len(g.Members) >= MaxMembers {
 		return nil, errs.Conflict(fmt.Sprintf("This group already has %d members, the most a group can have.", MaxMembers))
 	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.room(ctx, actor, me); err != nil {
 		return nil, err
 	}
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
@@ -414,21 +456,15 @@ func (s *Service) RemoveMember(ctx context.Context, actor, id, member uuid.UUID)
 	if !g.HasMember(member) {
 		return errs.NotFound("Member")
 	}
-	settled, err := s.balances.Settled(ctx, g.ID, member)
-	if err != nil {
-		return err
-	}
-	if !settled {
-		return errs.Conflict("That person still has an outstanding balance in this group.")
-	}
 	target, err := s.users.Get(ctx, member)
 	if err != nil {
 		return err
 	}
 	return s.tx.Do(ctx, func(ctx context.Context) error {
-		// Locked so two members leaving at once cannot both pass the check.
-		// The members are read again after the lock: the locking statement
-		// sees them as they were before it waited.
+		// Locked so two members leaving at once cannot both pass the check,
+		// and so an expense booked meanwhile either counts in the balance or
+		// waits and is refused. The members are read again after the lock:
+		// the locking statement sees them as they were before it waited.
 		if _, err := s.repo.Lock(ctx, g.ID); err != nil {
 			return err
 		}
@@ -441,6 +477,13 @@ func (s *Service) RemoveMember(ctx context.Context, actor, id, member uuid.UUID)
 		}
 		if !g.HasMember(member) {
 			return errs.NotFound("Member")
+		}
+		settled, err := s.balances.Settled(ctx, g.ID, member)
+		if err != nil {
+			return err
+		}
+		if !settled {
+			return errs.Conflict("That person still has an outstanding balance in this group.")
 		}
 		if err := s.keepsReachable(ctx, g, member); err != nil {
 			return err

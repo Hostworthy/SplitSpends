@@ -46,8 +46,12 @@ type Config struct {
 	AIBaseURL  string
 	AIModel    string
 	AIEffort   string
+	// AIRateLimit is how many AI requests one person may make per hour.
+	AIRateLimit int
 
 	MCPEnabled bool
+	// MCPAdminTools offers the admin_ tools on /mcp.
+	MCPAdminTools bool
 
 	// Gravatar lets people show their Gravatar picture (opt-in per person).
 	Gravatar bool
@@ -156,6 +160,14 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_MODE: use open, invite, approval or closed")
 	}
 	c.AllowedDomains = list(env("SIGNUP_ALLOWED_DOMAINS", ""))
+	if len(c.AllowedDomains) > auth.MaxAllowed {
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_ALLOWED_DOMAINS: use at most %d domains", auth.MaxAllowed)
+	}
+	for _, d := range c.AllowedDomains {
+		if _, ok := auth.Domain(d); !ok {
+			return nil, fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_ALLOWED_DOMAINS: %q is not a domain like example.com", d)
+		}
+	}
 	if c.SignupMode == auth.SignupDomain && len(c.AllowedDomains) == 0 {
 		return nil, fmt.Errorf("bootstrap.config.env.required.not-found.SIGNUP_ALLOWED_DOMAINS")
 	}
@@ -187,6 +199,9 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 	c.MCPEnabled, _ = strconv.ParseBool(env("MCP_ENABLED", "true"))
+	if c.MCPAdminTools, err = strconv.ParseBool(env("MCP_ADMIN_TOOLS", "false")); err != nil {
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.MCP_ADMIN_TOOLS: use true or false")
+	}
 	switch strings.ToLower(env("GRAVATAR", "on")) {
 	case "on", "true", "1":
 		c.Gravatar = true
@@ -238,6 +253,9 @@ func LoadConfig() (*Config, error) {
 		}
 	default:
 		return nil, fmt.Errorf("bootstrap.config.env.invalid.AI_PROVIDER: use anthropic, openai or none")
+	}
+	if c.AIRateLimit, err = strconv.Atoi(env("AI_RATE_LIMIT", "30")); err != nil || c.AIRateLimit < 1 {
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.AI_RATE_LIMIT: use a whole number of requests per person per hour, at least 1")
 	}
 	return c, nil
 }

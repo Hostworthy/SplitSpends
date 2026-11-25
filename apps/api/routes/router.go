@@ -11,6 +11,9 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 )
 
+// aiConcurrency is how many AI requests one server instance runs at once.
+const aiConcurrency = 8
+
 // Deps are what the API needs from the runtime.
 type Deps struct {
 	Services *bootstrap.Services
@@ -70,6 +73,13 @@ func (a *API) Routes() *http.ServeMux {
 	pushTestLimit := middleware.NewLimiter(5, time.Minute)
 	pushTests := func(h handler) http.Handler {
 		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(pushTestLimit, a.log, byUser, a.wrap(h)))
+	}
+	// AI requests are billed to the host and each holds a receipt image in
+	// memory, so every person has an hourly budget and only a few run at once.
+	aiLimit := middleware.NewLimiter(a.cfg.AIRateLimit, time.Hour)
+	aiSlots := middleware.NewSlots(aiConcurrency)
+	assisted := func(h handler) http.Handler {
+		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(aiLimit, a.log, byUser, middleware.Bound(aiSlots, a.log, a.wrap(h))))
 	}
 	p := platform.Prefix
 
@@ -138,8 +148,8 @@ func (a *API) Routes() *http.ServeMux {
 
 	mux.Handle("POST "+p+"/receipts", authed(a.uploadReceipt))
 	mux.Handle("GET "+p+"/receipts/{receiptId}", authed(a.getReceipt))
-	mux.Handle("POST "+p+"/receipts/{receiptId}/scan", authed(a.scanReceipt))
-	mux.Handle("POST "+p+"/ai/expense-draft", authed(a.draftExpense))
+	mux.Handle("POST "+p+"/receipts/{receiptId}/scan", assisted(a.scanReceipt))
+	mux.Handle("POST "+p+"/ai/expense-draft", assisted(a.draftExpense))
 
 	mux.Handle("GET "+p+"/admin/signup", authed(a.signupSettings))
 	mux.Handle("PUT "+p+"/admin/signup", authed(a.updateSignupSettings))

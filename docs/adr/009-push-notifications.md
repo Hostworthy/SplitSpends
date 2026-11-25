@@ -31,7 +31,7 @@ The web app needs push as well, and browsers already have a standard for it.
 ### Negative
 
 - Android users must install a distributor app once. The Account screen explains this and links to the list of distributors.
-- Endpoints are URLs supplied by devices, so the server makes outgoing requests to them. The sender refuses private, loopback and metadata addresses by default and does not follow redirects; a LAN-only ntfy needs `PUSH_ALLOW_PRIVATE=true`.
+- Endpoints are URLs supplied by devices, so the server makes outgoing requests to them. The sender refuses private, loopback and metadata addresses by default and does not follow redirects; a LAN-only ntfy needs `PUSH_ALLOW_PRIVATE=true`. Behind an `HTTPS_PROXY` the proxy connects to the endpoint, so the server can only refuse endpoints whose host is, or resolves for the server to, such an address; what the proxy itself may reach is up to its own policy.
 - Changing the VAPID key invalidates existing subscriptions; people have to enable push again.
 
 ### Neutral

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/core/config/app_config.dart';
@@ -35,6 +36,10 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
     group: widget.existing?.group,
   );
   late final _name = TextEditingController(text: _draft.name);
+
+  /// The new category's id, chosen once: saving again after an error whose
+  /// request may have reached the server cannot add it twice.
+  final String _id = 'custom.${const Uuid().v4()}';
   bool _saving = false;
   bool _touched = false;
 
@@ -51,6 +56,7 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
     try {
       final repo = ref.read(categoriesRepositoryProvider);
       final input = CategoryInput(
+        id: widget.existing == null ? _id : null,
         name: _draft.cleanName,
         icon: _draft.icon,
         group: _draft.group,

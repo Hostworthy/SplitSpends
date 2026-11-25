@@ -170,11 +170,11 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 		source = exchange.New(cfg.RatesURL)
 	}
 	fx := rates.NewService(repositories.NewRates(db), source, c)
-	invites := invite.NewService(repositories.NewInvites(db), groups, groupRepo, users, c, cfg.BaseURL)
+	invites := invite.NewService(repositories.NewInvites(db), groups, groupRepo, users, tx, c, cfg.BaseURL)
 	reminders := reminder.NewService(reminder.Deps{Repo: repositories.NewReminders(db), Groups: groups, Connections: friends,
 		Users: users, Balances: balances, Activity: act, Notifier: notifier, Quota: quotas, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	administration := admin.NewService(admin.Deps{Settings: repositories.NewSignupSettings(db), Requests: repositories.NewSignupRequests(db),
-		Users: userRepo, Accounts: userRepo, Credentials: repositories.NewCredentials(db), Notifier: notifier, Tx: tx, Clock: c,
+		Users: userRepo, Accounts: userRepo, Credentials: repositories.NewCredentials(db), Notifier: notifier, Tx: tx, Clock: c, Log: log,
 		Defaults: policy.Signup(), BaseURL: cfg.BaseURL, AppName: cfg.AppName})
 	authn := auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, invites, notifier, tx, c)
 	authn.Use(administration)
@@ -219,7 +219,11 @@ func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 	if invites != nil {
 		rt.Log.Error("jobs.invites.cleanup.failed", "error", invites)
 	}
-	return errors.Join(recurring, sessions, invites)
+	requests := rt.Services.Admin.Cleanup(ctx)
+	if requests != nil {
+		rt.Log.Error("jobs.requests.cleanup.failed", "error", requests)
+	}
+	return errors.Join(recurring, sessions, invites, requests)
 }
 
 // passes bounds the recurring passes of one run; each books up to 100 series.

@@ -41,7 +41,7 @@ func (a *API) signupSettings(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) updateSignupSettings(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.SignupSettingsInput](r)
+	in, err := decode[platform.SignupSettingsInput](w, r)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,8 @@ func (a *API) updateSignupSettings(w http.ResponseWriter, r *http.Request) error
 }
 
 func (a *API) signupRequests(w http.ResponseWriter, r *http.Request) error {
-	reqs, err := a.svc.Admin.Requests(r.Context(), me(r), r.URL.Query().Get("status"))
+	limit, offset := page(r)
+	reqs, total, err := a.svc.Admin.Requests(r.Context(), me(r), r.URL.Query().Get("status"), limit, offset)
 	if err != nil {
 		return err
 	}
@@ -61,7 +62,7 @@ func (a *API) signupRequests(w http.ResponseWriter, r *http.Request) error {
 	for _, req := range reqs {
 		out = append(out, toRequest(req))
 	}
-	return list(w, out, len(out))
+	return list(w, out, total)
 }
 
 func (a *API) approveRequest(w http.ResponseWriter, r *http.Request) error {
@@ -103,7 +104,7 @@ func (a *API) setRole(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	in, err := decode[platform.RoleInput](r)
+	in, err := decode[platform.RoleInput](w, r)
 	if err != nil {
 		return err
 	}

@@ -288,10 +288,13 @@ class LocalGroupsRepository implements GroupsRepository {
     final g = await _ledger.group(id, db);
     final people = await _ledger.directory(db);
     final members = LocalLedger.memberIds(g);
-    String name(String uid) => (people[uid]?['name'] as String?) ?? 'Someone';
+    String name(String uid) =>
+        _safeCell((people[uid]?['name'] as String?) ?? 'Someone');
     String cell(Object? v) {
       final s = '${v ?? ''}';
-      return s.contains(RegExp(r'[",\n]')) ? '"${s.replaceAll('"', '""')}"' : s;
+      return s.contains(RegExp(r'[",\r\n]'))
+          ? '"${s.replaceAll('"', '""')}"'
+          : s;
     }
 
     final rows = <List<Object?>>[
@@ -316,8 +319,8 @@ class LocalGroupsRepository implements GroupsRepository {
       };
       rows.add([
         e['date'],
-        e['description'],
-        e['category'],
+        _safeCell((e['description'] as String?) ?? ''),
+        _safeCell((e['category'] as String?) ?? ''),
         e['kind'],
         e['currency'],
         e['total'],
@@ -408,3 +411,9 @@ class LocalGroupsRepository implements GroupsRepository {
     });
   }
 }
+
+/// Neutralises spreadsheet formula injection in text a person typed, like
+/// safeCell in apps/api/routes/expenses.go. Amount cells never pass through
+/// it, since a negative amount must stay a number.
+String _safeCell(String s) =>
+    s.isNotEmpty && '=+-@\t\r'.contains(s[0]) ? "'$s" : s;

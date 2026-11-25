@@ -2,7 +2,9 @@ package admin
 
 import (
 	"context"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
@@ -11,9 +13,6 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/google/uuid"
 )
-
-// Approvals is the notification kind for people waiting to join.
-const Approvals user.Kind = "approvals"
 
 // Deps are the Service's collaborators.
 type Deps struct {
@@ -25,6 +24,7 @@ type Deps struct {
 	Notifier    ports.Notifier
 	Tx          ports.Tx
 	Clock       clock.Clock
+	Log         *slog.Logger
 	// Defaults are the environment's sign-up settings, used until an
 	// administrator saves their own.
 	Defaults auth.Signup
@@ -43,8 +43,11 @@ var _ auth.Gate = (*Service)(nil)
 // Signup returns the sign-up rules in force.
 func (s *Service) Signup(ctx context.Context) (auth.Signup, error) {
 	stored, err := s.d.Settings.Get(ctx)
-	if err != nil || stored == nil {
-		return s.d.Defaults, err
+	if err != nil {
+		return auth.Signup{}, err
+	}
+	if stored == nil {
+		return s.d.Defaults, nil
 	}
 	return stored.Signup, nil
 }
@@ -55,34 +58,55 @@ func (s *Service) Approved(ctx context.Context, email string) (bool, error) {
 	return r != nil && r.Status == StatusApproved, err
 }
 
-// Request files (or refreshes) a request to join and tells administrators
-// and managers about new ones. It reports whether email was declined.
+// announceEvery spaces the notices about new requests: staff hear about a
+// request unless another one already waited from less than this ago, so a
+// burst of requests sends one notice instead of one each.
+const announceEvery = time.Hour
+
+// Request files a request to join and tells administrators and managers
+// about it. An earlier request stands as it is. It reports whether email was
+// declined.
 func (s *Service) Request(ctx context.Context, email, name string) (bool, error) {
 	r, err := s.d.Requests.Find(ctx, email)
 	if err != nil {
 		return false, err
 	}
-	switch {
-	case r != nil && r.Status == StatusDeclined:
-		return true, nil
-	case r != nil && r.Status == StatusPending:
-		return false, nil
+	if r != nil {
+		// An approval that landed after the caller checked lets the person
+		// in on their next sign-in, so it needs nothing here.
+		return r.Status == StatusDeclined, nil
 	}
-	name = strings.TrimSpace(name)
-	if len([]rune(name)) > 80 {
-		name = string([]rune(name)[:80])
+	name, err = user.NormalizeName(name, email)
+	if err != nil {
+		return false, err
 	}
-	r = &Request{ID: uuid.New(), Email: email, Name: name, Status: StatusPending, RequestedAt: s.d.Clock.Now()}
+	latest, pending, err := s.d.Requests.List(ctx, StatusPending, 1, 0)
+	if err != nil {
+		return false, err
+	}
+	if pending >= MaxPending {
+		return false, errs.RateLimited("Too many people are waiting to join right now. Try again in a few days.")
+	}
+	now := s.d.Clock.Now()
+	r = &Request{ID: uuid.New(), Email: email, Name: name, Status: StatusPending, RequestedAt: now}
 	if err := s.d.Requests.Save(ctx, r); err != nil {
 		return false, err
 	}
-	s.announce(ctx, r)
+	if len(latest) == 0 || !now.Before(latest[0].RequestedAt.Add(announceEvery)) {
+		s.announce(ctx, r)
+	}
 	return false, nil
 }
 
+// announce tells staff about r. The request is filed already, so a failed
+// lookup is logged rather than returned.
 func (s *Service) announce(ctx context.Context, r *Request) {
+	if ports.IsQuiet(ctx) {
+		return
+	}
 	staff, err := s.d.Accounts.Staff(ctx)
-	if err != nil || ports.IsQuiet(ctx) {
+	if err != nil {
+		s.d.Log.ErrorContext(ctx, "admin.announce.failed", "request", r.ID, "error", err)
 		return
 	}
 	who := r.Email
@@ -90,7 +114,7 @@ func (s *Service) announce(ctx context.Context, r *Request) {
 		who = r.Name + " (" + r.Email + ")"
 	}
 	for _, u := range staff {
-		n, ok := u.Notice(Approvals, who+" wants to join "+s.d.AppName,
+		n, ok := u.Notice(user.Approvals, who+" wants to join "+s.d.AppName,
 			[]string{who + " asked to join " + s.d.AppName + ".", "Approve or decline them in Account, Administration."},
 			s.d.BaseURL+"/account/admin")
 		if ok {
@@ -134,7 +158,7 @@ func (s *Service) UpdateSettings(ctx context.Context, actor uuid.UUID, mode stri
 	if _, err := s.actor(ctx, actor, false); err != nil {
 		return nil, err
 	}
-	signup, err := Normalize(mode, allowed)
+	signup, err := auth.Normalize(mode, allowed)
 	if err != nil {
 		return nil, err
 	}
@@ -142,10 +166,11 @@ func (s *Service) UpdateSettings(ctx context.Context, actor uuid.UUID, mode stri
 	return st, s.d.Settings.Save(ctx, st)
 }
 
-// Requests lists requests with status (pending when empty).
-func (s *Service) Requests(ctx context.Context, actor uuid.UUID, status string) ([]*Request, error) {
+// Requests lists a page of requests with status (pending when empty) and
+// how many there are in all.
+func (s *Service) Requests(ctx context.Context, actor uuid.UUID, status string, limit, offset int) ([]*Request, int, error) {
 	if _, err := s.actor(ctx, actor, true); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	st := Status(status)
 	switch st {
@@ -153,9 +178,17 @@ func (s *Service) Requests(ctx context.Context, actor uuid.UUID, status string) 
 		st = StatusPending
 	case StatusPending, StatusApproved, StatusDeclined:
 	default:
-		return nil, errs.Validation("status", "Use pending, approved or declined.")
+		return nil, 0, errs.Validation("status", "Use pending, approved or declined.")
 	}
-	return s.d.Requests.List(ctx, st)
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	return s.d.Requests.List(ctx, st, limit, max(offset, 0))
+}
+
+// Cleanup removes requests that waited longer than PendingTTL.
+func (s *Service) Cleanup(ctx context.Context) error {
+	return s.d.Requests.Expire(ctx, s.d.Clock.Now().Add(-PendingTTL))
 }
 
 // Approve lets the person sign in and emails them. Approvals count in

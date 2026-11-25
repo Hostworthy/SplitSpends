@@ -5,10 +5,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
+	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 	"github.com/Hostworthy/SplitSpends/packages/webpush"
 	"github.com/google/uuid"
@@ -90,4 +92,47 @@ func TestPushLimits(t *testing.T) {
 
 	s.call(t, http.MethodPost, devices, ben, device(100)).want(t, http.StatusCreated)
 	s.call(t, http.MethodPost, test, ben, nil).want(t, http.StatusOK)
+}
+
+// counting is an AI reader that answers every request with an empty reading
+// and counts the requests it gets.
+type counting struct{ calls atomic.Int32 }
+
+func (c *counting) ReadReceipt(context.Context, ports.ReceiptInput) (ports.ReceiptExtract, error) {
+	c.calls.Add(1)
+	return ports.ReceiptExtract{Currency: "USD", Total: "12.50"}, nil
+}
+
+func (c *counting) DraftExpense(context.Context, ports.DraftInput) (ports.DraftExtract, error) {
+	c.calls.Add(1)
+	return ports.DraftExtract{Description: "Lunch", Amount: "12.50", Currency: "USD"}, nil
+}
+
+// TestAILimit checks that receipt scans and expense drafts share one hourly
+// budget per signed-in person: the request after the budget is refused
+// without reaching the AI provider, while someone else can still use AI.
+func TestAILimit(t *testing.T) {
+	cfg := bootstraptest.Defaults()
+	cfg.AIRateLimit = 3
+	reader := &counting{}
+	s := newServer(t, bootstraptest.Options{Config: cfg, Reader: reader})
+	ada := s.signIn(t, "ada@example.com", "Ada").Token
+	ben := s.signIn(t, "ben@example.com", "Ben").Token
+	rc := data[platform.Receipt](t, s.upload(t, platform.Prefix+"/receipts", ada, pixel(t)).want(t, http.StatusCreated))
+	scan := platform.Prefix + "/receipts/" + rc.ID + "/scan"
+	draft := platform.Prefix + "/ai/expense-draft"
+
+	s.call(t, http.MethodPost, scan, ada, nil).want(t, http.StatusOK)
+	s.call(t, http.MethodPost, scan, ada, nil).want(t, http.StatusOK)
+	s.call(t, http.MethodPost, draft, ada, platform.DraftRequest{Text: "Lunch 12.50"}).want(t, http.StatusOK)
+	if e := s.call(t, http.MethodPost, scan, ada, nil).want(t, http.StatusTooManyRequests).failure(t); e.Code != "RATE_LIMITED" {
+		t.Fatalf("unexpected error %+v", e)
+	}
+	if e := s.call(t, http.MethodPost, draft, ada, platform.DraftRequest{Text: "Lunch 12.50"}).want(t, http.StatusTooManyRequests).failure(t); e.Code != "RATE_LIMITED" {
+		t.Fatalf("unexpected error %+v", e)
+	}
+	if n := reader.calls.Load(); n != 3 {
+		t.Fatalf("want 3 requests to the AI provider, got %d", n)
+	}
+	s.call(t, http.MethodPost, draft, ben, platform.DraftRequest{Text: "Lunch 12.50"}).want(t, http.StatusOK)
 }

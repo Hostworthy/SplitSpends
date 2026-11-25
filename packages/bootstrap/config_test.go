@@ -121,3 +121,73 @@ func TestServerlessJobs(t *testing.T) {
 		}
 	}
 }
+
+// TestAllowedDomains accepts domains with or without "@" and refuses
+// entries that are not domains instead of starting with a list that
+// matches nobody.
+func TestAllowedDomains(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
+	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	t.Setenv("SIGNUP_ALLOWED_DOMAINS", "Family.com, @work.org")
+	if _, err := bootstrap.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"not a domain", "family.com,example org", "ada@example.com", "@nodot"} {
+		t.Setenv("SIGNUP_ALLOWED_DOMAINS", value)
+		if _, err := bootstrap.LoadConfig(); err == nil || !strings.Contains(err.Error(), "invalid.SIGNUP_ALLOWED_DOMAINS") {
+			t.Errorf("%q: want a SIGNUP_ALLOWED_DOMAINS error, got %v", value, err)
+		}
+	}
+}
+
+func TestMCPAdminTools(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
+	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{{"", false}, {"false", false}, {"true", true}} {
+		t.Setenv("MCP_ADMIN_TOOLS", tc.value)
+		c, err := bootstrap.LoadConfig()
+		if err != nil {
+			t.Fatalf("MCP_ADMIN_TOOLS=%q: %v", tc.value, err)
+		}
+		if c.MCPAdminTools != tc.want {
+			t.Errorf("MCP_ADMIN_TOOLS=%q: got %v, want %v", tc.value, c.MCPAdminTools, tc.want)
+		}
+	}
+	t.Setenv("MCP_ADMIN_TOOLS", "yes please")
+	if _, err := bootstrap.LoadConfig(); err == nil {
+		t.Error("an invalid MCP_ADMIN_TOOLS must stop startup")
+	}
+}
+
+// TestAIRateLimit reads the hourly AI budget per person and rejects values
+// that would turn AI off or are not counts.
+func TestAIRateLimit(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
+	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	for _, tc := range []struct {
+		value string
+		want  int
+	}{
+		{"", 30},
+		{"1", 1},
+		{"200", 200},
+	} {
+		t.Setenv("AI_RATE_LIMIT", tc.value)
+		c, err := bootstrap.LoadConfig()
+		if err != nil {
+			t.Fatalf("%q: %v", tc.value, err)
+		}
+		if c.AIRateLimit != tc.want {
+			t.Errorf("%q: want %d requests, got %d", tc.value, tc.want, c.AIRateLimit)
+		}
+	}
+	for _, value := range []string{"0", "-1", "ten"} {
+		t.Setenv("AI_RATE_LIMIT", value)
+		if _, err := bootstrap.LoadConfig(); err == nil || !strings.Contains(err.Error(), "AI_RATE_LIMIT") {
+			t.Errorf("%q: want an AI_RATE_LIMIT error, got %v", value, err)
+		}
+	}
+}

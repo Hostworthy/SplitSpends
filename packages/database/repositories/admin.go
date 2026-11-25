@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/admin"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
@@ -80,18 +81,32 @@ func (r *SignupRequests) Get(ctx context.Context, id uuid.UUID) (*admin.Request,
 }
 
 func (r *SignupRequests) Save(ctx context.Context, req *admin.Request) error {
-	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO signup_requests (`+requestColumns+`) VALUES ($1,$2,$3,$4,$5,$6,$7)
-		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, decided_at = EXCLUDED.decided_at, decided_by = EXCLUDED.decided_by`,
+	_, err := r.db.Q(ctx).Exec(ctx, `WITH updated AS (
+			UPDATE signup_requests SET name = $3, status = $4, decided_at = $6, decided_by = $7 WHERE id = $1 RETURNING id)
+		INSERT INTO signup_requests (`+requestColumns+`) SELECT $1, $2, $3, $4, $5, $6, $7
+		WHERE NOT EXISTS (SELECT 1 FROM updated)
+		ON CONFLICT ((lower(email))) DO NOTHING`,
 		req.ID, req.Email, req.Name, req.Status, req.RequestedAt, req.DecidedAt, req.DecidedBy)
 	return err
 }
 
-func (r *SignupRequests) List(ctx context.Context, status admin.Status) ([]*admin.Request, error) {
-	rows, err := r.db.Q(ctx).Query(ctx, `SELECT `+requestColumns+` FROM signup_requests WHERE status = $1 ORDER BY requested_at DESC LIMIT 500`, status)
-	if err != nil {
-		return nil, err
+func (r *SignupRequests) List(ctx context.Context, status admin.Status, limit, offset int) ([]*admin.Request, int, error) {
+	var total int
+	if err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM signup_requests WHERE status = $1`, status).Scan(&total); err != nil {
+		return nil, 0, err
 	}
-	return collect(rows, scanRequest)
+	rows, err := r.db.Q(ctx).Query(ctx, `SELECT `+requestColumns+` FROM signup_requests WHERE status = $1
+		ORDER BY requested_at DESC, id LIMIT $2 OFFSET $3`, status, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	list, err := collect(rows, scanRequest)
+	return list, total, err
+}
+
+func (r *SignupRequests) Expire(ctx context.Context, before time.Time) error {
+	_, err := r.db.Q(ctx).Exec(ctx, `DELETE FROM signup_requests WHERE status = 'pending' AND requested_at < $1`, before)
+	return err
 }
 
 func (r *SignupRequests) Delete(ctx context.Context, email string) error {

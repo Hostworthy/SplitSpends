@@ -76,6 +76,33 @@ void main() {
     expect(e.shareOf('u2')!.net, -6000);
     expect(e.items.single.userIds, ['u1']);
     expect(e.myBalance, 6000);
+    expect(e.editable, isTrue);
+  });
+
+  test('unknown split method is preserved, not turned into equal', () {
+    final e = Expense.fromJson({
+      'id': 'e1',
+      'description': 'Rent',
+      'currency': 'EUR',
+      'total': 9000,
+      'date': '2026-11-20',
+      'splitMethod': 'ratio',
+      'recurrence': 'daily',
+    });
+    expect(e.unknownMethod, 'ratio');
+    expect(e.unknownRecurrence, 'daily');
+    expect(e.editable, isFalse);
+    expect(e.copyWith(pending: true).editable, isFalse);
+
+    final plain = Expense.fromJson({
+      'id': 'e2',
+      'description': 'Taxi',
+      'currency': 'EUR',
+      'total': 900,
+      'date': '2026-11-20',
+    });
+    expect(plain.splitMethod, SplitMethod.equal);
+    expect(plain.editable, isTrue);
   });
 
   test('ExpenseInput serializes the split for each method', () {

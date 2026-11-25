@@ -19,11 +19,11 @@ func (a *API) listFriends(w http.ResponseWriter, r *http.Request) error {
 	for _, f := range friends {
 		out = append(out, toFriend(f))
 	}
-	return list(w, out, len(out))
+	return paged(w, r, out)
 }
 
 func (a *API) addFriend(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.Invitee](r)
+	in, err := decode[platform.Invitee](w, r)
 	if err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func (a *API) inviteFriend(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	in, err := decode[platform.FriendInvite](r)
+	in, err := decode[platform.FriendInvite](w, r)
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,8 @@ func toDefaultSplit(d *group.DefaultSplit) *platform.DefaultSplit {
 
 func (a *API) listGroups(w http.ResponseWriter, r *http.Request) error {
 	archived, _ := strconv.ParseBool(r.URL.Query().Get("archived"))
-	groups, err := a.svc.Groups.List(r.Context(), me(r), archived)
+	limit, offset := window(r)
+	groups, total, err := a.svc.Groups.List(r.Context(), me(r), archived, limit, offset)
 	if err != nil {
 		return err
 	}
@@ -128,11 +129,11 @@ func (a *API) listGroups(w http.ResponseWriter, r *http.Request) error {
 	for _, g := range groups {
 		out = append(out, toGroup(g))
 	}
-	return list(w, out, len(out))
+	return list(w, out, total)
 }
 
 func (a *API) createGroup(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.GroupCreate](r)
+	in, err := decode[platform.GroupCreate](w, r)
 	if err != nil {
 		return err
 	}
@@ -170,7 +171,7 @@ func (a *API) patchGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	in, err := decode[platform.GroupPatch](r)
+	in, err := decode[platform.GroupPatch](w, r)
 	if err != nil {
 		return err
 	}
@@ -201,7 +202,7 @@ func (a *API) addMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	in, err := decode[platform.Invitee](r)
+	in, err := decode[platform.Invitee](w, r)
 	if err != nil {
 		return err
 	}

@@ -9,9 +9,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/google/uuid"
 )
 
@@ -108,6 +111,65 @@ type Signup struct {
 	Allowed []string
 }
 
+// MaxAllowed bounds the allowed list.
+const MaxAllowed = 500
+
+// Normalize checks the mode an administrator chose and cleans the allowed
+// list: addresses are lowercased, "example.com" becomes "@example.com",
+// duplicates go.
+func Normalize(mode string, allowed []string) (Signup, error) {
+	s := Signup{Mode: SignupMode(strings.ToLower(strings.TrimSpace(mode)))}
+	if !slices.Contains(Modes, s.Mode) {
+		return s, errs.Validation("mode", "Choose open, invite, approval or closed.")
+	}
+	if len(allowed) > MaxAllowed {
+		return s, errs.Validation("allowed", fmt.Sprintf("The allowed list is limited to %d entries.", MaxAllowed))
+	}
+	seen := map[string]bool{}
+	s.Allowed = []string{}
+	for _, raw := range allowed {
+		entry := strings.ToLower(strings.TrimSpace(raw))
+		if entry == "" {
+			continue
+		}
+		if strings.HasPrefix(entry, "@") || !strings.Contains(entry, "@") {
+			domain, ok := Domain(entry)
+			if !ok {
+				return s, errs.Validation("allowed", "“"+raw+"” is not an email address or a domain like @example.com.")
+			}
+			entry = domain
+		} else {
+			email, err := user.NormalizeEmail(entry)
+			if err != nil {
+				return s, errs.Validation("allowed", "“"+raw+"” is not an email address or a domain like @example.com.")
+			}
+			entry = email
+		}
+		if !seen[entry] {
+			seen[entry] = true
+			s.Allowed = append(s.Allowed, entry)
+		}
+	}
+	return s, nil
+}
+
+// Domain returns the allowed-list entry for a domain written with or
+// without "@", such as "@example.com", and whether raw is a domain at all.
+func Domain(raw string) (string, bool) {
+	d := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "@")
+	if len(d) < 3 || len(d) > 253 || !strings.Contains(d, ".") || strings.HasPrefix(d, ".") || strings.HasSuffix(d, ".") {
+		return "", false
+	}
+	for _, r := range d {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '.':
+		default:
+			return "", false
+		}
+	}
+	return "@" + d, true
+}
+
 // Allows reports whether email is on the allowed list.
 func (s Signup) Allows(email string) bool {
 	email = strings.ToLower(strings.TrimSpace(email))
@@ -161,8 +223,10 @@ func (p Policy) Signup() Signup {
 		s.Mode = SignupInvite
 	}
 	for _, d := range p.AllowedDomains {
-		if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
-			s.Allowed = append(s.Allowed, "@"+strings.TrimPrefix(d, "@"))
+		// Loading the configuration refuses entries that are not domains,
+		// so skipping them here never drops one silently.
+		if entry, ok := Domain(d); ok && !slices.Contains(s.Allowed, entry) {
+			s.Allowed = append(s.Allowed, entry)
 		}
 	}
 	return s

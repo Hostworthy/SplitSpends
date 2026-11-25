@@ -189,7 +189,7 @@ func (r *Expenses) List(ctx context.Context, f expense.Filter) ([]*expense.Expen
 	}
 	limit, offset := arg(f.Limit), arg(f.Offset)
 	rows, err := r.db.Q(ctx).Query(ctx, `SELECT `+expenseColumns+` FROM expenses e WHERE `+cond+
-		` ORDER BY e.date DESC, e.created_at DESC LIMIT `+limit+` OFFSET `+offset, args...)
+		` ORDER BY e.date DESC, e.created_at DESC, e.id DESC LIMIT `+limit+` OFFSET `+offset, args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -332,12 +332,28 @@ func (r *Comments) Get(ctx context.Context, id uuid.UUID) (*expense.Comment, err
 	return c, err
 }
 
-func (r *Comments) List(ctx context.Context, expenseID uuid.UUID) ([]*expense.Comment, error) {
-	rows, err := r.db.Q(ctx).Query(ctx, `SELECT id, expense_id, user_id, created_at, body FROM comments WHERE expense_id=$1 ORDER BY created_at`, expenseID)
+func (r *Comments) List(ctx context.Context, expenseID uuid.UUID, limit, offset int) ([]*expense.Comment, int, error) {
+	total, err := r.Count(ctx, expenseID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return collect(rows, scanComment)
+	var bound *int
+	if limit > 0 {
+		bound = &limit
+	}
+	rows, err := r.db.Q(ctx).Query(ctx, `SELECT id, expense_id, user_id, created_at, body FROM comments WHERE expense_id=$1
+		ORDER BY created_at, id LIMIT $2 OFFSET $3`, expenseID, bound, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	out, err := collect(rows, scanComment)
+	return out, total, err
+}
+
+func (r *Comments) Count(ctx context.Context, expenseID uuid.UUID) (int, error) {
+	var n int
+	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM comments WHERE expense_id=$1`, expenseID).Scan(&n)
+	return n, err
 }
 
 func (r *Comments) Delete(ctx context.Context, id uuid.UUID) error {

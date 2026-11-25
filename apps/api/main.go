@@ -63,7 +63,7 @@ func run() error {
 	mux.Handle("/health", api)
 	mux.Handle("/internal/", api)
 	if cfg.MCPEnabled {
-		mux.Handle("/mcp", mcp.HTTPHandler(loopback(cfg.Addr), version, nil, log))
+		mux.Handle("/mcp", mcp.HTTPHandler(loopback(cfg.Addr), version, mcp.Options{Admin: cfg.MCPAdminTools}, nil, log))
 	}
 	secure := strings.HasPrefix(cfg.BaseURL, "https://")
 	if cfg.WebDir != "" {

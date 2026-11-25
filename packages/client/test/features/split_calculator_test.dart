@@ -43,7 +43,8 @@ void main() {
       values: {'a': '50', 'b': '25'},
     );
     expect(p.isValid, isFalse);
-    expect(p.remaining, 2500);
+    expect(p.remaining, 250000);
+    expect(percentLeft(p.remaining), '25% left');
     p = previewSplit(
       method: SplitMethod.percent,
       total: 1000,
@@ -52,6 +53,29 @@ void main() {
     );
     expect(p.isValid, isTrue);
     expect(p.owed.values.reduce((a, b) => a + b), 1000);
+  });
+
+  test('percent remaining reports a 0.0001 gap', () {
+    final p = previewSplit(
+      method: SplitMethod.percent,
+      total: 1000,
+      participants: people,
+      values: {'a': '33.3333', 'b': '33.3333', 'c': '33.3333'},
+    );
+    expect(p.isValid, isFalse);
+    expect(p.remaining, 1);
+    expect(percentLeft(p.remaining), '0.0001% left');
+    expect(
+      percentLeft(
+        previewSplit(
+          method: SplitMethod.percent,
+          total: 1000,
+          participants: people,
+          values: {'a': '50.015', 'b': '50'},
+        ).remaining,
+      ),
+      '0.015% over',
+    );
   });
 
   test('shares split is proportional', () {
