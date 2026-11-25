@@ -180,6 +180,9 @@ class _EditorBodyState extends ConsumerState<_EditorBody> {
       showMessage(context, problem);
       return;
     }
+    // The save outlives this screen when the person closes it meanwhile;
+    // the lists must refresh either way.
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _saving = true);
     try {
       final repo = ref.read(expensesRepositoryProvider);
@@ -188,7 +191,7 @@ class _EditorBodyState extends ConsumerState<_EditorBody> {
           ? await repo.create(input.withId(_id))
           : await repo.update(widget.existing!.id, input);
       unawaited(HapticFeedback.mediumImpact());
-      ref.refreshLedger();
+      refreshLedgerIn(container);
       if (!mounted) return;
       final router = GoRouter.of(context);
       router.pop();

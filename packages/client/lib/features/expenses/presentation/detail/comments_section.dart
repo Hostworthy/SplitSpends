@@ -30,13 +30,15 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
   Future<void> _send() async {
     final body = _controller.text.trim();
     if (body.isEmpty || _sending) return;
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _sending = true);
     try {
       await ref
           .read(expensesRepositoryProvider)
           .addComment(widget.expenseId, body);
+      container.invalidate(commentsProvider(widget.expenseId));
+      if (!mounted) return;
       _controller.clear();
-      ref.invalidate(commentsProvider(widget.expenseId));
     } catch (error) {
       if (mounted) showError(context, error);
     } finally {
@@ -45,9 +47,10 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
   }
 
   Future<void> _delete(String commentId) async {
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
       await ref.read(expensesRepositoryProvider).deleteComment(commentId);
-      ref.invalidate(commentsProvider(widget.expenseId));
+      container.invalidate(commentsProvider(widget.expenseId));
     } catch (error) {
       if (mounted) showError(context, error);
     }

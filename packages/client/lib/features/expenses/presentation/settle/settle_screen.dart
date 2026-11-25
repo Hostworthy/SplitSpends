@@ -102,6 +102,9 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
       ref.read(meProvider),
     );
     if (currency == null) return;
+    // The payment outlives this screen when the person closes it
+    // meanwhile; the lists must refresh either way.
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _saving = true);
     try {
       await ref
@@ -117,7 +120,7 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
             notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
           );
       unawaited(HapticFeedback.heavyImpact());
-      ref.refreshLedger();
+      refreshLedgerIn(container);
       if (!mounted) return;
       context.pop();
       showMessage(context, 'Payment recorded 🎉');
