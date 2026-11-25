@@ -123,3 +123,11 @@ func me(r *http.Request) uuid.UUID {
 	}
 	return uuid.Nil
 }
+
+// session is the caller's session or API token.
+func session(r *http.Request) uuid.UUID {
+	if p := middleware.Principal(r.Context()); p != nil {
+		return p.SessionID
+	}
+	return uuid.Nil
+}

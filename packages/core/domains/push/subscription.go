@@ -30,6 +30,11 @@ const (
 type Subscription struct {
 	ID     uuid.UUID
 	UserID uuid.UUID
+	// SessionID is the session or API token that registered the device.
+	// The device is removed with it, so it stops getting the account's
+	// notifications once that sign-in ends. Nil for devices registered
+	// before devices were tied to sessions.
+	SessionID uuid.UUID
 	// Endpoint is the push service URL. It is a capability: whoever knows it
 	// can address the device, so it is only shown to its owner.
 	Endpoint string
@@ -61,8 +66,9 @@ const (
 	maxLabel    = 80
 )
 
-// New validates in and builds a subscription for userID.
-func New(userID uuid.UUID, in Input, now time.Time) (*Subscription, error) {
+// New validates in and builds a subscription for userID, registered by
+// sessionID.
+func New(userID, sessionID uuid.UUID, in Input, now time.Time) (*Subscription, error) {
 	endpoint := strings.TrimSpace(in.Endpoint)
 	u, err := url.Parse(endpoint)
 	if endpoint == "" || err != nil || u.Scheme != "https" || u.Host == "" || len(endpoint) > maxEndpoint {
@@ -87,7 +93,7 @@ func New(userID uuid.UUID, in Input, now time.Time) (*Subscription, error) {
 	if utf8.RuneCountInString(label) > maxLabel {
 		label = string([]rune(label)[:maxLabel])
 	}
-	return &Subscription{ID: uuid.New(), UserID: userID, Endpoint: endpoint, P256dh: p256dh, Auth: auth,
+	return &Subscription{ID: uuid.New(), UserID: userID, SessionID: sessionID, Endpoint: endpoint, P256dh: p256dh, Auth: auth,
 		Platform: platform, Label: label, CreatedAt: now, UpdatedAt: now}, nil
 }
 
