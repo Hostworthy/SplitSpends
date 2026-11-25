@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
@@ -36,7 +37,9 @@ func scanUser(row pgx.Row) (*user.User, error) {
 	}
 	u.Notifications = user.DefaultNotifications()
 	if len(notif) > 0 {
-		_ = json.Unmarshal(notif, &u.Notifications)
+		if err := json.Unmarshal(notif, &u.Notifications); err != nil {
+			return nil, fmt.Errorf("database.user.notifications.invalid: %w", err)
+		}
 	}
 	return &u, nil
 }

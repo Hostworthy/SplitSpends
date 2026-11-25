@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/stats"
@@ -46,7 +47,9 @@ func (r *Activities) List(ctx context.Context, f activity.Filter) ([]*activity.A
 		if err := row.Scan(&a.ID, &a.ActorID, &a.GroupID, &a.ExpenseID, &a.CreatedAt, &a.Kind, &a.Involved, &data); err != nil {
 			return nil, err
 		}
-		_ = json.Unmarshal(data, &a.Data)
+		if err := json.Unmarshal(data, &a.Data); err != nil {
+			return nil, fmt.Errorf("database.activity.data.invalid: %w", err)
+		}
 		return &a, nil
 	})
 	return list, total, err

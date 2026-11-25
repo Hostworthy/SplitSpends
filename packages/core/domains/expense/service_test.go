@@ -1,7 +1,11 @@
 package expense
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,6 +117,13 @@ func (noCategories) Usable(context.Context, uuid.UUID, string) (bool, error) { r
 
 type memUsers map[uuid.UUID]*user.User
 
+// downUsers is a directory whose bulk lookup fails.
+type downUsers struct{ memUsers }
+
+func (downUsers) List(context.Context, []uuid.UUID) ([]*user.User, error) {
+	return nil, errors.New("connection refused")
+}
+
 func (m memUsers) Get(_ context.Context, id uuid.UUID) (*user.User, error) {
 	u, ok := m[id]
 	if !ok {
@@ -162,6 +173,7 @@ type world struct {
 	svc                    *Service
 	expenses               memExpenses
 	feed                   *feed
+	logs                   *bytes.Buffer
 	group                  *group.Group
 	ada, ben, cy, zoe, mal uuid.UUID
 	rent, dinner           *Expense
@@ -170,7 +182,7 @@ type world struct {
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
-	w := &world{expenses: memExpenses{}, feed: &feed{}}
+	w := &world{expenses: memExpenses{}, feed: &feed{}, logs: &bytes.Buffer{}}
 	w.ada, w.ben, w.cy, w.zoe, w.mal = uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	w.adaReceipt, w.malReceipt = uuid.New(), uuid.New()
 	people := memUsers{}
@@ -193,7 +205,7 @@ func newWorld(t *testing.T) *world {
 	w.svc = NewService(Deps{Repo: w.expenses, Comments: memComments{}, Groups: memGroups{w.group.ID: w.group},
 		Connections: friends{{w.ada, w.zoe}: true, {w.zoe, w.ada}: true}, Receipts: uploads{w.adaReceipt: w.ada, w.malReceipt: w.mal},
 		Catalog: noCategories{}, Users: people, Activity: w.feed, Notifier: quiet{}, Tx: direct{}, Clock: clock.Fixed{At: now},
-		BaseURL: "http://test"})
+		Log: slog.New(slog.NewJSONHandler(w.logs, nil)), BaseURL: "http://test"})
 	return w
 }
 
@@ -303,6 +315,26 @@ func TestFormerMemberOnlyReads(t *testing.T) {
 	}
 	if len(w.feed.kinds) != 1 || w.feed.kinds[0] != activity.CommentCreated {
 		t.Fatalf("the comment is in the feed: %v", w.feed.kinds)
+	}
+}
+
+// TestNotifyReportsLookupFailure checks that an expense is saved when the
+// people to notify cannot be looked up, and that the failure is logged.
+func TestNotifyReportsLookupFailure(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t)
+	w.svc.users = downUsers{w.svc.users.(memUsers)}
+	in := Input{GroupID: &w.group.ID, Description: "Milk", Currency: "EUR", Total: 400, Date: "2026-03-14", Method: MethodEqual,
+		Payers: []Payer{{UserID: w.ada, Amount: 400}}, Splits: []SplitInput{{UserID: w.ada}, {UserID: w.cy}}}
+	e, err := w.svc.Create(ctx, w.ada, in)
+	if err != nil {
+		t.Fatalf("the expense is saved anyway: %v", err)
+	}
+	if got := strings.Count(w.logs.String(), `"msg":"expense.notify.failed"`); got != 1 {
+		t.Fatalf("expense.notify.failed logged %d times, want 1: %s", got, w.logs)
+	}
+	if !strings.Contains(w.logs.String(), e.ID.String()) {
+		t.Errorf("the log names the expense: %s", w.logs)
 	}
 }
 
