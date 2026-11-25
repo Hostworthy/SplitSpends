@@ -610,3 +610,78 @@ func TestDefaultClientTimeout(t *testing.T) {
 		t.Fatalf("timeout %v, want 30s", got)
 	}
 }
+
+func TestLineNamesEveryPayer(t *testing.T) {
+	_, c := serve(t, routes(nil))
+	idx := people{"u1": `"Ada"`, "u2": `"Ben"`, "u3": `"Cy"`}
+	cases := []struct {
+		name    string
+		expense platform.Expense
+		want    string
+	}{
+		{"one payer", platform.Expense{Kind: "expense", Description: "Rent", Currency: "USD", Total: 6000, Shares: []platform.Share{{UserID: "u1", Paid: 6000, Owed: 3000}, {UserID: "u2", Owed: 3000}}}, `60.00 USD paid by "Ada", `},
+		{"two equal payers", platform.Expense{Kind: "expense", Description: "Rent", Currency: "USD", Total: 6000, Shares: []platform.Share{{UserID: "u1", Paid: 3000, Owed: 3000}, {UserID: "u2", Paid: 3000, Owed: 3000}}}, `paid by "Ada" 30.00 USD, "Ben" 30.00 USD, `},
+		{"payment", platform.Expense{Kind: "payment", Currency: "USD", Total: 1500, Shares: []platform.Share{{UserID: "u2", Paid: 1500}, {UserID: "u3", Owed: 1500}}}, `payment: "Ben" paid "Cy" 15.00 USD`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := bind(c).line(context.Background(), tc.expense, idx); !strings.Contains(got, tc.want) {
+				t.Fatalf("want %q in %q", tc.want, got)
+			}
+		})
+	}
+}
+
+// accounts is a page of n accounts out of total.
+func accounts(n, total int) string {
+	items := make([]string, n)
+	for i := range items {
+		items[i] = fmt.Sprintf(`{"id":"u%d","name":"Person %d","role":"user","status":"active"}`, i, i)
+	}
+	return fmt.Sprintf(`{"items":[%s],"total":%d}`, strings.Join(items, ","), total)
+}
+
+func TestListAccountsSaysWhenPartial(t *testing.T) {
+	_, c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		page := accounts(200, 250)
+		if r.URL.Query().Get("offset") == "200" {
+			page = accounts(50, 250)
+		}
+		routes(map[string]string{"/admin/accounts": page})(w, r)
+	})
+	res, _, _ := bind(c).listAccounts(context.Background(), nil, accountsArgs{})
+	if got := resultText(res); res.IsError || !strings.Contains(got, "Showing 1 to 200 of 250; pass offset 200 to see more.") {
+		t.Fatalf("want a note that the list is partial, got %q", got[max(0, len(got)-200):])
+	}
+	res, _, _ = bind(c).listAccounts(context.Background(), nil, accountsArgs{Offset: 200})
+	if got := resultText(res); res.IsError || strings.Count(got, "\n- ") != 50 || strings.Contains(got, "Showing") {
+		t.Fatalf("want the last 50 accounts and no note, got %q", got[max(0, len(got)-200):])
+	}
+}
+
+func TestListAccountsComplete(t *testing.T) {
+	_, c := serve(t, routes(map[string]string{"/admin/accounts": accounts(2, 2)}))
+	res, _, _ := bind(c).listAccounts(context.Background(), nil, accountsArgs{})
+	if got := resultText(res); res.IsError || strings.Contains(got, "Showing") {
+		t.Fatalf("a complete list needs no note, got %q", got)
+	}
+}
+
+func TestListExpensesSaysWhenPartial(t *testing.T) {
+	_, c := serve(t, routes(map[string]string{
+		"/me":       adaMe,
+		"/expenses": `{"items":[{"id":"e1","kind":"expense","description":"Rent","currency":"USD","total":100,"date":"2026-11-01"}],"total":3}`,
+	}))
+	res, _, _ := bind(c).listExpenses(context.Background(), nil, listArgs{Limit: 1, Offset: 1})
+	if got := resultText(res); res.IsError || !strings.Contains(got, "Showing 2 to 2 of 3; pass offset 2 to see more.") {
+		t.Fatalf("want a note that the list is partial, got %q", got)
+	}
+}
+
+func TestListActivityEmpty(t *testing.T) {
+	_, c := serve(t, routes(nil))
+	res, _, _ := bind(c).listActivity(context.Background(), nil, activityArgs{})
+	if got := resultText(res); res.IsError || got != "No activity yet." {
+		t.Fatalf("got %q", got)
+	}
+}
