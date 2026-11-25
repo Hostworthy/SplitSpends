@@ -213,6 +213,7 @@ resource "aws_lambda_function" "app" {
       AI_API_KEY                   = var.ai.api_key
       AI_MODEL                     = var.ai.model
       AI_BASE_URL                  = var.ai.base_url
+      AI_EFFORT                    = var.ai.effort
     }
   }
 

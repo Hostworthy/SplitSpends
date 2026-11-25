@@ -10,4 +10,4 @@ smtp = {
   from     = "Split Spends <you@gmail.com>"
 }
 
-# ai = { provider = "anthropic", api_key = "sk-ant-..." }
+# ai = { provider = "anthropic", api_key = "sk-ant-...", effort = "low" }

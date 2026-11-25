@@ -53,6 +53,8 @@ variable "ai" {
     api_key  = optional(string, "")
     model    = optional(string, "")
     base_url = optional(string, "")
+    # Anthropic only. Low keeps receipt scans inside the 30 second gateway limit.
+    effort = optional(string, "low")
   })
   default   = {}
   sensitive = true

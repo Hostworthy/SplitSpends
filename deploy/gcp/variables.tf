@@ -61,6 +61,8 @@ variable "ai" {
     api_key  = optional(string, "")
     model    = optional(string, "")
     base_url = optional(string, "")
+    # Anthropic only; empty uses the model default.
+    effort = optional(string, "")
   })
   default   = {}
   sensitive = true
