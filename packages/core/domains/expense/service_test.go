@@ -305,3 +305,39 @@ func TestFormerMemberOnlyReads(t *testing.T) {
 		t.Fatalf("the comment is in the feed: %v", w.feed.kinds)
 	}
 }
+
+// TestCurrencyNeedsMembership checks that an expense left without a currency
+// takes the group's only for its members, and that a group the caller cannot
+// book into is a mistake on groupId whether or not it exists.
+func TestCurrencyNeedsMembership(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t)
+	w.group.DefaultCurrency = "JPY"
+	missing := uuid.New()
+	for _, tc := range []struct {
+		name  string
+		actor uuid.UUID
+		group *uuid.UUID
+		want  string
+	}{
+		{"a member", w.cy, &w.group.ID, "JPY"},
+		{"someone outside groups", w.zoe, nil, "EUR"},
+		{"a former member", w.ben, &w.group.ID, ""},
+		{"a stranger", w.mal, &w.group.ID, ""},
+		{"a group that does not exist", w.ada, &missing, ""},
+	} {
+		got, err := w.svc.currency(ctx, tc.actor, tc.group, "")
+		if tc.want != "" {
+			if err != nil || got != tc.want {
+				t.Errorf("%s: want %s, got %q, %v", tc.name, tc.want, got, err)
+			}
+			continue
+		}
+		if e, ok := errs.As(err); !ok || e.Kind != errs.KindValidation || e.Field != "groupId" {
+			t.Errorf("%s: want a validation error on groupId, got %q, %v", tc.name, got, err)
+		}
+	}
+	if got, err := w.svc.currency(ctx, w.mal, &w.group.ID, "USD"); err != nil || got != "USD" {
+		t.Errorf("a given currency is kept: %q, %v", got, err)
+	}
+}
