@@ -47,18 +47,34 @@ func (r *Expenses) Create(ctx context.Context, e *expense.Expense) error {
 	if err != nil {
 		return err
 	}
-	tag, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO expenses (id, group_id, receipt_id, created_by, updated_by, created_at, updated_at, deleted_at,
-		total, tax, tip, date, next_date, kind, description, category, currency, notes, method, recurrence, items, anchor_day)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,NULLIF($22, 0)) ON CONFLICT (id) DO NOTHING`,
+	users, paid, owed, values := make([]uuid.UUID, len(e.Shares)), make([]int64, len(e.Shares)), make([]int64, len(e.Shares)), make([]string, len(e.Shares))
+	for i, s := range e.Shares {
+		users[i], paid[i], owed[i], values[i] = s.UserID, s.Paid, s.Owed, s.Value
+	}
+	// One statement writes the expense and its shares, so saving one takes a
+	// single round trip, which keeps large imports short. The shares are
+	// written only when the expense is.
+	var created int
+	err = r.db.Q(ctx).QueryRow(ctx, `WITH created AS (
+			INSERT INTO expenses (id, group_id, receipt_id, created_by, updated_by, created_at, updated_at, deleted_at,
+				total, tax, tip, date, next_date, kind, description, category, currency, notes, method, recurrence, items, anchor_day)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,NULLIF($22, 0))
+			ON CONFLICT (id) DO NOTHING RETURNING id),
+		shares AS (
+			INSERT INTO expense_shares (expense_id, user_id, paid, owed, value)
+			SELECT created.id, s.user_id, s.paid, s.owed, s.value FROM created,
+				unnest($23::uuid[], $24::bigint[], $25::bigint[], $26::text[]) AS s(user_id, paid, owed, value))
+		SELECT count(*) FROM created`,
 		e.ID, e.GroupID, e.ReceiptID, e.CreatedBy, e.UpdatedBy, e.CreatedAt, e.UpdatedAt, e.DeletedAt,
-		e.Total, e.Tax, e.Tip, e.Date, e.NextDate, e.Kind, e.Description, e.Category, e.Currency, e.Notes, e.Method, e.Recurrence, items, e.AnchorDay)
+		e.Total, e.Tax, e.Tip, e.Date, e.NextDate, e.Kind, e.Description, e.Category, e.Currency, e.Notes, e.Method, e.Recurrence, items, e.AnchorDay,
+		users, paid, owed, values).Scan(&created)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	if created == 0 {
 		return errs.Taken()
 	}
-	return r.writeShares(ctx, e)
+	return nil
 }
 
 func itemsJSON(items []expense.Item) ([]byte, error) {
