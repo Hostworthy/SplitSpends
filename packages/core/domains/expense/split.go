@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/big"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -377,11 +378,17 @@ func integer(s, field string) (int64, error) {
 	return v, nil
 }
 
-// ParseDecimal converts a decimal string such as "12.5" to minor units for a
-// currency exponent, rounding half away from zero.
+// decimalText is a plain decimal number: no exponent, fraction or base prefix.
+var decimalText = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)$`)
+
+// ParseDecimal converts a decimal string such as "12.5" or "1,234.50" to minor
+// units for a currency exponent, rounding half away from zero. It reads AI
+// answers, so it accepts only plain decimals ("1e3" is not a thousand) and
+// rejects amounts beyond MaxTotal, which keeps sums of them far from
+// overflowing.
 func ParseDecimal(s string, exponent int) (int64, bool) {
 	s = strings.TrimSpace(strings.ReplaceAll(s, ",", ""))
-	if s == "" {
+	if !decimalText.MatchString(s) {
 		return 0, false
 	}
 	r, ok := new(big.Rat).SetString(s)
@@ -402,5 +409,9 @@ func ParseDecimal(s string, exponent int) (int64, bool) {
 	if !q.IsInt64() {
 		return 0, false
 	}
-	return q.Int64(), true
+	v := q.Int64()
+	if v > MaxTotal || v < -MaxTotal {
+		return 0, false
+	}
+	return v, true
 }

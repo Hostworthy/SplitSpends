@@ -239,7 +239,9 @@ func build(k *known, req Request, ext ports.DraftExtract, today, currency string
 			return 0
 		}
 		if rate != nil {
-			v, _ = rate.Convert(rates.Amount{Currency: source, Minor: v}, currency)
+			if v, ok = rate.Convert(rates.Amount{Currency: source, Minor: v}, currency); !ok || v > expense.MaxTotal {
+				return 0
+			}
 		}
 		return v
 	}
@@ -285,6 +287,14 @@ func build(k *known, req Request, ext ports.DraftExtract, today, currency string
 		return out
 	}
 	participants := resolve(ext.ParticipantIDs)
+	// The group's default split (say rent 60/40) applies when the
+	// instructions name nobody, as it does in the editor and in MCP.
+	var preset *group.DefaultSplit
+	if g != nil && len(participants) == 0 {
+		if p := g.Effective(); p != nil && p.Method != group.SplitEqual {
+			preset = p
+		}
+	}
 	if len(participants) == 0 {
 		if g != nil {
 			participants = append(participants, g.Members...)
@@ -314,18 +324,26 @@ func build(k *known, req Request, ext ports.DraftExtract, today, currency string
 		}
 		d.Tax, d.Tip = amount(ext.Tax), amount(ext.Tip)
 		d.Total = sum + d.Tax + d.Tip
-		if want := amount(ext.Amount); want > 0 && want != d.Total && len(d.Items) > 0 {
-			reconcile(d, want)
+		if want := amount(ext.Amount); want > 0 && want != d.Total && len(d.Items) > 0 && !reconcile(d, want) {
+			warn("The receipt total did not match its lines; check the amounts.")
 		}
 		if len(d.Items) == 0 {
 			d.Method = expense.MethodEqual
-			warn("Could not read any items, so the total is split equally.")
+			if preset != nil {
+				warn("Could not read any items, so the group's default split is used.")
+			} else {
+				warn("Could not read any items, so the total is split equally.")
+			}
 		}
 	}
 	if d.Method == expense.MethodEqual {
 		d.Total = amount(ext.Amount)
-		for _, id := range participants {
-			d.Splits = append(d.Splits, expense.SplitInput{UserID: id})
+		if preset != nil {
+			d.Method, d.Splits = expense.Method(preset.Method), defaults(preset, g.Members)
+		} else {
+			for _, id := range participants {
+				d.Splits = append(d.Splits, expense.SplitInput{UserID: id})
+			}
 		}
 	}
 	if d.Total == 0 {
@@ -357,6 +375,20 @@ func build(k *known, req Request, ext ports.DraftExtract, today, currency string
 	return d, nil
 }
 
+// defaults returns the splits a percent or shares default gives the members,
+// in member order. A member whose value is zero takes no part.
+func defaults(preset *group.DefaultSplit, members []uuid.UUID) []expense.SplitInput {
+	splits := []expense.SplitInput{}
+	for _, id := range members {
+		v := preset.Values[id]
+		if r, ok := money.Decimal(v); ok && r.Sign() == 0 {
+			continue
+		}
+		splits = append(splits, expense.SplitInput{UserID: id, Value: v})
+	}
+	return splits
+}
+
 // unitRate is how much one unit of from buys in to, to four decimals.
 func unitRate(t *rates.Table, from, to string) string {
 	rf, _ := t.Rate(from)
@@ -364,29 +396,21 @@ func unitRate(t *rates.Table, from, to string) string {
 	return new(big.Rat).Quo(rt, rf).FloatString(4)
 }
 
-// reconcile makes items + tax + tip equal the receipt total: a gap goes to
-// tax, and a negative remainder (an order discount) is spread over items.
-func reconcile(d *Draft, total int64) {
-	var items int64
-	for _, it := range d.Items {
-		items += it.Amount
+// reconcile makes items + tax + tip equal the receipt total with the rule
+// scans use, and reports false, leaving the draft as read, when the items
+// cannot reach it.
+func reconcile(d *Draft, total int64) bool {
+	amounts := make([]int64, len(d.Items))
+	for i, it := range d.Items {
+		amounts[i] = it.Amount
 	}
-	d.Tax = total - items - d.Tip
-	if d.Tax < 0 {
-		weights := make([]*big.Rat, len(d.Items))
-		for i, it := range d.Items {
-			weights[i] = big.NewRat(it.Amount, 1)
-		}
-		if parts, err := money.Allocate(d.Tax, weights); err == nil {
-			for i := range d.Items {
-				d.Items[i].Amount = max(d.Items[i].Amount+parts[i], 1)
-			}
-		}
-		d.Tax = 0
+	fixed, tax, ok := receipt.Reconcile(amounts, d.Tip, total)
+	if !ok {
+		return false
 	}
-	d.Total = 0
-	for _, it := range d.Items {
-		d.Total += it.Amount
+	for i := range d.Items {
+		d.Items[i].Amount = fixed[i]
 	}
-	d.Total += d.Tax + d.Tip
+	d.Tax, d.Total = tax, total
+	return true
 }

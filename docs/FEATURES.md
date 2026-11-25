@@ -27,7 +27,7 @@ Several of these sit behind Splitwise Pro today (receipt scanning, itemization, 
 | Non-group expenses with friends | Yes | Yes |
 | Multiple payers | Yes | Yes |
 | Split equally, exact, percent, shares, adjustment | Yes | Yes |
-| Default split per group (for example rent 60/40) | Pro | Yes, equal, percent or shares; set in group settings, used by new expenses on the server, on the device and in MCP |
+| Default split per group (for example rent 60/40) | Pro | Yes, equal, percent or shares; set in group settings, used by new expenses in the app, in MCP and in AI drafts |
 | Itemized split with tax and tip | Pro | Yes |
 | Receipt photo attachment | Yes | Yes |
 | AI receipt scanning | Pro | Yes, when the host configures an AI provider |
