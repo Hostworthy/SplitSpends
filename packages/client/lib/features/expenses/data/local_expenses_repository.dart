@@ -8,6 +8,7 @@ import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/core/storage/local_ledger.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
+import 'package:splitspends/features/expenses/domain/normalized.dart';
 
 /// On-device expenses and payments, computed with the server's rules
 /// (lib/core/ledger). Comments need a server.
@@ -20,19 +21,11 @@ class LocalExpensesRepository implements ExpensesRepository {
     'Comments are shared through a server. Connect to one to use them.',
   );
 
-  Expense _view(JsonMap e, String meId) {
-    final mine = (e['shares'] as List)
-        .cast<JsonMap>()
-        .where((s) => s['userId'] == meId)
-        .firstOrNull;
-    return Expense.fromJson({
-      ...e,
-      'commentCount': 0,
-      'myBalance': mine == null
-          ? 0
-          : (mine['paid'] as int) - (mine['owed'] as int),
-    });
-  }
+  Expense _view(JsonMap e, String meId) => Expense.fromJson({
+    ...e,
+    'commentCount': 0,
+    'myBalance': myBalance(e, meId),
+  });
 
   @override
   Future<PageResult<Expense>> list(
@@ -99,40 +92,15 @@ class LocalExpensesRepository implements ExpensesRepository {
     JsonMap? existing,
   }) async {
     final me = await _ledger.me(c);
-    final NormalizedExpense n;
-    try {
-      n = normalize(
-        ExpenseRequest(
-          description: input.description,
-          currency: input.currency,
-          total: input.total,
-          date: input.date,
-          category: input.category ?? '',
-          notes: input.notes,
-          method: input.splitMethod.wire,
-          payers: [
-            for (final p in input.payers) PayerInput(p.userId, p.amount),
-          ],
-          splits: [
-            for (final s in input.splits) SplitValueInput(s.userId, s.value),
-          ],
-          items: [
-            for (final i in input.items) ItemInput(i.name, i.amount, i.userIds),
-          ],
-          tax: input.tax,
-          tip: input.tip,
-          recurrence: input.recurrence.name,
-        ),
-        today: _ledger.today(),
-        currencies: _ledger.currencies,
-        categories: await _ledger.usableCategories(
-          c,
-          kept: existing?['category'] as String?,
-        ),
-      );
-    } on LedgerError catch (error) {
-      throw ApiError.validation(error.field, error.message);
-    }
+    final n = normalized(
+      input,
+      today: _ledger.today(),
+      currencies: _ledger.currencies,
+      categories: await _ledger.usableCategories(
+        c,
+        kept: existing?['category'] as String?,
+      ),
+    );
     final involved = {for (final s in n.shares) s.userId};
     // The group of an expense cannot change, so an edit is checked against
     // the group it was booked in, like on the server.
@@ -180,25 +148,7 @@ class LocalExpensesRepository implements ExpensesRepository {
         : n.date.day;
     final next = nextOccurrence(n.recurrence, n.date, day);
     return {
-      'id': id,
-      'groupId': groupId,
-      'kind': kind,
-      'description': n.description,
-      'category': n.category,
-      'currency': n.currency,
-      'total': n.total,
-      'date': formatDay(n.date),
-      'notes': n.notes,
-      'splitMethod': n.method,
-      'shares': [
-        for (final s in n.shares)
-          {
-            'userId': s.userId,
-            'paid': s.paid,
-            'owed': s.owed,
-            'value': s.value,
-          },
-      ],
+      ...expenseJson(n, id: id, groupId: groupId, kind: kind),
       // The original split input, so the expense can be re-sent as-is
       // (import to a server, editing).
       'payers': [
@@ -208,14 +158,7 @@ class LocalExpensesRepository implements ExpensesRepository {
         if (n.method != 'itemized')
           for (final s in input.splits) {'userId': s.userId, 'value': s.value},
       ],
-      'items': [
-        for (final i in n.items)
-          {'name': i.name, 'amount': i.amount, 'userIds': i.userIds},
-      ],
-      'tax': n.tax,
-      'tip': n.tip,
       'receiptId': null,
-      'recurrence': n.recurrence,
       'nextDate': next == null ? null : formatDay(next),
       'anchorDay': next == null ? null : day,
       'createdBy': existing?['createdBy'] ?? me.id,
@@ -379,17 +322,14 @@ class LocalExpensesRepository implements ExpensesRepository {
           'You must be part of a payment outside a group.',
         );
       }
-      final input = ExpenseInput(
+      final input = ExpenseInput.payment(
         groupId: groupId,
-        description: 'Payment',
+        from: fromUserId,
+        to: toUserId,
+        amount: amount,
         currency: currency,
-        total: amount,
         date: date ?? formatDay(_ledger.today()),
-        category: paymentCategory,
-        notes: notes ?? '',
-        splitMethod: SplitMethod.exact,
-        payers: [Payer(userId: fromUserId, amount: amount)],
-        splits: [SplitEntry(userId: toUserId, value: '$amount')],
+        notes: notes,
       );
       final e = await _build(txn, input, id: paymentId, kind: 'payment');
       await Stores.expenses.record(paymentId).put(txn, e);

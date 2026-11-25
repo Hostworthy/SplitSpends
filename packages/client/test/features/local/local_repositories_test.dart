@@ -12,6 +12,7 @@ import 'package:splitspends/features/activity/data/local_activity_repository.dar
 import 'package:splitspends/features/expenses/data/local_expenses_repository.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
+import 'package:splitspends/features/expenses/domain/optimistic.dart';
 import 'package:splitspends/features/friends/data/local_friends_repository.dart';
 import 'package:splitspends/features/groups/data/local_groups_repository.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
@@ -384,6 +385,83 @@ void main() {
       offset: 2,
     );
     await lists(const ExpenseQuery(), [], total: 4, offset: 4);
+  });
+
+  test('offline and on-device results agree for every split method', () async {
+    final expenses = LocalExpensesRepository(ledger);
+    final friends = LocalFriendsRepository(ledger);
+    final sam = (await friends.add(name: 'Sam')).user.id;
+    final kim = (await friends.add(name: 'Kim')).user.id;
+    for (final method in SplitMethod.values) {
+      final input = ExpenseInput(
+        description: 'Dinner',
+        currency: 'EUR',
+        total: 1000,
+        date: '2026-11-20',
+        category: 'food.dining',
+        splitMethod: method,
+        recurrence: Recurrence.monthly,
+        payers: [
+          const Payer(userId: meId, amount: 700),
+          Payer(userId: sam, amount: 300),
+        ],
+        splits: [
+          SplitEntry(
+            userId: meId,
+            value: switch (method) {
+              SplitMethod.exact => '500',
+              SplitMethod.percent => '50',
+              SplitMethod.shares => '2',
+              SplitMethod.adjustment => '100',
+              _ => null,
+            },
+          ),
+          SplitEntry(
+            userId: sam,
+            value: switch (method) {
+              SplitMethod.exact => '200',
+              SplitMethod.percent => '20',
+              SplitMethod.shares => '1',
+              _ => null,
+            },
+          ),
+          SplitEntry(
+            userId: kim,
+            value: switch (method) {
+              SplitMethod.exact => '300',
+              SplitMethod.percent => '30',
+              SplitMethod.shares => '1',
+              _ => null,
+            },
+          ),
+        ],
+        items: [
+          LineItem(name: 'Pasta', amount: 600, userIds: [meId, sam]),
+          LineItem(name: 'Wine', amount: 300, userIds: [kim]),
+        ],
+        tax: 60,
+        tip: 40,
+      );
+      final local = await expenses.create(input);
+      final offline = optimisticExpense(
+        input,
+        id: local.id,
+        meId: meId,
+        today: ledger.today(),
+      );
+      List<Object?> shape(Expense e) => [
+        e.kind,
+        e.splitMethod,
+        e.category,
+        [for (final s in e.shares) (s.userId, s.paid, s.owed, s.value)],
+        [for (final i in e.items) (i.name, i.amount, i.userIds.join(','))],
+        e.tax,
+        e.tip,
+        e.recurrence,
+        e.myBalance,
+      ];
+      expect(shape(offline), shape(local), reason: method.wire);
+    }
   });
 
   test('restore is refused after a participant left the group', () async {
