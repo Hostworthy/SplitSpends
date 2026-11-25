@@ -3,9 +3,13 @@ package routes
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"mime/multipart"
 	"net/http"
+	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
@@ -97,5 +101,59 @@ func TestUploadRefusals(t *testing.T) {
 	var stored int
 	if err := s.DB.Pool.QueryRow(context.Background(), `SELECT count(*) FROM receipts`).Scan(&stored); err != nil || stored != 0 {
 		t.Fatalf("nothing may be stored: %d receipts, %v", stored, err)
+	}
+}
+
+// TestLostReceiptImage checks that a receipt whose image is gone from
+// storage answers a plain 404 error, with none of the image's headers.
+func TestLostReceiptImage(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	rc := data[platform.Receipt](t, s.upload(t, platform.Prefix+"/receipts", ada.Token, pixel(t)).want(t, http.StatusCreated))
+	path := platform.Prefix + "/receipts/" + rc.ID
+	ok := s.call(t, http.MethodGet, path, ada.Token, nil).want(t, http.StatusOK)
+	if ct := ok.header.Get("Content-Type"); ct != "image/png" || !bytes.Equal(ok.body, pixel(t)) {
+		t.Fatalf("want the image back, got %s %d bytes", ct, len(ok.body))
+	}
+
+	ctx := context.Background()
+	var key string
+	if err := s.DB.Pool.QueryRow(ctx, `SELECT storage_key FROM receipts WHERE id = $1`, rc.ID).Scan(&key); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Blobs.Delete(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	res := s.call(t, http.MethodGet, path, ada.Token, nil).want(t, http.StatusNotFound)
+	if e := res.failure(t); e.Code != "NOT_FOUND" {
+		t.Fatalf("want NOT_FOUND, got %+v", e)
+	}
+	if ct := res.header.Get("Content-Type"); ct != "application/json; charset=utf-8" {
+		t.Fatalf("want a JSON error, got Content-Type %q", ct)
+	}
+	if cc := res.header.Get("Cache-Control"); strings.Contains(cc, "max-age") {
+		t.Fatalf("an error must not be cached, got Cache-Control %q", cc)
+	}
+}
+
+// unreadable is a blob store whose images open but cannot be read.
+type unreadable struct{ ports.BlobStore }
+
+func (unreadable) Open(context.Context, string) (io.ReadCloser, error) {
+	return io.NopCloser(iotest.ErrReader(errors.New("storage.read.failed"))), nil
+}
+
+// TestUnreadableReceiptImage checks that an image the store cannot read
+// answers an error, with none of the image's headers.
+func TestUnreadableReceiptImage(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{Blobs: func(b ports.BlobStore) ports.BlobStore { return unreadable{b} }})
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	rc := data[platform.Receipt](t, s.upload(t, platform.Prefix+"/receipts", ada.Token, pixel(t)).want(t, http.StatusCreated))
+	res := s.call(t, http.MethodGet, platform.Prefix+"/receipts/"+rc.ID, ada.Token, nil).want(t, http.StatusInternalServerError)
+	if e := res.failure(t); e.Code != "INTERNAL" {
+		t.Fatalf("want INTERNAL, got %+v", e)
+	}
+	if ct, cc := res.header.Get("Content-Type"), res.header.Get("Cache-Control"); ct != "application/json; charset=utf-8" || strings.Contains(cc, "max-age") {
+		t.Fatalf("want an uncached JSON error, got Content-Type %q, Cache-Control %q", ct, cc)
 	}
 }

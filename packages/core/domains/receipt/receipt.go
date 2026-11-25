@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"io/fs"
 	"math/big"
 	"slices"
 	"strings"
@@ -226,6 +227,11 @@ func (s *Service) Open(ctx context.Context, actor, id uuid.UUID) (*Receipt, io.R
 		return nil, nil, err
 	}
 	body, err := s.blobs.Open(ctx, r.StorageKey)
+	if errors.Is(err, fs.ErrNotExist) {
+		// The image was lost, for example with a restored database
+		// whose files were not restored. Like the row, it is gone.
+		return nil, nil, errs.NotFound("Receipt")
+	}
 	if err != nil {
 		return nil, nil, err
 	}

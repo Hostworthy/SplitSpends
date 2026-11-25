@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"bufio"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -9,6 +11,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/assist"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/packages/middleware"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 )
 
@@ -44,12 +47,22 @@ func (a *API) getReceipt(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	defer body.Close()
+	// A store that cannot read the image fails here, while an error can
+	// still be answered in place of the image.
+	image := bufio.NewReader(body)
+	if _, err := image.Peek(1); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
 	w.Header().Set("Content-Type", rc.ContentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(rc.Size, 10))
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'")
-	_, err = io.Copy(w, body)
-	return err
+	if _, err := io.Copy(w, image); err != nil {
+		// Part of the image is sent, so an error body would only be added
+		// to it; the response falls short of its length instead.
+		a.log.Warn("routes.receipt.stream.failed", "requestId", middleware.RequestID(r.Context()), "receiptId", rc.ID, "error", err)
+	}
+	return nil
 }
 
 func (a *API) scanReceipt(w http.ResponseWriter, r *http.Request) error {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"strings"
 
 	"github.com/minio/minio-go/v7"
@@ -76,6 +77,16 @@ func (s *S3) Put(ctx context.Context, key string, r io.Reader) error {
 func (s *S3) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 	obj, err := s.client.GetObject(ctx, s.bucket, s.prefix+key, minio.GetObjectOptions{})
 	if err != nil {
+		return nil, fmt.Errorf("storage.s3.get.failed: %w", err)
+	}
+	// GetObject only connects on the first read; asking for the object's
+	// details now lets a missing object fail here, before a caller has
+	// started its response.
+	if _, err := obj.Stat(); err != nil {
+		_ = obj.Close()
+		if minio.ToErrorResponse(err).Code == minio.NoSuchKey {
+			return nil, &fs.PathError{Op: "open", Path: key, Err: fs.ErrNotExist}
+		}
 		return nil, fmt.Errorf("storage.s3.get.failed: %w", err)
 	}
 	return obj, nil

@@ -3,37 +3,20 @@ package storage
 import (
 	"bytes"
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Hostworthy/SplitSpends/packages/storage/storagetest"
 )
 
-func TestLocalStoresInsideRoot(t *testing.T) {
-	ctx := context.Background()
+func TestLocalContract(t *testing.T) {
 	l, err := NewLocal(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := l.Put(ctx, "receipts/2026/03/a.png", strings.NewReader("image")); err != nil {
-		t.Fatal(err)
-	}
-	body, err := l.Open(ctx, "receipts/2026/03/a.png")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := io.ReadAll(body)
-	_ = body.Close()
-	if err != nil || string(got) != "image" {
-		t.Fatalf("want the stored bytes back, got %q, %v", got, err)
-	}
-	if err := l.Delete(ctx, "receipts/2026/03/a.png"); err != nil {
-		t.Fatal(err)
-	}
-	if err := l.Delete(ctx, "receipts/2026/03/a.png"); err != nil {
-		t.Fatalf("deleting a missing key succeeds, got %v", err)
-	}
+	storagetest.Run(t, l)
 }
 
 // TestLocalKeepsKeysInsideRoot checks that no key reaches a file outside

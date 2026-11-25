@@ -3,10 +3,8 @@ package bootstrap_test
 import (
 	"context"
 	"errors"
-	"io"
 	"io/fs"
 	"log/slog"
-	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +17,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
+	"github.com/Hostworthy/SplitSpends/packages/storage/storagetest"
 	"github.com/google/uuid"
 )
 
@@ -204,38 +203,10 @@ func TestReceiptAccess(t *testing.T) {
 	check("deleted expense", shared, map[string]uuid.UUID{"Cy": cy, "Mal": mal}, false)
 }
 
-// TestBlobs checks the PostgreSQL blob store keeps, replaces and removes
-// images by key.
+// TestBlobs checks the PostgreSQL blob store keeps the blob store contract.
 func TestBlobs(t *testing.T) {
-	ctx := context.Background()
 	env := bootstraptest.Open(t, bootstraptest.Options{})
-	blobs := repositories.NewBlobs(env.DB)
-	read := func(key string) (string, error) {
-		body, err := blobs.Open(ctx, key)
-		if err != nil {
-			return "", err
-		}
-		defer body.Close()
-		data, err := io.ReadAll(body)
-		return string(data), err
-	}
-	for _, data := range []string{"first", "second"} {
-		if err := blobs.Put(ctx, "receipts/a.png", strings.NewReader(data)); err != nil {
-			t.Fatal(err)
-		}
-		if got, err := read("receipts/a.png"); err != nil || got != data {
-			t.Fatalf("want %q back, got %q, %v", data, got, err)
-		}
-	}
-	if err := blobs.Delete(ctx, "receipts/a.png"); err != nil {
-		t.Fatal(err)
-	}
-	if err := blobs.Delete(ctx, "receipts/a.png"); err != nil {
-		t.Fatalf("deleting a missing key succeeds, got %v", err)
-	}
-	if _, err := read("receipts/a.png"); !errs.Is(err, errs.KindNotFound) {
-		t.Fatalf("a removed image is not found, got %v", err)
-	}
+	storagetest.Run(t, repositories.NewBlobs(env.DB))
 }
 
 // drafts is an AI reader that counts the drafts it is asked for.

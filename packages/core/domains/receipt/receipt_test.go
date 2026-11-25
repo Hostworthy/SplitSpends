@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"slices"
 	"strings"
 	"testing"
@@ -212,7 +213,7 @@ func (b *blobs) Put(context.Context, string, io.Reader) error {
 }
 
 func (b *blobs) Open(context.Context, string) (io.ReadCloser, error) {
-	return nil, errs.NotFound("File")
+	return nil, fs.ErrNotExist
 }
 
 func (b *blobs) Delete(context.Context, string) error { return b.remove }
@@ -350,7 +351,7 @@ func (b stored) Put(_ context.Context, key string, r io.Reader) error {
 func (b stored) Open(_ context.Context, key string) (io.ReadCloser, error) {
 	data, ok := b[key]
 	if !ok {
-		return nil, errs.NotFound("File")
+		return nil, &fs.PathError{Op: "open", Path: key, Err: fs.ErrNotExist}
 	}
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
@@ -457,5 +458,25 @@ func TestScanChecksCurrency(t *testing.T) {
 		if got := ai.calls[len(ai.calls)-1].Currency; got != tc.want {
 			t.Errorf("%q: want %q passed to the reader, got %q", tc.in, tc.want, got)
 		}
+	}
+}
+
+// TestOpenLostImage checks that a receipt whose image is gone from storage
+// is not found, like a receipt that does not exist.
+func TestOpenLostImage(t *testing.T) {
+	ctx := context.Background()
+	ada := uuid.New()
+	images := stored{}
+	s := NewService(&shown{}, images, &reader{}, noTx{}, clock.Fixed{At: time.Now()})
+	r, err := s.Upload(ctx, ada, jpeg(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(images, r.StorageKey)
+	if _, _, err := s.Open(ctx, ada, r.ID); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("open: want not found, got %v", err)
+	}
+	if _, err := s.Scan(ctx, ada, r.ID, ""); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("scan: want not found, got %v", err)
 	}
 }
