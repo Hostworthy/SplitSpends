@@ -31,6 +31,9 @@ func (k Kind) valid() bool {
 	return false
 }
 
+// MaxMembers is how many people a group can have, the creator included.
+const MaxMembers = 100
+
 var colorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 // Group is a set of people who share expenses.

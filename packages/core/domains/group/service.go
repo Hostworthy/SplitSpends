@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
@@ -90,6 +91,9 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 			return nil, err
 		}
 	}
+	if 1+len(in.Members)+len(in.People) > MaxMembers {
+		return nil, full()
+	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
 		return nil, err
@@ -171,6 +175,10 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		}
 	}
 	return s.View(ctx, actor, g.ID)
+}
+
+func full() error {
+	return errs.Validation("members", fmt.Sprintf("A group can have at most %d members.", MaxMembers))
 }
 
 func (s *Service) notifyAdded(ctx context.Context, u, by *user.User, g *Group) {
@@ -297,6 +305,9 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 	if err != nil {
 		return nil, err
 	}
+	if len(g.Members) >= MaxMembers {
+		return nil, full()
+	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
 		return nil, err
@@ -339,6 +350,9 @@ func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) 
 	}
 	if g.HasMember(actor) {
 		return s.view(ctx, actor, g)
+	}
+	if len(g.Members) >= MaxMembers {
+		return nil, errs.Conflict(fmt.Sprintf("This group already has %d members, the most a group can have.", MaxMembers))
 	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {

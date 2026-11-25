@@ -112,3 +112,52 @@ func TestSocialEmailIsRateLimited(t *testing.T) {
 		t.Fatalf("reminders are allowed again the next day: %v", err)
 	}
 }
+
+// TestCreateGroupMemberLimit checks that a group holds at most
+// group.MaxMembers people, however they arrive, and that a group refused for
+// its size creates and invites nobody.
+func TestCreateGroupMemberLimit(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	cara := env.SignIn(t, "cara@example.com", "Cara").User.ID
+	users := func() int {
+		var n int
+		if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	before := users()
+
+	crowd := make([]group.Invitee, group.MaxMembers)
+	for i := range crowd {
+		crowd[i] = group.Invitee{Email: fmt.Sprintf("p%d@example.com", i)}
+	}
+	name := "Crowd"
+	_, err := svc.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name}, Members: crowd})
+	wantField(t, err, "members")
+	if n := users(); n != before {
+		t.Fatalf("a refused group must create nobody, got %d new people", n-before)
+	}
+	if got := env.Notifier.Invites(); len(got) != 0 {
+		t.Fatalf("a refused group must invite nobody, got %d invitations", len(got))
+	}
+
+	for i := range crowd[:group.MaxMembers-1] {
+		crowd[i] = group.Invitee{Name: fmt.Sprintf("Person %d", i)}
+	}
+	v, err := svc.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name}, Members: crowd[:group.MaxMembers-1]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Members) != group.MaxMembers {
+		t.Fatalf("want a full group of %d, got %d", group.MaxMembers, len(v.Members))
+	}
+	_, err = svc.Groups.AddMember(ctx, ada, v.ID, group.Invitee{Name: "One more"})
+	wantField(t, err, "members")
+	if _, err := svc.Groups.Join(ctx, cara, v.ID); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("joining a full group must be refused, got %v", err)
+	}
+}

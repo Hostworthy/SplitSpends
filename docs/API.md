@@ -193,6 +193,8 @@ Adding people sends email, so it is limited. `POST /friends`, `PATCH /friends/{u
 | GET | `/groups/{groupId}/invites` | | List of active (unexpired) `Invite`, without `token` and `url` |
 | DELETE | `/groups/{groupId}/invites/{inviteId}` | | 204; the link stops working |
 
+A group has at most 100 members, its creator included. `POST /groups` with more `members` and `POST /groups/{groupId}/members` on a full group answer 422 `VALIDATION_ERROR` on `members`; joining a full group through an invite link answers 409 `CONFLICT`.
+
 ### Invite Links
 
 Any group member can create a link that lets anyone who has it join the group. Links last 14 days and can be used many times until they expire or are revoked. The token is 32 random bytes in base64url; the server stores only its SHA-256 hash. `url` is `BASE_URL/join/<token>`, which opens the web app (QR codes encode it).
