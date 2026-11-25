@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap"
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/google/uuid"
@@ -67,5 +68,45 @@ func TestJobsRunPastFailures(t *testing.T) {
 	}
 	if sessions != 0 {
 		t.Fatalf("expired sessions must be removed although a series failed, %d left", sessions)
+	}
+}
+
+// TestJobsPruneQuotas checks that the jobs remove budgets whose window has
+// ended, which a new use would start afresh anyway, and keep running ones.
+func TestJobsPruneQuotas(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	quotas := repositories.NewQuotas(env.DB)
+	take := func(key string) {
+		t.Helper()
+		if ok, err := quotas.Take(ctx, key, 3, 24*time.Hour, env.Clock.Now()); !ok || err != nil {
+			t.Fatalf("take %s: %v, %v", key, ok, err)
+		}
+	}
+	take("ended")
+	env.Clock.Add(25 * time.Hour)
+	take("running")
+
+	rt := &bootstrap.Runtime{Config: env.Config, Log: slog.New(slog.DiscardHandler), Services: env.Services}
+	if err := rt.RunJobsOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	rows, err := env.DB.Pool.Query(ctx, `SELECT key FROM quotas ORDER BY key`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, key)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 1 || keys[0] != "running" {
+		t.Fatalf("only the running budget must stay, got %v", keys)
 	}
 }

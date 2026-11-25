@@ -142,6 +142,9 @@ jobs:
         run: for d in packages/ledger packages/client apps/apk apps/ios apps/web; do (cd $d && flutter analyze) || exit 1; done
       - name: Web fallback fonts match the Flutter SDK
         run: scripts/fonts/fallback.sh check
+      # This job has both gofmt and dart, which the hook's cases need.
+      - name: Pre-commit hook
+        run: scripts/ci/pre-commit-test.sh
       # Node.js (on the runner image) runs the ledger as compiled JavaScript,
       # with the integer rules of the web build.
       - name: Ledger tests on the VM and under Node.js

@@ -1,8 +1,10 @@
 package group
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
@@ -164,9 +166,6 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	if err != nil {
 		return nil, err
 	}
-	if err := s.room(ctx, actor, me); err != nil {
-		return nil, err
-	}
 	now := s.clock.Now()
 	g, split, err := start(in, me, now)
 	if err != nil {
@@ -177,12 +176,19 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		if err := s.repo.Create(ctx, g); err != nil {
 			return err
 		}
-		if err := s.repo.AddMember(ctx, g.ID, actor, now); err != nil {
+		var people []*user.User
+		if people, added, invited, err = s.resolve(ctx, me, in); err != nil {
 			return err
 		}
-		g.Members = []uuid.UUID{actor}
-		if added, invited, err = s.populate(ctx, g, me, in, now); err != nil {
+		people = append([]*user.User{me}, people...)
+		if err := s.rooms(ctx, actor, people); err != nil {
 			return err
+		}
+		for _, u := range people {
+			if err := s.repo.AddMember(ctx, g.ID, u.ID, now); err != nil {
+				return err
+			}
+			g.Members = append(g.Members, u.ID)
 		}
 		if split != nil {
 			if err := g.Apply(Patch{DefaultSplit: split}, now); err != nil {
@@ -207,9 +213,7 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	for _, u := range invited {
 		s.users.SendInvite(ctx, u, me)
 	}
-	for _, u := range added {
-		s.notifyAdded(ctx, u, me, g)
-	}
+	s.notifyAdded(ctx, me, g, added...)
 	return s.View(ctx, actor, g.ID)
 }
 
@@ -236,38 +240,70 @@ func start(in CreateInput, me *user.User, now time.Time) (*Group, *DefaultSplit,
 	return g, split, nil
 }
 
-// populate adds the invitees and people of a new group, returning the
-// invitees who were added and those who got an account just now.
-func (s *Service) populate(ctx context.Context, g *Group, me *user.User, in CreateInput, now time.Time) (added, invited []*user.User, err error) {
+// resolve finds the invitees and people a new group made by me starts
+// with, each once and without me. It also returns the invitees among them
+// and those who got an account just now.
+func (s *Service) resolve(ctx context.Context, me *user.User, in CreateInput) (people, added, invited []*user.User, err error) {
+	seen := map[uuid.UUID]bool{me.ID: true}
 	for _, inv := range in.Members {
 		u, created, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if created {
 			invited = append(invited, u)
 		}
-		if g.HasMember(u.ID) {
+		if seen[u.ID] {
 			continue
 		}
-		if err := s.enroll(ctx, me.ID, g, u, now); err != nil {
-			return nil, nil, err
-		}
+		seen[u.ID] = true
+		people = append(people, u)
 		added = append(added, u)
 	}
 	for _, id := range in.People {
-		if g.HasMember(id) {
+		if seen[id] {
 			continue
 		}
 		u, err := s.users.Get(ctx, id)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		if err := s.enroll(ctx, me.ID, g, u, now); err != nil {
-			return nil, nil, err
+		seen[id] = true
+		people = append(people, u)
+	}
+	return people, added, invited, nil
+}
+
+// rooms runs room for each of people in order of id, so that requests at
+// the same time adding some of the same people wait for each other instead
+// of deadlocking.
+func (s *Service) rooms(ctx context.Context, actor uuid.UUID, people []*user.User) error {
+	sorted := slices.SortedFunc(slices.Values(people), func(a, b *user.User) int {
+		return bytes.Compare(a.ID[:], b.ID[:])
+	})
+	for _, u := range sorted {
+		if err := s.room(ctx, actor, u); err != nil {
+			return err
 		}
 	}
-	return added, invited, nil
+	return nil
+}
+
+// Reserve holds the group counts of people for the rest of the transaction
+// in ctx, taking them in order of id. A transaction that goes on to add the
+// same people to several groups calls it first: each group then finds the
+// counts it needs already held, so two such transactions wait for each
+// other instead of deadlocking.
+func (s *Service) Reserve(ctx context.Context, people []uuid.UUID) error {
+	sorted := slices.SortedFunc(slices.Values(people), func(a, b uuid.UUID) int {
+		return bytes.Compare(a[:], b[:])
+	})
+	for _, id := range slices.Compact(sorted) {
+		if _, err := s.repo.Joined(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // enroll adds u to g, unless they are in as many groups as one person may be.
@@ -283,6 +319,8 @@ func (s *Service) enroll(ctx context.Context, actor uuid.UUID, g *Group, u *user
 }
 
 // room refuses to add u to another group once they belong to MaxPerUser.
+// Inside a transaction the count holds until the transaction ends, so u
+// joining groups at the same time counts each one.
 func (s *Service) room(ctx context.Context, actor uuid.UUID, u *user.User) error {
 	n, err := s.repo.Joined(ctx, u.ID)
 	if err != nil || n < MaxPerUser {
@@ -298,22 +336,26 @@ func full() error {
 	return errs.Validation("members", fmt.Sprintf("A group can have at most %d members.", MaxMembers))
 }
 
-func (s *Service) notifyAdded(ctx context.Context, u, by *user.User, g *Group) {
+func (s *Service) notifyAdded(ctx context.Context, by *user.User, g *Group, people ...*user.User) {
 	if ports.IsQuiet(ctx) {
 		return
 	}
-	n, ok := u.Notice(user.AddedToGroup, by.Name+" added you to "+g.Name,
-		[]string{by.Name + " added you to the group “" + g.Name + "”."}, s.baseURL)
-	if !ok {
-		return
-	}
-	if n.To != "" {
-		emailed, err := s.quota.Take(ctx, "added:"+by.ID.String()+":"+u.ID.String(), MaxAddedEmails, AddedWindow, s.clock.Now())
-		if err != nil || !emailed {
-			n.To = ""
+	var notes []ports.Notification
+	for _, u := range people {
+		n, ok := u.Notice(user.AddedToGroup, by.Name+" added you to "+g.Name,
+			[]string{by.Name + " added you to the group “" + g.Name + "”."}, s.baseURL)
+		if !ok {
+			continue
 		}
+		if n.To != "" {
+			emailed, err := s.quota.Take(ctx, "added:"+by.ID.String()+":"+u.ID.String(), MaxAddedEmails, AddedWindow, s.clock.Now())
+			if err != nil || !emailed {
+				n.To = ""
+			}
+		}
+		notes = append(notes, n)
 	}
-	s.notifier.Notify(ctx, n)
+	s.notifier.Notify(ctx, notes...)
 }
 
 // Mine returns the actor's active groups with their members, without
@@ -458,6 +500,12 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 	var added *user.User
 	var invited bool
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		if g, err = s.locked(ctx, actor, id); err != nil {
+			return err
+		}
+		if len(g.Members) >= MaxMembers {
+			return full()
+		}
 		u, created, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
 		if err != nil {
 			return err
@@ -479,7 +527,7 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 	if invited {
 		s.users.SendInvite(ctx, added, me)
 	}
-	s.notifyAdded(ctx, added, me, g)
+	s.notifyAdded(ctx, me, g, added)
 	return s.view(ctx, actor, g)
 }
 
@@ -494,20 +542,31 @@ func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) 
 	if g.HasMember(actor) {
 		return s.view(ctx, actor, g)
 	}
-	if g.ArchivedAt != nil {
-		return nil, errs.Conflict(g.Name + " is archived, so nobody new can join it.")
-	}
-	if len(g.Members) >= MaxMembers {
-		return nil, errs.Conflict(fmt.Sprintf("This group already has %d members, the most a group can have.", MaxMembers))
-	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.room(ctx, actor, me); err != nil {
-		return nil, err
-	}
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		// Locked and read again so two people joining at once cannot both
+		// take the last place.
+		if _, err := s.repo.Lock(ctx, id); err != nil {
+			return err
+		}
+		if g, err = s.repo.Get(ctx, id); err != nil {
+			return err
+		}
+		if g.HasMember(actor) {
+			return nil
+		}
+		if g.ArchivedAt != nil {
+			return errs.Conflict(g.Name + " is archived, so nobody new can join it.")
+		}
+		if len(g.Members) >= MaxMembers {
+			return errs.Conflict(fmt.Sprintf("This group already has %d members, the most a group can have.", MaxMembers))
+		}
+		if err := s.room(ctx, actor, me); err != nil {
+			return err
+		}
 		if err := s.repo.AddMember(ctx, g.ID, actor, s.clock.Now()); err != nil {
 			return err
 		}
@@ -537,17 +596,10 @@ func (s *Service) RemoveMember(ctx context.Context, actor, id, member uuid.UUID)
 	return s.tx.Do(ctx, func(ctx context.Context) error {
 		// Locked so two members leaving at once cannot both pass the check,
 		// and so an expense booked meanwhile either counts in the balance or
-		// waits and is refused. The members are read again after the lock:
-		// the locking statement sees them as they were before it waited.
-		if _, err := s.repo.Lock(ctx, g.ID); err != nil {
-			return err
-		}
-		g, err := s.repo.Get(ctx, g.ID)
+		// waits and is refused.
+		g, err := s.locked(ctx, actor, g.ID)
 		if err != nil {
 			return err
-		}
-		if !g.HasMember(actor) {
-			return errs.NotFound("Group")
 		}
 		if !g.HasMember(member) {
 			return errs.NotFound("Member")
@@ -568,6 +620,24 @@ func (s *Service) RemoveMember(ctx context.Context, actor, id, member uuid.UUID)
 		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: &g.ID, Kind: activity.GroupMemberRemoved,
 			Involved: g.Members, Data: map[string]any{"groupName": g.Name, "targetName": target.Name, "targetId": target.ID.String()}})
 	})
+}
+
+// locked locks the group for the rest of the transaction in ctx and returns
+// it as it is once the lock is held, if actor is still a member. The locking
+// statement sees the members as they were before it waited, so they are read
+// again.
+func (s *Service) locked(ctx context.Context, actor, id uuid.UUID) (*Group, error) {
+	if _, err := s.repo.Lock(ctx, id); err != nil {
+		return nil, err
+	}
+	g, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !g.HasMember(actor) {
+		return nil, errs.NotFound("Group")
+	}
+	return g, nil
 }
 
 // keepsReachable refuses to remove the last member who can sign in: nobody

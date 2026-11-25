@@ -8,7 +8,7 @@ In the app, open **Account → API tokens**, create a token and copy it (it star
 
 ## Option 1: Remote (Streamable HTTP)
 
-A Split Spends server serves `POST /mcp` unless it is started with `MCP_ENABLED=false` (see [Environment](ENVIRONMENT.md)); that setting removes the endpoint and leaves the API as it is. Send the token as a bearer header. A request without one is answered `401 Unauthorized` with `WWW-Authenticate: Bearer` and the usual error envelope; an invalid or revoked token reaches the tools and comes back as a tool error asking for a new token.
+A Split Spends server serves `POST /mcp` unless it is started with `MCP_ENABLED=false` (see [Environment](ENVIRONMENT.md)); that setting removes the endpoint and leaves the API as it is. Send the token as a bearer header. A request without one is answered `401 Unauthorized` with `WWW-Authenticate: Bearer` and the usual error envelope; an invalid or revoked token reaches the tools and comes back as a tool error asking for a new token. Each client address may send 300 requests a minute to `/mcp` (`429 Too Many Requests` with the `RATE_LIMITED` envelope beyond that).
 
 Claude Code:
 

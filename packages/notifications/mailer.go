@@ -44,6 +44,10 @@ type Notifier struct {
 	cfg    Config
 	log    *slog.Logger
 	queue  chan ports.Notification
+	// codes holds login codes apart from other emails, so a backlog of
+	// notifications can neither drop nor delay one: someone is waiting
+	// for it and it expires in minutes.
+	codes chan ports.Notification
 	// drain bounds how long Close waits for queued messages, so a mail
 	// server that stopped answering cannot hold up shutdown.
 	drain time.Duration
@@ -77,7 +81,7 @@ func New(cfg Config, log *slog.Logger) (*Notifier, error) {
 
 // start makes the queue and starts its worker.
 func (n *Notifier) start(size int) {
-	n.queue, n.stop = make(chan ports.Notification, size), make(chan struct{})
+	n.queue, n.codes, n.stop = make(chan ports.Notification, size), make(chan ports.Notification, size), make(chan struct{})
 	n.done.Add(1)
 	go n.work()
 }
@@ -92,6 +96,7 @@ func (n *Notifier) Close() {
 	}
 	n.closed = true
 	close(n.queue)
+	close(n.codes)
 	n.mu.Unlock()
 	drained := make(chan struct{})
 	go func() {
@@ -110,7 +115,32 @@ func (n *Notifier) Close() {
 
 func (n *Notifier) work() {
 	defer n.done.Done()
-	for msg := range n.queue {
+	codes, queue := n.codes, n.queue
+	for codes != nil || queue != nil {
+		var msg ports.Notification
+		var ok bool
+		// A waiting login code goes first; a closed channel is set to nil
+		// so the select stops reading it.
+		select {
+		case msg, ok = <-codes:
+			if !ok {
+				codes = nil
+				continue
+			}
+		default:
+			select {
+			case msg, ok = <-codes:
+				if !ok {
+					codes = nil
+					continue
+				}
+			case msg, ok = <-queue:
+				if !ok {
+					queue = nil
+					continue
+				}
+			}
+		}
 		select {
 		case <-n.stop:
 			n.log.Warn("notifications.queue.dropped", about(msg))
@@ -140,7 +170,7 @@ func about(msg ports.Notification) slog.Attr {
 	return slog.String("subject", msg.Subject)
 }
 
-// LoginCode queues the code like any other email. Sign-in answers the same
+// LoginCode queues the code ahead of other emails. Sign-in answers the same
 // way and as quickly whether or not a code is sent, so a slow or failing
 // mail server must not show in the response; failures are logged.
 func (n *Notifier) LoginCode(ctx context.Context, to, code string, ttl time.Duration) error {
@@ -157,7 +187,14 @@ func (n *Notifier) Invite(ctx context.Context, to, inviter string) error {
 	return nil
 }
 
-func (n *Notifier) Notify(_ context.Context, msg ports.Notification) {
+func (n *Notifier) Notify(_ context.Context, msgs ...ports.Notification) {
+	for _, msg := range msgs {
+		n.post(msg)
+	}
+}
+
+// post sends msg now when the notifier is synchronous, else queues it.
+func (n *Notifier) post(msg ports.Notification) {
 	if msg.To == "" {
 		return
 	}
@@ -171,8 +208,12 @@ func (n *Notifier) Notify(_ context.Context, msg ports.Notification) {
 		n.log.Warn("notifications.queue.closed", about(msg))
 		return
 	}
+	queue := n.queue
+	if msg.Kind == loginCode {
+		queue = n.codes
+	}
 	select {
-	case n.queue <- msg:
+	case queue <- msg:
 	default:
 		n.log.Warn("notifications.queue.full", about(msg))
 	}

@@ -47,6 +47,19 @@ void main() {
     expect(form.canSave, isTrue);
   });
 
+  test('removing every payer leaves me paying the whole total', () {
+    final form = make()
+      ..description = 'Groceries'
+      ..total = 1000;
+    form.setMultiplePayers({'a': 600, 'b': 400});
+    form.setPeople(['me', 'c'], group: 'g');
+    expect(form.multiplePayers, isFalse);
+    expect(form.canSave, isTrue);
+    final payer = form.toInput().payers.single;
+    expect(payer.userId, 'me');
+    expect(payer.amount, 1000);
+  });
+
   test('loads an existing expense for editing', () {
     final form = make()
       ..load(

@@ -225,11 +225,24 @@ func (s *Service) Preview(ctx context.Context, token string) (*Preview, error) {
 // Accept adds the actor to the invite's group. Accepting again, or as a
 // member, simply returns the group.
 func (s *Service) Accept(ctx context.Context, actor uuid.UUID, token string) (*group.View, error) {
-	inv, _, err := s.find(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-	return s.groups.Join(ctx, actor, inv.GroupID)
+	var v *group.View
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		inv, _, err := s.find(ctx, token)
+		if err != nil {
+			return err
+		}
+		// The link is checked again with the group locked, so a creator
+		// removed after the first check cannot still let someone in.
+		if _, err := s.lookup.Lock(ctx, inv.GroupID); err != nil {
+			return err
+		}
+		if _, _, err := s.find(ctx, token); err != nil {
+			return err
+		}
+		v, err = s.groups.Join(ctx, actor, inv.GroupID)
+		return err
+	})
+	return v, err
 }
 
 // Cleanup removes expired invites.

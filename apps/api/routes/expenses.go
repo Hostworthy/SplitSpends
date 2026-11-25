@@ -13,6 +13,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/stats"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/money"
+	"github.com/Hostworthy/SplitSpends/packages/middleware"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 	"github.com/google/uuid"
 )
@@ -31,7 +32,7 @@ func toInput(in platform.ExpenseInput) (expense.Input, error) {
 		return out, err
 	}
 	if in.UpdatedAt != nil && *in.UpdatedAt != "" {
-		at, err := time.Parse(time.RFC3339, *in.UpdatedAt)
+		at, err := time.Parse(time.RFC3339Nano, *in.UpdatedAt)
 		if err != nil {
 			return out, errs.Validation("updatedAt", "Use the updatedAt the expense came with.")
 		}
@@ -260,7 +261,9 @@ func (a *API) exportGroup(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	cw := csv.NewWriter(w)
+	started := false
 	head := func(t expense.Table) error {
+		started = true
 		filename := strings.Map(func(r rune) rune {
 			if r == '"' || r == '\\' || r < 32 {
 				return '_'
@@ -283,11 +286,19 @@ func (a *API) exportGroup(w http.ResponseWriter, r *http.Request) error {
 		}
 		return cw.Write(cells)
 	}
-	if err := a.svc.Expenses.Export(r.Context(), me(r), id, head, row); err != nil {
-		return err
+	err = a.svc.Expenses.Export(r.Context(), me(r), id, head, row)
+	if err == nil {
+		cw.Flush()
+		err = cw.Error()
 	}
-	cw.Flush()
-	return cw.Error()
+	if err != nil && started {
+		// The file's headers, and perhaps some of its rows, are already
+		// out, so an error body would read as part of the file. Breaking
+		// off the response tells the client the download failed.
+		a.log.Error("routes.export.failed", "requestId", middleware.RequestID(r.Context()), "groupId", id, "error", err)
+		panic(http.ErrAbortHandler)
+	}
+	return err
 }
 
 // safeCell neutralises spreadsheet formula injection in text a person

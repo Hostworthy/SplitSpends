@@ -53,6 +53,40 @@ func TestSocialLimit(t *testing.T) {
 	s.call(t, http.MethodPost, friends, ben, platform.Invitee{Name: "Sam"}).want(t, http.StatusCreated)
 }
 
+// TestExpenseLimit checks that creating and editing expenses and recording
+// payments share one budget per signed-in person: the write after
+// expenseLimit in a minute is refused, while someone else can still write
+// and the same person can still import.
+func TestExpenseLimit(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	ben := s.signIn(t, "ben@example.com", "Ben")
+	g := s.group(t, ada.Token, "Trip", "ben@example.com")
+	booked := s.expense(t, ada.Token, g.ID, 1000, ada.User.ID, ada.User.ID, ben.User.ID)
+	edit := platform.ExpenseInput{GroupID: &g.ID, Description: "Groceries", Currency: "EUR", Total: 1200,
+		SplitMethod: "equal", Payers: []platform.Payer{{UserID: ada.User.ID, Amount: 1200}},
+		Splits: []platform.Split{{UserID: ada.User.ID}}}
+	path := platform.Prefix + "/expenses/" + booked.ID
+	s.call(t, http.MethodPut, path, ada.Token, edit).want(t, http.StatusOK)
+	payment := platform.PaymentInput{GroupID: &g.ID, FromUserID: ben.User.ID, ToUserID: ada.User.ID, Amount: 100, Currency: "EUR"}
+	s.call(t, http.MethodPost, platform.Prefix+"/payments", ada.Token, payment).want(t, http.StatusCreated)
+	for range expenseLimit - 3 {
+		s.expense(t, ada.Token, g.ID, 1000, ada.User.ID, ada.User.ID)
+	}
+
+	writes := []request{
+		{http.MethodPost, "/expenses", platform.ExpenseInput{GroupID: &g.ID, Description: "Taxi", Currency: "EUR", Total: 500,
+			SplitMethod: "equal", Payers: []platform.Payer{{UserID: ada.User.ID, Amount: 500}},
+			Splits: []platform.Split{{UserID: ada.User.ID}}}},
+		{http.MethodPut, "/expenses/" + booked.ID, edit},
+		{http.MethodPost, "/payments", payment},
+	}
+	s.refused(t, ada.Token, http.StatusTooManyRequests, "RATE_LIMITED", writes)
+
+	s.expense(t, ben.Token, g.ID, 1000, ben.User.ID, ben.User.ID)
+	s.call(t, http.MethodPost, platform.Prefix+"/import", ada.Token, platform.ImportRequest{MeID: uuid.NewString()}).want(t, http.StatusOK)
+}
+
 // accepting is a push service that takes every message.
 type accepting struct{}
 
@@ -95,7 +129,7 @@ func TestPushLimits(t *testing.T) {
 	s.call(t, http.MethodPost, test, ben, nil).want(t, http.StatusOK)
 }
 
-// counting is an AI reader that answers every request with an empty reading
+// counting is an AI assistant that answers every request with an empty reading
 // and counts the requests it gets.
 type counting struct{ calls atomic.Int32 }
 
@@ -115,8 +149,8 @@ func (c *counting) DraftExpense(context.Context, ports.DraftInput) (ports.DraftE
 func TestAILimit(t *testing.T) {
 	cfg := bootstraptest.Defaults()
 	cfg.AIRateLimit = 3
-	reader := &counting{}
-	s := newServer(t, bootstraptest.Options{Config: cfg, Reader: reader})
+	assistant := &counting{}
+	s := newServer(t, bootstraptest.Options{Config: cfg, Assistant: assistant})
 	ada := s.signIn(t, "ada@example.com", "Ada").Token
 	ben := s.signIn(t, "ben@example.com", "Ben").Token
 	rc := data[platform.Receipt](t, s.upload(t, platform.Prefix+"/receipts", ada, pixel(t)).want(t, http.StatusCreated))
@@ -132,7 +166,7 @@ func TestAILimit(t *testing.T) {
 	if e := s.call(t, http.MethodPost, draft, ada, platform.DraftRequest{Text: "Lunch 12.50"}).want(t, http.StatusTooManyRequests).failure(t); e.Code != "RATE_LIMITED" {
 		t.Fatalf("unexpected error %+v", e)
 	}
-	if n := reader.calls.Load(); n != 3 {
+	if n := assistant.calls.Load(); n != 3 {
 		t.Fatalf("want 3 requests to the AI provider, got %d", n)
 	}
 	s.call(t, http.MethodPost, draft, ben, platform.DraftRequest{Text: "Lunch 12.50"}).want(t, http.StatusOK)

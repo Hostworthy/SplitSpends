@@ -448,7 +448,9 @@ type ExpenseInput struct {
 	ReceiptID   *string `json:"receiptId,omitempty"`
 	Recurrence  string  `json:"recurrence,omitempty"`
 	// UpdatedAt, on PUT, is the updatedAt of the expense the edit started
-	// from. The server answers CONFLICT when the expense has changed since.
+	// from, sent back unchanged (it has fractional seconds). The server
+	// answers CONFLICT when the expense has changed since, unless the edit
+	// would leave it as it now is.
 	UpdatedAt *string `json:"updatedAt,omitempty"`
 }
 

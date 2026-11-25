@@ -203,9 +203,17 @@ func (r *Groups) ForUser(ctx context.Context, userID uuid.UUID, archived bool) (
 	return collect(rows, scanGroup)
 }
 
+// joinedLocks is the first key of the transaction advisory locks taken per
+// person while they are added to a group.
+const joinedLocks = 1_384_206
+
 func (r *Groups) Joined(ctx context.Context, userID uuid.UUID) (int, error) {
+	q := r.db.Q(ctx)
+	if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, joinedLocks, userID.String()); err != nil {
+		return 0, err
+	}
 	var n int
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM group_members WHERE user_id = $1 AND left_at IS NULL`, userID).Scan(&n)
+	err := q.QueryRow(ctx, `SELECT count(*) FROM group_members WHERE user_id = $1 AND left_at IS NULL`, userID).Scan(&n)
 	return n, err
 }
 
@@ -248,7 +256,10 @@ func (r *Receipts) Get(ctx context.Context, id uuid.UUID) (*receipt.Receipt, err
 
 func (r *Receipts) Owned(ctx context.Context, id, userID uuid.UUID) (bool, error) {
 	var ok bool
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM receipts WHERE id=$1 AND uploaded_by=$2)`, id, userID).Scan(&ok)
+	err := r.db.Q(ctx).QueryRow(ctx, `SELECT true FROM receipts WHERE id=$1 AND uploaded_by=$2 FOR KEY SHARE`, id, userID).Scan(&ok)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
 	return ok, err
 }
 
@@ -260,9 +271,13 @@ func (r *Receipts) Visible(ctx context.Context, id, userID uuid.UUID) (bool, err
 }
 
 func (r *Receipts) Pending(ctx context.Context, userID uuid.UUID) (int, int64, error) {
+	q := r.db.Q(ctx)
+	if _, err := q.Exec(ctx, `SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE`, userID); err != nil {
+		return 0, 0, err
+	}
 	var count int
 	var size int64
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*), COALESCE(sum(size), 0) FROM receipts rc
+	err := q.QueryRow(ctx, `SELECT count(*), COALESCE(sum(size), 0) FROM receipts rc
 		WHERE rc.uploaded_by=$1 AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.receipt_id=rc.id)`, userID).Scan(&count, &size)
 	return count, size, err
 }
@@ -278,7 +293,14 @@ func (r *Receipts) Stale(ctx context.Context, cutoff time.Time, limit int) ([]*r
 }
 
 func (r *Receipts) Delete(ctx context.Context, id uuid.UUID) (bool, error) {
-	tag, err := r.db.Q(ctx).Exec(ctx, `DELETE FROM receipts rc WHERE rc.id=$1
+	q := r.db.Q(ctx)
+	// Locked before the check, which runs as its own statement: an expense
+	// attaching the receipt meanwhile has either committed, and the check
+	// sees it, or waits and then finds the receipt gone.
+	if _, err := q.Exec(ctx, `SELECT 1 FROM receipts WHERE id=$1 FOR UPDATE`, id); err != nil {
+		return false, err
+	}
+	tag, err := q.Exec(ctx, `DELETE FROM receipts rc WHERE rc.id=$1
 		AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.receipt_id=rc.id)`, id)
 	return tag.RowsAffected() == 1, err
 }

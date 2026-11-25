@@ -40,8 +40,8 @@ func TestOutsidersSeeNothing(t *testing.T) {
 		Payers: []platform.Payer{{UserID: ada.User.ID, Amount: 3000}},
 		Splits: []platform.Split{{UserID: ada.User.ID}, {UserID: ben.User.ID}},
 	}).want(t, http.StatusCreated))
-	s.call(t, http.MethodPost, p+"/expenses/"+e.ID+"/comments", ada.Token,
-		platform.CommentInput{Body: "Receipt attached"}).want(t, http.StatusCreated)
+	c := data[platform.Comment](t, s.call(t, http.MethodPost, p+"/expenses/"+e.ID+"/comments", ada.Token,
+		platform.CommentInput{Body: "Receipt attached"}).want(t, http.StatusCreated))
 
 	// Cy is in the group but not in the expense: members see every expense.
 	s.call(t, http.MethodGet, p+"/expenses/"+e.ID, cy.Token, nil).want(t, http.StatusOK)
@@ -66,6 +66,7 @@ func TestOutsidersSeeNothing(t *testing.T) {
 		{http.MethodPost, "/expenses/" + e.ID + "/restore", nil},
 		{http.MethodGet, "/expenses/" + e.ID + "/comments", nil},
 		{http.MethodPost, "/expenses/" + e.ID + "/comments", platform.CommentInput{Body: "Hello"}},
+		{http.MethodDelete, "/comments/" + c.ID, nil},
 		{http.MethodGet, "/receipts/" + rc.ID, nil},
 	})
 

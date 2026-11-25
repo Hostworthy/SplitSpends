@@ -30,25 +30,8 @@ func TestReceiptLookupUsesIndex(t *testing.T) {
 		FROM generate_series(1, 5000) n`, ada); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := env.DB.Pool.Exec(ctx, `ANALYZE expenses`); err != nil {
-		t.Fatal(err)
-	}
-	rows, err := env.DB.Pool.Query(ctx, `EXPLAIN SELECT 1 FROM expenses e WHERE e.receipt_id = $1`, receipt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var plan []string
-	for rows.Next() {
-		var line string
-		if err := rows.Scan(&line); err != nil {
-			t.Fatal(err)
-		}
-		plan = append(plan, line)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if text := strings.Join(plan, "\n"); !strings.Contains(text, "expenses_receipt_idx") {
-		t.Fatalf("looking up expenses by receipt should use expenses_receipt_idx:\n%s", text)
+	text := plan(t, env, `SELECT 1 FROM expenses e WHERE e.receipt_id = $1`, receipt)
+	if !strings.Contains(text, "expenses_receipt_idx") {
+		t.Fatalf("looking up expenses by receipt should be able to use expenses_receipt_idx:\n%s", text)
 	}
 }

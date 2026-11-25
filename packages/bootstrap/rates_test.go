@@ -2,6 +2,7 @@ package bootstrap_test
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,7 +34,7 @@ func TestRatesCache(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := rates.NewService(repositories.NewRates(env.DB), exchange.New(srv.URL), env.Clock)
+	svc := rates.NewService(repositories.NewRates(env.DB), exchange.New(srv.URL), env.Clock, slog.New(slog.DiscardHandler))
 
 	if err := svc.Refresh(ctx); err != nil {
 		t.Fatal(err)

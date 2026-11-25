@@ -56,6 +56,9 @@ type Services struct {
 	Admin *admin.Service
 
 	notifier *fanout
+	// quotas and clock let the jobs remove budgets whose window has ended.
+	quotas *repositories.Quotas
+	clock  clock.Clock
 }
 
 // Runtime is a fully wired application.
@@ -115,18 +118,18 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 	}
 	log.Info("bootstrap.storage.ready", "store", cfg.BlobStore)
 
-	var reader ports.Assistant
+	var assistant ports.Assistant
 	switch cfg.AIProvider {
 	case "anthropic":
-		reader = ai.NewAnthropic(cfg.AIAPIKey, cfg.AIBaseURL, cfg.AIModel, cfg.AIEffort)
+		assistant = ai.NewAnthropic(cfg.AIAPIKey, cfg.AIBaseURL, cfg.AIModel, cfg.AIEffort)
 	case "openai":
-		reader = ai.NewOpenAICompatible(cfg.AIBaseURL, cfg.AIAPIKey, cfg.AIModel)
+		assistant = ai.NewOpenAICompatible(cfg.AIBaseURL, cfg.AIAPIKey, cfg.AIModel)
 	}
-	if reader != nil {
+	if assistant != nil {
 		log.Info("bootstrap.ai.enabled", "provider", cfg.AIProvider)
 	}
 
-	services := Wire(cfg, Adapters{DB: db, Email: notifier, Blobs: blobs, Reader: reader,
+	services := Wire(cfg, Adapters{DB: db, Email: notifier, Blobs: blobs, Assistant: assistant,
 		Push: pushSender(ctx, db, cfg, log), Clock: clock.System{}, Log: log})
 	if open, err := services.Auth.Unclaimed(ctx); err == nil && open {
 		log.Warn("auth.bootstrap.open", "reason", "no account yet and ADMIN_EMAIL is empty: whoever signs in first becomes the administrator, whatever SIGNUP_MODE says")
@@ -139,12 +142,14 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 type Adapters struct {
 	DB *database.DB
 	// Email sends login codes, invites and notifications.
-	Email  ports.Notifier
-	Blobs  ports.BlobStore
-	Reader ports.Assistant
+	Email     ports.Notifier
+	Blobs     ports.BlobStore
+	Assistant ports.Assistant
 	// Push delivers Web Push and knows its VAPID key; nil disables push.
-	Push  push.Sender
-	Clock clock.Clock
+	Push push.Sender
+	// Subscriptions stores push devices; nil keeps them in DB.
+	Subscriptions push.Repository
+	Clock         clock.Clock
 	// Log is where services log; nil discards.
 	Log *slog.Logger
 }
@@ -156,14 +161,18 @@ func Wire(cfg *Config, a Adapters) *Services {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	pushes := push.NewService(repositories.NewPushSubscriptions(db), a.Push, c,
+	subscriptions := a.Subscriptions
+	if subscriptions == nil {
+		subscriptions = repositories.NewPushSubscriptions(db)
+	}
+	pushes := push.NewService(subscriptions, a.Push, c,
 		push.Settings{AppName: cfg.AppName, Link: cfg.BaseURL, AllowPrivate: cfg.PushAllowPrivate})
 	var p pusher
 	if pushes.Enabled() {
 		p = pushes
 	}
 	notifier := newFanout(a.Email, p, log, cfg.Serverless)
-	blobs, reader := a.Blobs, a.Reader
+	blobs := a.Blobs
 	tx := database.NewTx(db)
 	// The repositories more than one service reads; the others are made
 	// where they are passed.
@@ -182,23 +191,23 @@ func Wire(cfg *Config, a Adapters) *Services {
 	}
 
 	quotas := repositories.NewQuotas(db)
-	users := user.NewService(store.users, notifier, quotas, c, log, user.Settings{Gravatar: cfg.Gravatar})
+	users := user.NewService(store.users, notifier, quotas, tx, c, log, user.Settings{Gravatar: cfg.Gravatar})
 	act := activity.NewService(repositories.NewActivities(db), c)
 	balances := balance.NewService(store.expenses)
 	groups := group.NewService(group.Deps{Repo: store.groups, Users: users, Balances: balances, Activity: act, Notifier: notifier,
 		Quota: quotas, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	friends := friend.NewService(store.friends, users, balances, act, tx, c)
-	receipts := receipt.NewService(store.receipts, blobs, reader, tx, c)
+	receipts := receipt.NewService(store.receipts, blobs, a.Assistant, tx, c)
 	categories := category.NewService(repositories.NewCategories(db), c)
 	expenses := expense.NewService(expense.Deps{Repo: store.expenses, Comments: repositories.NewComments(db), Groups: groups,
 		Connections: friends, Receipts: store.receipts, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, Log: log, BaseURL: cfg.BaseURL})
 	// Rates only convert AI drafts read in another currency, so nothing is
 	// fetched unless AI is on.
 	var source rates.Source
-	if cfg.RatesURL != "" && reader != nil {
+	if cfg.RatesURL != "" && a.Assistant != nil {
 		source = exchange.New(cfg.RatesURL)
 	}
-	exchangeRates := rates.NewService(repositories.NewRates(db), source, c)
+	exchangeRates := rates.NewService(repositories.NewRates(db), source, c, log)
 	invites := invite.NewService(repositories.NewInvites(db), groups, store.groups, users, tx, c, cfg.BaseURL)
 	reminders := reminder.NewService(reminder.Deps{Repo: repositories.NewReminders(db), Groups: groups, Connections: friends,
 		Users: users, Balances: balances, Activity: act, Notifier: notifier, Quota: quotas, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
@@ -207,7 +216,7 @@ func Wire(cfg *Config, a Adapters) *Services {
 		Defaults: policy.Signup(), BaseURL: cfg.BaseURL, AppName: cfg.AppName})
 	authentication := auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), store.users, invites, notifier, tx, c, log)
 	authentication.Use(administration)
-	assistant := assist.NewService(reader, users, groups, store.friends, receipts, exchangeRates, c)
+	assistant := assist.NewService(a.Assistant, users, groups, store.friends, receipts, exchangeRates, c)
 	statistics := stats.NewService(repositories.NewStats(db), groups, users, categories, c)
 	transfers := transfer.NewService(users, store.friends, groups, expenses, categories, tx, tx)
 	return &Services{
@@ -229,11 +238,13 @@ func Wire(cfg *Config, a Adapters) *Services {
 		Categories: categories,
 		Admin:      administration,
 		notifier:   notifier,
+		quotas:     quotas,
+		clock:      c,
 	}
 }
 
 // RunJobsOnce creates due recurring expenses and removes expired
-// credentials and receipts no expense uses. Serverless hosts call it from a
+// credentials, receipts no expense uses and budgets whose window has ended. Serverless hosts call it from a
 // scheduler via /internal/jobs. Every job runs even when another fails; the
 // error joins their failures, which are also logged.
 func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
@@ -261,26 +272,35 @@ func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 	if receipts != nil {
 		rt.Log.Error("jobs.receipts.cleanup.failed", "error", receipts)
 	}
-	return errors.Join(recurring, sessions, invites, requests, receipts)
+	pruned, quotas := rt.Services.quotas.Prune(ctx, rt.Services.clock.Now())
+	if pruned > 0 {
+		rt.Log.Info("jobs.quotas.cleanup.completed", "removed", pruned)
+	}
+	if quotas != nil {
+		rt.Log.Error("jobs.quotas.cleanup.failed", "error", quotas)
+	}
+	return errors.Join(recurring, sessions, invites, requests, receipts, quotas)
 }
 
-// passes bounds the recurring passes of one run; each books up to 100 series.
+// passes bounds the recurring passes of one run; each takes on up to
+// expense.Batch series.
 const passes = 50
 
-// recurring runs passes until nothing is due, logging each series that
-// failed.
+// recurring runs passes until one books or ends no series, logging each
+// series that failed. A pass that only ended series goes on, since more
+// may be due behind them.
 func (rt *Runtime) recurring(ctx context.Context) error {
 	var failed []error
 	for pass := 1; ; pass++ {
-		n, err := rt.Services.Expenses.RunRecurring(ctx)
+		done, err := rt.Services.Expenses.RunRecurring(ctx)
 		if err != nil {
 			failed = append(failed, err)
 			rt.failed(err)
 		}
-		if n > 0 {
-			rt.Log.Info("jobs.recurring.created", "count", n)
+		if done.Copies > 0 {
+			rt.Log.Info("jobs.recurring.created", "count", done.Copies)
 		}
-		if n == 0 {
+		if done.Series == 0 {
 			break
 		}
 		if pass == passes {

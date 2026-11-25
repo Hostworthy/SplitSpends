@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -58,12 +59,12 @@ func run() error {
 	defer rt.Close()
 
 	mux := http.NewServeMux()
-	api := routes.New(routes.Deps{Services: rt.Services, Config: cfg, Log: log, Ping: rt.Ping, Jobs: rt.RunJobsOnce}).Routes()
+	api := routes.New(routes.Deps{Services: rt.Services, Settings: cfg.Settings(), Log: log, Ping: rt.Ping, Jobs: rt.RunJobsOnce}).Routes()
 	mux.Handle("/api/", api)
 	mux.Handle("/health", api)
 	mux.Handle("/internal/", api)
 	if cfg.MCPEnabled {
-		mux.Handle("/mcp", mcp.HTTPHandler(loopback(cfg.Addr), version, mcp.Options{Admin: cfg.MCPAdminTools}, nil, log))
+		mux.Handle("/mcp", mcpHandler(cfg, log))
 	}
 	secure := strings.HasPrefix(cfg.BaseURL, "https://")
 	if cfg.WebDir != "" {
@@ -107,6 +108,20 @@ func run() error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+// mcpLimit is how many requests one client address may send to /mcp a
+// minute. Each tool call is a request, and an agent at work sends far fewer.
+// The API cannot tell MCP clients apart by address, because their tool calls
+// reach it over loopback, so the limit sits in front of /mcp, before the
+// token is checked.
+const mcpLimit = 300
+
+// mcpHandler serves the MCP endpoint, limited per client address.
+func mcpHandler(cfg *bootstrap.Config, log *slog.Logger) http.Handler {
+	limit := middleware.NewLimiter(mcpLimit, time.Minute)
+	h := mcp.HTTPHandler(loopback(cfg.Addr), version, mcp.Options{Admin: cfg.MCPAdminTools}, nil, log)
+	return middleware.Limit(limit, log, middleware.ByAddress(cfg.ProxyHops), h)
 }
 
 // health checks the server running in this container, for the image's

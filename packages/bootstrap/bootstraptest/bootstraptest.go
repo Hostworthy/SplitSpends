@@ -20,6 +20,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/database"
+	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/Hostworthy/SplitSpends/packages/storage"
 )
 
@@ -35,11 +36,14 @@ type Options struct {
 	Now time.Time
 	// Sender delivers Web Push and holds its key; nil turns push off.
 	Sender push.Sender
-	// Reader reads receipts and drafts expenses; nil turns AI off.
-	Reader ports.Assistant
+	// Assistant reads receipts and drafts expenses; nil turns AI off.
+	Assistant ports.Assistant
 	// Blobs wraps the store images are kept in, which is on disk; nil
 	// keeps it as it is.
 	Blobs func(ports.BlobStore) ports.BlobStore
+	// Subscriptions wraps the database's store of push devices; nil keeps
+	// it as it is.
+	Subscriptions func(push.Repository) push.Repository
 }
 
 // Env is a wired set of services on a fresh schema.
@@ -116,8 +120,12 @@ func Open(t testing.TB, o Options) *Env {
 		now = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	}
 	env := &Env{Config: cfg, DB: &database.DB{Pool: pool}, Blobs: blobs, Notifier: NewNotifier(), Clock: NewClock(now)}
-	env.Services = bootstrap.Wire(cfg, bootstrap.Adapters{DB: env.DB, Email: env.Notifier, Blobs: blobs, Reader: o.Reader,
-		Push: o.Sender, Clock: env.Clock})
+	var subscriptions push.Repository = repositories.NewPushSubscriptions(env.DB)
+	if o.Subscriptions != nil {
+		subscriptions = o.Subscriptions(subscriptions)
+	}
+	env.Services = bootstrap.Wire(cfg, bootstrap.Adapters{DB: env.DB, Email: env.Notifier, Blobs: blobs, Assistant: o.Assistant,
+		Push: o.Sender, Subscriptions: subscriptions, Clock: env.Clock})
 	return env
 }
 
@@ -181,10 +189,10 @@ func (n *Notifier) Invites() []string {
 	return append([]string(nil), n.invites...)
 }
 
-func (n *Notifier) Notify(_ context.Context, msg ports.Notification) {
+func (n *Notifier) Notify(_ context.Context, msgs ...ports.Notification) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.sent = append(n.sent, msg)
+	n.sent = append(n.sent, msgs...)
 }
 
 // Code returns the last login code sent to email, or "" when none was.

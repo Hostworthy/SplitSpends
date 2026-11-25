@@ -2,6 +2,7 @@ package rates
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -28,12 +29,13 @@ type Service struct {
 	repo   Repository
 	source Source
 	clock  clock.Clock
+	log    *slog.Logger
 	mu     sync.Mutex
 }
 
 // NewService builds a Service. A nil source turns rates off.
-func NewService(repo Repository, source Source, c clock.Clock) *Service {
-	return &Service{repo: repo, source: source, clock: c}
+func NewService(repo Repository, source Source, c clock.Clock, log *slog.Logger) *Service {
+	return &Service{repo: repo, source: source, clock: c, log: log}
 }
 
 // Enabled reports whether the host configured a rate source.
@@ -53,10 +55,13 @@ func (s *Service) Latest(ctx context.Context) (*Table, error) {
 	if t != nil && s.clock.Now().Sub(t.Fetched) < Fresh {
 		return t, nil
 	}
-	if fresh, err := s.refresh(ctx); err == nil {
+	fresh, err := s.refresh(ctx)
+	if err == nil {
 		return fresh, nil
 	}
-	// The provider is down: a stale table is better than none.
+	// The provider is down: a stale table is better than none, but the
+	// operator should know the rates are getting old.
+	s.log.ErrorContext(ctx, "rates.refresh.failed", "stale", t != nil, "error", err)
 	return t, nil
 }
 

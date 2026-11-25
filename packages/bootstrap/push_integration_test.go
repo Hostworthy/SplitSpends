@@ -243,6 +243,11 @@ func TestDevicesEndWithTheirSession(t *testing.T) {
 	if got := endpoints(ben); len(got) != 2 || slices.Contains(got, "https://push.example.com/laptop") {
 		t.Fatalf("signing out should remove the laptop, got %v", got)
 	}
+	// A registration that arrives just after its session ended asks the
+	// person to sign in again.
+	if _, _, err := svc.Push.Register(ctx, ben, laptop.Session.ID, device("https://push.example.com/laptop")); !errs.Is(err, errs.KindUnauthorized) {
+		t.Fatalf("registering for a session that ended should ask to sign in again, got %v", err)
+	}
 	if err := svc.Auth.RevokeToken(ctx, principal(phone), token.Session.ID); err != nil {
 		t.Fatal(err)
 	}

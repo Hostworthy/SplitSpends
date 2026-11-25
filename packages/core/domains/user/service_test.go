@@ -54,6 +54,10 @@ func (m memUsers) Placeholders(context.Context, uuid.UUID) (int, error) {
 
 type plenty struct{}
 
+type noTx struct{}
+
+func (noTx) Do(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
+
 func (plenty) Take(context.Context, string, int, time.Duration, time.Time) (bool, error) {
 	return true, nil
 }
@@ -65,7 +69,7 @@ func (downMail) LoginCode(context.Context, string, string, time.Duration) error 
 func (downMail) Invite(context.Context, string, string) error {
 	return errors.New("connection refused")
 }
-func (downMail) Notify(context.Context, ports.Notification) {}
+func (downMail) Notify(context.Context, ...ports.Notification) {}
 
 // TestInviteReportsMailFailure checks that a failed invitation email leaves
 // the invited account in place and is logged, on both ways of inviting.
@@ -93,7 +97,7 @@ func TestInviteReportsMailFailure(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := memUsers{ada.ID: ada}
 			var logs bytes.Buffer
-			s := NewService(repo, downMail{}, plenty{}, clock.Fixed{At: now}, slog.New(slog.NewJSONHandler(&logs, nil)), Settings{})
+			s := NewService(repo, downMail{}, plenty{}, noTx{}, clock.Fixed{At: now}, slog.New(slog.NewJSONHandler(&logs, nil)), Settings{})
 			u, err := tc.invite(s, repo)
 			if err != nil || u.Status != StatusInvited {
 				t.Fatalf("the person is invited anyway: %v, %v", u, err)
@@ -116,7 +120,7 @@ func TestGravatarFollowsHost(t *testing.T) {
 	for _, host := range []bool{false, true} {
 		ada := &User{ID: uuid.New(), Name: "Ada", Email: "ada@example.com", Status: StatusActive}
 		ben := &User{ID: uuid.New(), Name: "Ben", Email: "ben@example.com", Status: StatusActive, Gravatar: true}
-		s := NewService(memUsers{ada.ID: ada, ben.ID: ben}, nil, plenty{}, clock.Fixed{}, slog.New(slog.DiscardHandler),
+		s := NewService(memUsers{ada.ID: ada, ben.ID: ben}, nil, plenty{}, noTx{}, clock.Fixed{}, slog.New(slog.DiscardHandler),
 			Settings{Gravatar: host})
 		_, err := s.Update(ctx, ada.ID, Patch{Gravatar: &on})
 		if host && err != nil {

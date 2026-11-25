@@ -27,6 +27,7 @@ void main() {
           description: (i['description'] as String?) ?? c['name'] as String,
           notes: (i['notes'] as String?) ?? '',
           currency: (i['currency'] as String?) ?? 'USD',
+          category: (i['category'] as String?) ?? '',
           total: i['total'] as int,
           method: (i['method'] as String?) ?? '',
           recurrence: (i['recurrence'] as String?) ?? '',

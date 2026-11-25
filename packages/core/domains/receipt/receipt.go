@@ -68,16 +68,21 @@ type Repository interface {
 	// Visible reports whether userID uploaded the receipt or can see an
 	// expense that uses it.
 	Visible(ctx context.Context, id, userID uuid.UUID) (bool, error)
-	// Owned reports whether userID uploaded the receipt.
+	// Owned reports whether userID uploaded the receipt. Inside a
+	// transaction it holds the receipt until the transaction ends, so Delete
+	// waits for it.
 	Owned(ctx context.Context, id, userID uuid.UUID) (bool, error)
 	// Pending counts the receipts userID uploaded that no expense uses,
-	// including deleted expenses, and their total size in bytes.
+	// including deleted expenses, and their total size in bytes. Inside a
+	// transaction it holds userID until the transaction ends, so concurrent
+	// uploads by the same person count each other.
 	Pending(ctx context.Context, userID uuid.UUID) (count int, size int64, err error)
 	// Stale lists up to limit receipts created before cutoff that no
 	// expense uses, including deleted expenses.
 	Stale(ctx context.Context, cutoff time.Time, limit int) ([]*Receipt, error)
 	// Delete removes the receipt unless an expense uses it, and reports
-	// whether it did.
+	// whether it did. Inside a transaction it waits for one holding the
+	// receipt through Owned, and then sees the expense that one saved.
 	Delete(ctx context.Context, id uuid.UUID) (bool, error)
 }
 
@@ -103,16 +108,16 @@ type ScanItem struct {
 
 // Service handles uploads and scans.
 type Service struct {
-	repo   Repository
-	blobs  ports.BlobStore
-	reader ports.Assistant
-	tx     ports.Tx
-	clock  clock.Clock
+	repo      Repository
+	blobs     ports.BlobStore
+	assistant ports.Assistant
+	tx        ports.Tx
+	clock     clock.Clock
 }
 
-// NewService builds a Service. reader may be nil when AI is disabled.
-func NewService(repo Repository, blobs ports.BlobStore, reader ports.Assistant, tx ports.Tx, c clock.Clock) *Service {
-	return &Service{repo: repo, blobs: blobs, reader: reader, tx: tx, clock: c}
+// NewService builds a Service. assistant may be nil when AI is disabled.
+func NewService(repo Repository, blobs ports.BlobStore, assistant ports.Assistant, tx ports.Tx, c clock.Clock) *Service {
+	return &Service{repo: repo, blobs: blobs, assistant: assistant, tx: tx, clock: c}
 }
 
 // Readable returns a validation error unless AI providers can read the
@@ -125,7 +130,7 @@ func (r *Receipt) Readable() error {
 }
 
 // AIEnabled reports whether scanning is available.
-func (s *Service) AIEnabled() bool { return s.reader != nil }
+func (s *Service) AIEnabled() bool { return s.assistant != nil }
 
 // Upload stores an image after sniffing its real type.
 func (s *Service) Upload(ctx context.Context, actor uuid.UUID, data []byte) (*Receipt, error) {
@@ -140,19 +145,24 @@ func (s *Service) Upload(ctx context.Context, actor uuid.UUID, data []byte) (*Re
 	if !ok {
 		return nil, errs.Validation("file", "Upload a JPEG, PNG, WebP or HEIC image.")
 	}
-	count, size, err := s.repo.Pending(ctx, actor)
-	if err != nil {
-		return nil, err
-	}
-	if count >= MaxPending || size+int64(len(data)) > MaxPendingSize {
-		return nil, errs.Conflict("You have too many receipts that are not on an expense yet. Add them to expenses, or try again tomorrow.")
-	}
 	now := s.clock.Now()
 	r := &Receipt{ID: uuid.New(), UploadedBy: actor, ContentType: ct, Size: int64(len(data)), CreatedAt: now}
 	r.StorageKey = "receipts/" + now.Format("2006/01") + "/" + r.ID.String() + "." + ext
 	// The row comes first so that Cleanup finds the image even when storing
 	// it fails halfway or the server stops before the row is removed again.
-	if err := s.repo.Create(ctx, r); err != nil {
+	// It is written in the transaction that counted the waiting receipts,
+	// so two uploads at once cannot both take the last place.
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		count, size, err := s.repo.Pending(ctx, actor)
+		if err != nil {
+			return err
+		}
+		if count >= MaxPending || size+int64(len(data)) > MaxPendingSize {
+			return errs.Conflict("You have too many receipts that are not on an expense yet. Add them to expenses, or try again tomorrow.")
+		}
+		return s.repo.Create(ctx, r)
+	})
+	if err != nil {
 		return nil, err
 	}
 	if err := s.blobs.Put(ctx, r.StorageKey, data, r.ContentType); err != nil {
@@ -238,28 +248,28 @@ func (s *Service) Open(ctx context.Context, actor, id uuid.UUID) (*Receipt, io.R
 	return r, body, nil
 }
 
-// Image returns the bytes and content type of a receipt the actor may see,
+// Image returns a receipt the actor may see and its bytes,
 // for sending to the AI provider. It fails with a validation error when the
 // provider cannot read the image's type.
-func (s *Service) Image(ctx context.Context, actor, id uuid.UUID) ([]byte, string, error) {
+func (s *Service) Image(ctx context.Context, actor, id uuid.UUID) (*Receipt, []byte, error) {
 	r, body, err := s.Open(ctx, actor, id)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	defer body.Close()
 	if err := r.Readable(); err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	data, err := io.ReadAll(io.LimitReader(body, MaxSize+1))
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
-	return data, r.ContentType, nil
+	return r, data, nil
 }
 
-// Scan extracts line items with the AI reader.
+// Scan extracts line items with the AI assistant.
 func (s *Service) Scan(ctx context.Context, actor, id uuid.UUID, currency string) (*Scan, error) {
-	if s.reader == nil {
+	if s.assistant == nil {
 		return nil, errs.AIDisabled("AI features are not enabled on this server.")
 	}
 	// The hint goes into the provider's instructions, so only a known code
@@ -271,11 +281,11 @@ func (s *Service) Scan(ctx context.Context, actor, id uuid.UUID, currency string
 		}
 		currency = cur.Code
 	}
-	data, contentType, err := s.Image(ctx, actor, id)
+	r, data, err := s.Image(ctx, actor, id)
 	if err != nil {
 		return nil, err
 	}
-	ext, err := s.reader.ReadReceipt(ctx, ports.ReceiptInput{Image: data, ContentType: contentType, Currency: currency, Categories: expense.CategoryIDs()})
+	ext, err := s.assistant.ReadReceipt(ctx, ports.ReceiptInput{Image: data, ContentType: r.ContentType, Currency: currency, Categories: expense.CategoryIDs()})
 	if err != nil {
 		return nil, err
 	}

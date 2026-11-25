@@ -62,6 +62,8 @@ type memSessions struct {
 	byHash map[string]*Session
 	// touch fails every Touch when set.
 	touch error
+	// touches counts the last-use writes that reached the store.
+	touches int
 }
 
 func (m *memSessions) Create(_ context.Context, s *Session) error {
@@ -71,7 +73,18 @@ func (m *memSessions) Create(_ context.Context, s *Session) error {
 func (m *memSessions) FindByHash(_ context.Context, h string) (*Session, error) {
 	return m.byHash[h], nil
 }
-func (m *memSessions) Touch(context.Context, uuid.UUID, time.Time) error { return m.touch }
+func (m *memSessions) Touch(_ context.Context, id uuid.UUID, at time.Time) error {
+	if m.touch != nil {
+		return m.touch
+	}
+	for _, s := range m.byHash {
+		if s.ID == id {
+			s.LastUsedAt = &at
+			m.touches++
+		}
+	}
+	return nil
+}
 func (m *memSessions) Delete(_ context.Context, id uuid.UUID) error {
 	for h, s := range m.byHash {
 		if s.ID == id {
@@ -135,8 +148,8 @@ func (c codes) LoginCode(_ context.Context, to, code string, _ time.Duration) er
 	c[to] = code
 	return nil
 }
-func (codes) Invite(context.Context, string, string) error { return nil }
-func (codes) Notify(context.Context, ports.Notification)   {}
+func (codes) Invite(context.Context, string, string) error  { return nil }
+func (codes) Notify(context.Context, ...ports.Notification) {}
 
 // links are the invite tokens that are currently valid. A link's storage
 // hash is its token with a "hash:" prefix.
@@ -222,6 +235,41 @@ func TestTouchFailureIsLogged(t *testing.T) {
 	}
 	if got := strings.Count(logs.String(), `"msg":"auth.session.touch.failed"`); got != 1 {
 		t.Fatalf("auth.session.touch.failed logged %d times, want 1: %s", got, logs.String())
+	}
+}
+
+// TestLastUseThrottled checks that a session's last use is written at most
+// once a minute, so busy clients do not turn every request into a write.
+func TestLastUseThrottled(t *testing.T) {
+	ctx := context.Background()
+	s, _, sent := service(SignupOpen)
+	if err := s.RequestCode(ctx, "ada@example.com", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	login, err := s.Verify(ctx, "ada@example.com", sent["ada@example.com"], "Ada", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := s.sessions.(*memSessions)
+	start := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	for _, step := range []struct {
+		after   time.Duration
+		touches int
+	}{
+		{0, 1},
+		{30 * time.Second, 1},
+		{time.Minute, 1},
+		{time.Minute + time.Second, 2},
+		{90 * time.Second, 2},
+		{2*time.Minute + 2*time.Second, 3},
+	} {
+		s.clock = clock.Fixed{At: start.Add(step.after)}
+		if _, err := s.Authenticate(ctx, login.Token); err != nil {
+			t.Fatal(err)
+		}
+		if store.touches != step.touches {
+			t.Fatalf("after %v: %d last-use writes, want %d", step.after, store.touches, step.touches)
+		}
 	}
 }
 

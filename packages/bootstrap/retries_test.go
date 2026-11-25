@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/category"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
@@ -107,5 +108,43 @@ func TestGroupRetryRace(t *testing.T) {
 	}
 	if got.ID != id {
 		t.Fatalf("want group %s, got %s", id, got.ID)
+	}
+}
+
+// looked is the category repository with a hook that runs once, right after
+// the first read of a category.
+type looked struct {
+	*repositories.Categories
+	once  *sync.Once
+	after func()
+}
+
+func (l looked) Get(ctx context.Context, id string) (*category.Category, error) {
+	c, err := l.Categories.Get(ctx, id)
+	l.once.Do(l.after)
+	return c, err
+}
+
+func TestCategoryRetryRace(t *testing.T) {
+	ctx := context.Background()
+	env, ada, _, _ := flat(t)
+	id := category.NewID()
+	in := category.Input{ID: &id, Name: str("Plants")}
+	// The first request saves the category after the retry has looked for it
+	// and found nothing.
+	svc := category.NewService(looked{repositories.NewCategories(env.DB), &sync.Once{}, func() {
+		if _, err := env.Services.Categories.Create(ctx, ada, in); err != nil {
+			t.Error(err)
+		}
+	}}, env.Clock)
+	got, err := svc.Create(ctx, ada, in)
+	if err != nil {
+		t.Fatalf("the retry must return the stored category, got %v", err)
+	}
+	if got.ID != id || got.Name != "Plants" {
+		t.Fatalf("want category %s, got %+v", id, got)
+	}
+	if _, err := svc.Create(ctx, uuid.New(), in); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("someone else's id must stay a conflict, got %v", err)
 	}
 }

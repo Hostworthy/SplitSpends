@@ -54,18 +54,18 @@ type Draft struct {
 
 // Service builds drafts.
 type Service struct {
-	reader   ports.Assistant
-	users    *user.Service
-	groups   *group.Service
-	friends  friend.Repository
-	receipts *receipt.Service
-	rates    *rates.Service
-	clock    clock.Clock
+	assistant ports.Assistant
+	users     *user.Service
+	groups    *group.Service
+	friends   friend.Repository
+	receipts  *receipt.Service
+	rates     *rates.Service
+	clock     clock.Clock
 }
 
-// NewService builds a Service. reader may be nil when AI is disabled.
-func NewService(reader ports.Assistant, users *user.Service, groups *group.Service, friends friend.Repository, receipts *receipt.Service, r *rates.Service, c clock.Clock) *Service {
-	return &Service{reader: reader, users: users, groups: groups, friends: friends, receipts: receipts, rates: r, clock: c}
+// NewService builds a Service. assistant may be nil when AI is disabled.
+func NewService(assistant ports.Assistant, users *user.Service, groups *group.Service, friends friend.Repository, receipts *receipt.Service, r *rates.Service, c clock.Clock) *Service {
+	return &Service{assistant: assistant, users: users, groups: groups, friends: friends, receipts: receipts, rates: r, clock: c}
 }
 
 // known is everything about the user that the model may refer to.
@@ -137,7 +137,7 @@ func (k *known) input(text, today, currency string) ports.DraftInput {
 
 // Draft asks the provider to read the instructions (and receipt, if any).
 func (s *Service) Draft(ctx context.Context, actor uuid.UUID, req Request) (*Draft, error) {
-	if s.reader == nil {
+	if s.assistant == nil {
 		return nil, errs.AIDisabled("AI features are not enabled on this server.")
 	}
 	req.Text = strings.TrimSpace(req.Text)
@@ -166,13 +166,19 @@ func (s *Service) Draft(ctx context.Context, actor uuid.UUID, req Request) (*Dra
 		in.GroupID = req.GroupID.String()
 	}
 	if req.ReceiptID != nil {
-		in.Image, in.ContentType, err = s.receipts.Image(ctx, actor, *req.ReceiptID)
+		r, image, err := s.receipts.Image(ctx, actor, *req.ReceiptID)
 		if err != nil {
 			return nil, err
 		}
+		in.Image, in.ContentType = image, r.ContentType
+		// Only the uploader may attach a receipt to an expense, so a draft
+		// read from someone else's leaves it off and can be saved as it is.
+		if r.UploadedBy != actor {
+			req.ReceiptID = nil
+		}
 	}
 
-	ext, err := s.reader.DraftExpense(ctx, in)
+	ext, err := s.assistant.DraftExpense(ctx, in)
 	if err != nil {
 		return nil, err
 	}

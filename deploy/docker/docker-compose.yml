@@ -1,7 +1,7 @@
 # Homelab: PostgreSQL, Split Spends, Caddy with automatic HTTPS, and nightly
 # backups of the database and receipts in ./backups, kept for BACKUP_KEEP_DAYS
 # days (restore steps in docs/HOSTING.md).
-#   cp ../.env.example .env   # set DOMAIN, BASE_URL=https://<DOMAIN>, POSTGRES_PASSWORD, SECRET_KEY, SMTP
+#   cp ../.env.example .env   # set DOMAIN, BASE_URL=https://<DOMAIN>, POSTGRES_PASSWORD, SECRET_KEY, ADMIN_EMAIL, SMTP
 #   docker compose up -d --build
 services:
   db:

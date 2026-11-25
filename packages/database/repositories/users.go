@@ -105,9 +105,17 @@ func (r *Users) Lock(ctx context.Context) error {
 	return err
 }
 
+// placeholderLocks is the first key of the transaction advisory locks taken
+// per account while people are added by name.
+const placeholderLocks = 1_384_204
+
 func (r *Users) Placeholders(ctx context.Context, createdBy uuid.UUID) (int, error) {
+	q := r.db.Q(ctx)
+	if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, placeholderLocks, createdBy.String()); err != nil {
+		return 0, err
+	}
 	var n int
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM users WHERE created_by = $1 AND status = 'placeholder'`, createdBy).Scan(&n)
+	err := q.QueryRow(ctx, `SELECT count(*) FROM users WHERE created_by = $1 AND status = 'placeholder'`, createdBy).Scan(&n)
 	return n, err
 }
 

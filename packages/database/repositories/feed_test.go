@@ -27,32 +27,12 @@ func TestFeedUsesInvolvedIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// As autovacuum would, move the new entries out of the index's pending
-	// list and gather statistics.
-	if _, err := env.DB.Pool.Exec(ctx, `VACUUM ANALYZE activities`); err != nil {
-		t.Fatal(err)
-	}
 	for _, query := range []string{
 		`SELECT count(*) FROM activities WHERE ` + repositories.Feed,
 		`SELECT id FROM activities WHERE ` + repositories.Feed + ` ORDER BY created_at DESC, id DESC LIMIT 20`,
 	} {
-		rows, err := env.DB.Pool.Query(ctx, `EXPLAIN `+query, ben, nil, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var plan []string
-		for rows.Next() {
-			var line string
-			if err := rows.Scan(&line); err != nil {
-				t.Fatal(err)
-			}
-			plan = append(plan, line)
-		}
-		if err := rows.Err(); err != nil {
-			t.Fatal(err)
-		}
-		if text := strings.Join(plan, "\n"); !strings.Contains(text, "activities_involved_idx") {
-			t.Fatalf("the feed should use activities_involved_idx:\n%s", text)
+		if text := plan(t, env, query, ben, nil, nil); !strings.Contains(text, "activities_involved_idx") {
+			t.Fatalf("the feed should be able to use activities_involved_idx:\n%s", text)
 		}
 	}
 }

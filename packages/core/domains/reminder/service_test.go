@@ -116,7 +116,7 @@ type outbox struct{ sent []ports.Notification }
 
 func (o *outbox) LoginCode(context.Context, string, string, time.Duration) error { return nil }
 func (o *outbox) Invite(context.Context, string, string) error                   { return nil }
-func (o *outbox) Notify(_ context.Context, n ports.Notification)                 { o.sent = append(o.sent, n) }
+func (o *outbox) Notify(_ context.Context, n ...ports.Notification)              { o.sent = append(o.sent, n...) }
 
 // memQuota mirrors the database rule: limit uses per window from the first.
 type memQuota map[string]*budget
@@ -187,7 +187,7 @@ func setup(t *testing.T) *fixture {
 		{UserID: f.ada.ID, Paid: 9000, Owed: 3000}, {UserID: f.ben.ID, Owed: 3000}, {UserID: f.sam.ID, Owed: 3000},
 	}}}}
 	f.svc = NewService(Deps{Repo: memReminders{}, Groups: f.ledger, Connections: links{{f.ada.ID, f.ben.ID}: true},
-		Users: user.NewService(users, nil, memQuota{}, f.clock, slog.New(slog.DiscardHandler), user.Settings{}), Balances: balance.NewService(f.ledger),
+		Users: user.NewService(users, nil, memQuota{}, noTx{}, f.clock, slog.New(slog.DiscardHandler), user.Settings{}), Balances: balance.NewService(f.ledger),
 		Activity: activity.NewService(f.feed, f.clock), Notifier: f.mail, Quota: memQuota{}, Tx: noTx{}, Clock: f.clock, BaseURL: "https://split.test"})
 	return f
 }

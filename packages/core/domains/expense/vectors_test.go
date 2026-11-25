@@ -25,6 +25,7 @@ func TestSharedVectors(t *testing.T) {
 				Description string
 				Notes       string
 				Currency    string
+				Category    string
 				Total       int64
 				Date        string
 				Method      Method
@@ -58,8 +59,8 @@ func TestSharedVectors(t *testing.T) {
 		t.Fatal("no split vectors")
 	}
 	for _, c := range doc.Splits {
-		in := Input{Description: c.Input.Description, Notes: c.Input.Notes, Currency: c.Input.Currency, Total: c.Input.Total,
-			Method: c.Input.Method, Recurrence: c.Input.Recurrence, Date: c.Input.Date, Items: c.Input.Items, Tax: c.Input.Tax, Tip: c.Input.Tip}
+		in := Input{Description: c.Input.Description, Notes: c.Input.Notes, Currency: c.Input.Currency, Category: c.Input.Category,
+			Total: c.Input.Total, Method: c.Input.Method, Recurrence: c.Input.Recurrence, Date: c.Input.Date, Items: c.Input.Items, Tax: c.Input.Tax, Tip: c.Input.Tip}
 		if in.Description == "" {
 			in.Description = c.Name
 		}

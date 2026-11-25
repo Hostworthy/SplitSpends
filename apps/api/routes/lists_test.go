@@ -3,7 +3,9 @@ package routes
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -101,5 +103,60 @@ func TestExportPages(t *testing.T) {
 		if row[1] != fmt.Sprintf("Item %d", i) || row[6] != "5.00" || row[7] != "-5.00" {
 			t.Fatalf("row %d: want Item %d with Ada +5.00 and Ben -5.00, got %v", i+1, i, row)
 		}
+	}
+}
+
+// failingPages serves one page of expenses each time a group is read from
+// the start, and fails read number fail, counting from one. Export uses
+// nothing else of the repository.
+type failingPages struct {
+	expense.Repository
+	page        []*expense.Expense
+	calls, fail int
+}
+
+func (f *failingPages) After(_ context.Context, _ uuid.UUID, last *expense.Expense, _ int) ([]*expense.Expense, error) {
+	f.calls++
+	if f.calls == f.fail {
+		return nil, errors.New("connection lost")
+	}
+	if last != nil {
+		return nil, nil
+	}
+	return f.page, nil
+}
+
+// TestExportFailureAbortsDownload checks that an export which fails after
+// rows were sent ends the download as broken, instead of adding an error
+// body to a file that would then look complete.
+func TestExportFailureAbortsDownload(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	g := s.group(t, ada.Token, "Flat")
+	groupID, adaID := uuid.MustParse(g.ID), uuid.MustParse(ada.User.ID)
+	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	repo := &failingPages{fail: 4}
+	for i := range expense.ExportPage {
+		repo.page = append(repo.page, &expense.Expense{ID: uuid.New(), GroupID: &groupID, Date: start.AddDate(0, 0, i),
+			Description: fmt.Sprintf("Item %d", i), Kind: expense.KindExpense, Currency: "EUR", Total: 1000,
+			Shares: []expense.Share{{UserID: adaID, Paid: 1000, Owed: 1000}}})
+	}
+	// Two reads find the columns; the second page of rows fails after the
+	// first page was written out.
+	s.Services.Expenses = expense.NewService(expense.Deps{Repo: repo, Groups: s.Services.Groups, Users: s.Services.Users})
+
+	req := s.request(t, http.MethodGet, platform.Prefix+"/groups/"+g.ID+"/export", nil)
+	req.Header.Set("Authorization", "Bearer "+ada.Token)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err == nil {
+		t.Fatalf("want the download to break off, got status %d and a complete body ending %q", res.StatusCode, body[max(0, len(body)-120):])
+	}
+	if strings.Contains(string(body), `"code"`) {
+		t.Errorf("an error body was added to the file: %q", body[max(0, len(body)-120):])
 	}
 }

@@ -103,6 +103,7 @@ class OfflineExpensesRepository implements ExpensesRepository {
               id: id,
               meId: me,
               today: today,
+              version: op.at,
             );
           case ('PUT', ['', 'expenses', final id]) when json != null:
             pending.changed[id] = optimisticExpense(
@@ -110,6 +111,7 @@ class OfflineExpensesRepository implements ExpensesRepository {
               id: id,
               meId: me,
               today: today,
+              version: op.at,
             );
           case ('DELETE', ['', 'expenses', final id]):
             pending.deleted[id] = true;
@@ -131,6 +133,7 @@ class OfflineExpensesRepository implements ExpensesRepository {
               notes: json['notes'] as String?,
               meId: me,
               today: today,
+              version: op.at,
             );
         }
       } on ApiError {
@@ -177,16 +180,22 @@ class OfflineExpensesRepository implements ExpensesRepository {
   /// the server version the queued edit started from, and the outbox moves
   /// it on to the version each earlier write produces as they replay. A
   /// queued edit that names no version (queued by an earlier app) replaces
-  /// whatever the server has, so the edit on top of it does too.
+  /// whatever the server has, so the edit on top of it does too. An edit
+  /// started on a copy shown from the queue whose writes have replayed
+  /// since is based on the version they produced.
   @override
   Future<Expense> update(String id, ExpenseInput input) async {
     var based = input;
+    var queued = false;
     for (final op in await _outbox.pending()) {
       final body = op.body;
       if (op.method == 'PUT' && op.path == '/expenses/$id' && body is Map) {
         based = input.withVersion(body['updatedAt'] as String?);
+        queued = true;
       }
     }
+    final replayed = queued ? null : _outbox.replayed(id, input.updatedAt);
+    if (replayed != null) based = input.withVersion(replayed);
     return _outbox.write(
       online: () => _remote.update(id, based),
       offline: () =>

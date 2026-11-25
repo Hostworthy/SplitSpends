@@ -176,6 +176,12 @@ NormalizedExpense normalize(
   if (categories != null && !categories.contains(category)) {
     throw const LedgerError('category', 'Unknown category.');
   }
+  if (category == paymentCategory) {
+    throw const LedgerError(
+      'category',
+      'That category is only for payments. Choose another one.',
+    );
+  }
   final recurrence = input.recurrence.isEmpty ? 'none' : input.recurrence;
   if (!recurrences.contains(recurrence)) {
     throw const LedgerError('recurrence', 'Unknown recurrence.');

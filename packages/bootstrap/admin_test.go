@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/packages/database"
 	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/google/uuid"
 )
@@ -442,6 +444,47 @@ func TestJoinRequestsBounded(t *testing.T) {
 		if _, total, err := env.Services.Admin.Requests(ctx, ada.ID, status, 50, 0); err != nil || total != want {
 			t.Fatalf("%s requests after cleanup = %d, %v; want %d", status, total, err, want)
 		}
+	}
+}
+
+// filing is the request repository with a hook that runs right before a
+// request is saved.
+type filing struct {
+	*repositories.SignupRequests
+	before func()
+}
+
+func (f filing) Save(ctx context.Context, r *admin.Request) error {
+	f.before()
+	return f.SignupRequests.Save(ctx, r)
+}
+
+// TestJoinRequestLimitIsAtomic checks that requests filed at the same time
+// cannot take the queue past admin.MaxPending.
+func TestJoinRequestLimitIsAtomic(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	fillRequests(t, env, admin.MaxPending-1)
+	// One place is left. Right before it is taken, someone else asks.
+	other := make(chan error, 1)
+	var once sync.Once
+	repo := filing{repositories.NewSignupRequests(env.DB), func() {
+		once.Do(func() {
+			meanwhile(t, env, func() {
+				_, err := env.Services.Admin.Request(ctx, "late@else.org", "Late")
+				other <- err
+			})
+		})
+	}}
+	svc := admin.NewService(admin.Deps{Requests: repo, Accounts: repositories.NewUsers(env.DB), Notifier: env.Notifier,
+		Tx: database.NewTx(env.DB), Clock: env.Clock, Log: slog.New(slog.DiscardHandler)})
+	_, err := svc.Request(ctx, "last@else.org", "Last")
+	late := <-other
+	if (err == nil) == (late == nil) {
+		t.Fatalf("exactly one request may take the last place, got %v and %v", err, late)
+	}
+	if _, n, err := repositories.NewSignupRequests(env.DB).List(ctx, admin.StatusPending, 1, 0); err != nil || n != admin.MaxPending {
+		t.Fatalf("want %d requests waiting, got %d, %v", admin.MaxPending, n, err)
 	}
 }
 

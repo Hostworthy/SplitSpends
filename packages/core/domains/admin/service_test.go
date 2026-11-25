@@ -92,6 +92,8 @@ func (m *memRequests) Save(_ context.Context, r *Request) error {
 	m.list = append(m.list, r)
 	return nil
 }
+func (m *memRequests) Lock(context.Context) error { return nil }
+
 func (m *memRequests) List(_ context.Context, status Status, _, _ int) ([]*Request, int, error) {
 	var list []*Request
 	for _, r := range m.list {
@@ -121,7 +123,7 @@ type outbox struct{ sent []ports.Notification }
 
 func (*outbox) LoginCode(context.Context, string, string, time.Duration) error { return nil }
 func (*outbox) Invite(context.Context, string, string) error                   { return nil }
-func (o *outbox) Notify(_ context.Context, n ports.Notification)               { o.sent = append(o.sent, n) }
+func (o *outbox) Notify(_ context.Context, n ...ports.Notification)            { o.sent = append(o.sent, n...) }
 
 type direct struct{}
 

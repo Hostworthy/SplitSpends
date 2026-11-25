@@ -248,8 +248,10 @@ class SessionController extends AsyncNotifier<Session> {
   }
 
   /// Shows profile changes. The account repository saves them; in
-  /// connected mode they are also kept for offline starts.
+  /// connected mode they are also kept for offline starts. A change for
+  /// another account, such as a save answered after sign-out, is dropped.
   Future<void> updateMe(Me me) async {
+    if (_current.me?.id != me.id) return;
     if (_current.isConnected) await _remember(me);
     state = AsyncData(_current.copyWith(me: me));
   }

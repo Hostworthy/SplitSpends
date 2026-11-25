@@ -107,6 +107,7 @@ void main() {
     final uploaded = (await service.summary()).uploaded;
     expect(uploaded?.server, 'http://splitspends.test');
     expect(uploaded?.at, DateTime.utc(2026, 11, 20, 10));
+    expect(uploaded?.user, isNull, reason: 'kept before accounts were noted');
   });
 
   group('upload', () {
@@ -163,10 +164,9 @@ void main() {
         (await Stores.meta.record('profile').get(db) as Map?)?['id'],
         'server-ada',
       );
-      expect(
-        (await service.summary()).uploaded?.server,
-        'http://splitspends.test',
-      );
+      final uploaded = (await service.summary()).uploaded;
+      expect(uploaded?.server, 'http://splitspends.test');
+      expect(uploaded?.user, 'server-ada', reason: 'the account it went to');
     });
 
     test('a failed upload keeps the local copy as it was', () async {
@@ -207,7 +207,11 @@ void main() {
       _FakeImport(
         summaryValue: ImportSummary(
           groups: 1,
-          uploaded: (server: 'http://splitspends.test/', at: _uploadedAt),
+          uploaded: (
+            server: 'http://splitspends.test/',
+            at: _uploadedAt,
+            user: 'u1',
+          ),
         ),
       ),
     );
@@ -226,6 +230,38 @@ void main() {
     expect(find.widgetWithText(OutlinedButton, 'Upload again'), findsOneWidget);
   });
 
+  testWidgets('an upload to another account keeps Start fresh first', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      _FakeImport(
+        summaryValue: ImportSummary(
+          groups: 1,
+          uploaded: (
+            server: 'http://splitspends.test',
+            at: _uploadedAt,
+            user: 'someone-else',
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.text(
+        'You uploaded this data to another account on this server on '
+        '${Dates.short(_uploadedAt)}. Its groups and expenses are already '
+        'there, in that account.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.widgetWithText(FilledButton, 'Start fresh (keep local copy)'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(OutlinedButton, 'Upload'), findsOneWidget);
+  });
+
   testWidgets('an upload to another server is mentioned by name', (
     tester,
   ) async {
@@ -234,7 +270,11 @@ void main() {
       _FakeImport(
         summaryValue: ImportSummary(
           groups: 1,
-          uploaded: (server: 'https://other.example.com', at: _uploadedAt),
+          uploaded: (
+            server: 'https://other.example.com',
+            at: _uploadedAt,
+            user: 'u1',
+          ),
         ),
       ),
     );

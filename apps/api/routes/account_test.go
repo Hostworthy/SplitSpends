@@ -32,9 +32,9 @@ func TestGravatarFollowsHost(t *testing.T) {
 		on := bootstraptest.Defaults()
 		on.Gravatar = true
 		s := newServer(t, bootstraptest.Options{Config: on})
-		off := *s.Config
+		off := s.Config.Settings()
 		off.Gravatar = false
-		New(Deps{Services: s.Services, Config: &off, Log: slog.New(slog.DiscardHandler)})
+		New(Deps{Services: s.Services, Settings: off, Log: slog.New(slog.DiscardHandler)})
 		token := s.signIn(t, "ada@example.com", "Ada").Token
 		me := data[platform.Me](t, s.call(t, http.MethodPatch, platform.Prefix+"/me", token, enable).want(t, http.StatusOK))
 		if !me.Gravatar || me.AvatarURL == nil {

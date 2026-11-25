@@ -322,6 +322,26 @@ func (s *Service) build(e *Expense, n *Normalized, actor uuid.UUID, now time.Tim
 	e.UpdatedBy, e.UpdatedAt = actor, now
 }
 
+// same reports whether saving n would leave e as it is.
+func same(e *Expense, n *Normalized) bool {
+	if e.Description != n.Description || e.Category != n.Category || e.Currency != n.Currency || e.Total != n.Total ||
+		!e.Date.Equal(n.Date) || e.Notes != n.Notes || e.Method != n.Method || e.Tax != n.Tax || e.Tip != n.Tip ||
+		e.Recurrence != n.Recurrence || !equalID(e.ReceiptID, n.ReceiptID) {
+		return false
+	}
+	byUser := func(a, b Share) int { return strings.Compare(a.UserID.String(), b.UserID.String()) }
+	if !slices.Equal(slices.SortedFunc(slices.Values(e.Shares), byUser), slices.SortedFunc(slices.Values(n.Shares), byUser)) {
+		return false
+	}
+	return slices.EqualFunc(e.Items, n.Items, func(a, b Item) bool {
+		return a.Name == b.Name && a.Amount == b.Amount && slices.Equal(a.UserIDs, b.UserIDs)
+	})
+}
+
+func equalID(a, b *uuid.UUID) bool {
+	return a == b || (a != nil && b != nil && *a == *b)
+}
+
 func (s *Service) record(ctx context.Context, actor uuid.UUID, kind activity.Kind, e *Expense, g *group.Group, extra map[string]any) error {
 	data := map[string]any{"description": e.Description, "amount": e.Total, "currency": e.Currency}
 	involved := e.Participants()
@@ -444,6 +464,7 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expen
 func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*Expense, error) {
 	var e *Expense
 	var g *group.Group
+	var kept bool
 	err := s.tx.Do(ctx, func(ctx context.Context) error {
 		var err error
 		if e, g, err = s.lock(ctx, actor, id); err != nil {
@@ -455,10 +476,9 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		if e.DeletedAt != nil {
 			return errs.Conflict("Restore the expense before editing it.")
 		}
-		// Clients see updatedAt to the second, so that is what is compared.
-		if in.UpdatedAt != nil && !e.UpdatedAt.Truncate(time.Second).Equal(in.UpdatedAt.Truncate(time.Second)) {
-			return errs.Conflict("Someone else changed this expense. Reload it and try again.")
-		}
+		// The database keeps microseconds, so that is how finely versions
+		// are told apart.
+		stale := in.UpdatedAt != nil && !e.UpdatedAt.Truncate(time.Microsecond).Equal(in.UpdatedAt.Truncate(time.Microsecond))
 		in.GroupID = e.GroupID
 		if in.Currency == "" {
 			in.Currency = e.Currency
@@ -468,15 +488,23 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		}
 		var n *Normalized
 		if e.Kind == KindPayment {
-			p, err := repayment(in)
-			if err != nil {
-				return err
+			var p PaymentInput
+			if p, err = repayment(in); err == nil {
+				n, err = payment(p, clock.Today(s.clock))
 			}
-			n, err = payment(p, clock.Today(s.clock))
-			if err != nil {
-				return err
+		} else {
+			n, err = Normalize(in, clock.Today(s.clock))
+		}
+		if stale {
+			// An edit replayed after it was saved finds the result already
+			// there; it would replace nobody's change, so it is not refused.
+			if err == nil && same(e, n) {
+				kept = true
+				return nil
 			}
-		} else if n, err = Normalize(in, clock.Today(s.clock)); err != nil {
+			return errs.Conflict("Someone else changed this expense. Reload it and try again.")
+		}
+		if err != nil {
 			return err
 		}
 		if err := s.category(ctx, actor, n.Category, e.Category); err != nil {
@@ -491,8 +519,8 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		}
 		return s.record(ctx, actor, activity.ExpenseUpdated, e, g, nil)
 	})
-	if err != nil {
-		return nil, err
+	if err != nil || kept {
+		return e, err
 	}
 	s.notify(ctx, actor, e, g, true)
 	return e, nil
@@ -634,6 +662,7 @@ func (s *Service) notify(ctx context.Context, actor uuid.UUID, e *Expense, g *gr
 	if g != nil {
 		where = " in " + g.Name
 	}
+	var notes []ports.Notification
 	for _, u := range people {
 		if u.ID == actor {
 			continue
@@ -653,9 +682,10 @@ func (s *Service) notify(ctx context.Context, actor uuid.UUID, e *Expense, g *gr
 			[]string{actorName + " " + verb + " “" + e.Description + "” (" + money.Format(e.Total, e.Currency) + ")" + where + ".", line},
 			s.baseURL)
 		if ok {
-			s.notifier.Notify(ctx, n)
+			notes = append(notes, n)
 		}
 	}
+	s.notifier.Notify(ctx, notes...)
 }
 
 // Comments returns a page of the comments on an expense, oldest first, and
@@ -724,32 +754,49 @@ func (s *Service) DeleteComment(ctx context.Context, actor, id uuid.UUID) error 
 	return s.comments.Delete(ctx, id)
 }
 
-// RunRecurring creates due copies of recurring expenses. The schedule moves
-// to the newest copy so editing the latest expense edits the series. A series
-// that fails is skipped, so it never holds up the others; it stays due and is
-// tried again on the next run. The error joins a *Skipped for each one.
-func (s *Service) RunRecurring(ctx context.Context) (int, error) {
+// Batch is how many due series one RunRecurring pass takes on.
+const Batch = 100
+
+// Pass is what one RunRecurring pass did.
+type Pass struct {
+	// Series is how many due series it booked copies of or ended. While it
+	// is above zero, more series may be due.
+	Series int
+	// Copies is how many expenses it booked.
+	Copies int
+}
+
+// RunRecurring creates due copies of up to Batch recurring expenses. The
+// schedule moves to the newest copy so editing the latest expense edits the
+// series. A series that fails is skipped, so it never holds up the others; it
+// stays due and is tried again on the next run. The error joins a *Skipped
+// for each one.
+func (s *Service) RunRecurring(ctx context.Context) (Pass, error) {
 	today := clock.Today(s.clock)
-	due, err := s.repo.Due(ctx, today, 100)
+	due, err := s.repo.Due(ctx, today, Batch)
 	if err != nil {
-		return 0, err
+		return Pass{}, err
 	}
-	created := 0
+	var pass Pass
 	var skipped []error
 	for _, d := range due {
 		var n int
+		var done bool
 		err := s.tx.Do(ctx, func(ctx context.Context) error {
 			var err error
-			n, err = s.repeat(ctx, d, today)
+			n, done, err = s.repeat(ctx, d, today)
 			return err
 		})
 		if err != nil {
 			skipped = append(skipped, &Skipped{ID: d.ID, Err: err})
 			continue
 		}
-		created += n
+		if done {
+			pass.Series++
+		}
+		pass.Copies += n
 	}
-	return created, errors.Join(skipped...)
+	return pass, errors.Join(skipped...)
 }
 
 // Skipped is a recurring expense RunRecurring could not repeat.
@@ -763,47 +810,48 @@ func (s *Skipped) Error() string { return "expense.recurring.skipped: " + s.Err.
 func (s *Skipped) Unwrap() error { return s.Err }
 
 // repeat books the missed occurrences of one series inside the caller's
-// transaction and returns how many it booked. The row is claimed first, so
+// transaction and returns how many it booked, and whether it booked or ended
+// the series rather than leaving it to another runner or a deleted group. The row is claimed first, so
 // runners working at the same time book each occurrence once, and the copies
 // come from the stored row, so an edit saved after Due read it is kept. The
 // group is held before the claim, like lock does, so its members stay as
 // checked until the copies are saved.
-func (s *Service) repeat(ctx context.Context, due *Expense, today time.Time) (int, error) {
+func (s *Service) repeat(ctx context.Context, due *Expense, today time.Time) (int, bool, error) {
 	if due.GroupID != nil {
 		if err := s.groups.Hold(ctx, *due.GroupID); err != nil {
 			// A deleted group took its expenses with it.
 			if errs.Is(err, errs.KindNotFound) {
-				return 0, nil
+				return 0, false, nil
 			}
-			return 0, err
+			return 0, false, err
 		}
 	}
 	src, err := s.repo.Claim(ctx, due.ID, today)
 	if err != nil || src == nil {
-		return 0, err
+		return 0, false, err
 	}
 	now := s.clock.Now()
 	if err := s.repo.EndSeries(ctx, src.ID, now); err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	var g *group.Group
 	var ok bool
 	if src.GroupID != nil {
 		if g, err = s.groups.Lookup(ctx, *src.GroupID); err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		ok = members(g, src.Shares)
 	} else if ok, err = s.connected(ctx, src.CreatedBy, src.Shares); err != nil {
-		return 0, err
+		return 0, false, err
 	} else if ok {
 		if ok, err = s.linked(ctx, src.Shares); err != nil {
-			return 0, err
+			return 0, false, err
 		}
 	}
 	// Copies never bill someone who has left the group or is no longer
 	// connected; the series ends and the activity feed says why.
 	if !ok {
-		return 0, s.record(ctx, src.CreatedBy, activity.ExpenseStopped, src, g, nil)
+		return 0, true, s.record(ctx, src.CreatedBy, activity.ExpenseStopped, src, g, nil)
 	}
 	day := src.AnchorDay
 	if day == 0 {
@@ -819,13 +867,13 @@ func (s *Service) repeat(ctx context.Context, due *Expense, today time.Time) (in
 			c.Recurrence, c.NextDate, c.AnchorDay = src.Recurrence, &next, day
 		}
 		if err := s.repo.Create(ctx, &c); err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		if err := s.record(ctx, c.CreatedBy, activity.ExpenseCreated, &c, g, map[string]any{"recurring": true}); err != nil {
-			return 0, err
+			return 0, false, err
 		}
 	}
-	return len(dates), nil
+	return len(dates), true, nil
 }
 
 func truncate(s string, n int) string {

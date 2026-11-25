@@ -144,6 +144,7 @@ func (c *Category) Apply(in Input, now time.Time) error {
 
 // Repository persists custom categories.
 type Repository interface {
+	// Create returns errs.Conflict when the id is taken.
 	Create(ctx context.Context, c *Category) error
 	// Get returns errs.NotFound when missing. Deleted categories are returned.
 	Get(ctx context.Context, id string) (*Category, error)
