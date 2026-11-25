@@ -3,11 +3,13 @@ package bootstrap_test
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap"
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
@@ -55,15 +57,15 @@ func drain(t *testing.T, svc *expense.Service) int {
 	t.Helper()
 	total := 0
 	for pass := 0; pass < 50; pass++ {
-		n, err := svc.RunRecurring(context.Background())
+		done, err := svc.RunRecurring(context.Background())
 		if err != nil {
 			t.Error(err)
 			return total
 		}
-		if n == 0 {
+		if done.Series == 0 {
 			break
 		}
-		total += n
+		total += done.Copies
 	}
 	return total
 }
@@ -320,5 +322,44 @@ func TestRecurringKeepsConcurrentEdit(t *testing.T) {
 		if e.Total != 120000 {
 			t.Fatalf("%s on %s lost the edit: total %d", e.Description, e.Date.Format(time.DateOnly), e.Total)
 		}
+	}
+}
+
+// TestRecurringRunsPastEndedBatch checks that one run books series that are
+// due after a whole pass of series it could only end.
+func TestRecurringRunsPastEndedBatch(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	for i := range expense.Batch {
+		series(t, env, ada, ben, &g.ID, fmt.Sprintf("Rent %d", i), "2026-03-01", expense.RecurMonthly)
+	}
+	name := "Gym"
+	gym, err := env.Services.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name},
+		Members: []group.Invitee{{Email: "cleo@example.com", Name: "Cleo"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleo := gym.Members[0]
+	if cleo == ada {
+		cleo = gym.Members[1]
+	}
+	series(t, env, ada, cleo, &gym.ID, "Gym", "2026-03-02", expense.RecurMonthly)
+	// Ben settles up and leaves, so every rent series ends.
+	_, err = env.Services.Expenses.RecordPayment(ctx, ada, expense.PaymentInput{GroupID: &g.ID,
+		From: ben, To: ada, Amount: 50000 * expense.Batch, Currency: "EUR", Date: "2026-03-15"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := env.Services.Groups.RemoveMember(ctx, ada, g.ID, ben); err != nil {
+		t.Fatal(err)
+	}
+	env.Clock.Add(30 * 24 * time.Hour)
+
+	rt := &bootstrap.Runtime{Config: env.Config, Log: slog.New(slog.DiscardHandler), Services: env.Services}
+	if err := rt.RunJobsOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(groupExpenses(t, env, ada, gym.ID)); n != 2 {
+		t.Fatalf("the gym series is due after the ended ones and must be booked in the same run, got %d gym expenses", n)
 	}
 }
