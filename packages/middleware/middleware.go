@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/invite"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 )
@@ -96,14 +97,14 @@ func Observe(log *slog.Logger, next http.Handler) http.Handler {
 		defer func() {
 			v := recover()
 			if v != nil && v != http.ErrAbortHandler {
-				log.Error("middleware.panic.recovered", "requestId", id, "panic", v, "path", r.URL.Path,
+				log.Error("middleware.panic.recovered", "requestId", id, "panic", v, "path", redact(r.URL.Path),
 					"stack", string(debug.Stack()))
 				if rec.status == 0 {
 					WriteError(rec, r.WithContext(ctx), log, errors.New("middleware.panic"))
 				}
 			}
 			if r.URL.Path != "/health" {
-				log.Info("http.request.completed", "requestId", id, "method", r.Method, "path", r.URL.Path,
+				log.Info("http.request.completed", "requestId", id, "method", r.Method, "path", redact(r.URL.Path),
 					"status", rec.status, "bytes", rec.bytes, "durationMs", time.Since(start).Milliseconds())
 			}
 			if v == http.ErrAbortHandler {
@@ -112,6 +113,27 @@ func Observe(log *slog.Logger, next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(rec, r.WithContext(ctx))
 	})
+}
+
+// secretPaths lists the routes whose next path segment is an invite token,
+// a bearer secret that is stored only as a hash and must not reach the logs.
+var secretPaths = []string{invite.Path, platform.Prefix + "/invites/"}
+
+// redact replaces the invite token in path with "{token}" so the path can be
+// logged.
+func redact(path string) string {
+	for _, prefix := range secretPaths {
+		rest, ok := strings.CutPrefix(path, prefix)
+		if !ok || rest == "" {
+			continue
+		}
+		tail := ""
+		if i := strings.IndexByte(rest, '/'); i >= 0 {
+			tail = rest[i:]
+		}
+		return prefix + "{token}" + tail
+	}
+	return path
 }
 
 // validID reports whether a caller's request id is 1 to 64 letters, digits,
@@ -465,11 +487,11 @@ func WriteError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err er
 			status = mapped
 		} else {
 			// A kind added to errs without a status still answers, as a 500.
-			log.Error("middleware.error.unmapped", "requestId", body.RequestID, "path", r.URL.Path, "kind", de.Kind)
+			log.Error("middleware.error.unmapped", "requestId", body.RequestID, "path", redact(r.URL.Path), "kind", de.Kind)
 		}
 	} else {
 		body.Error, body.Code = "Something went wrong. Please try again.", "INTERNAL"
-		log.Error("middleware.error.internal", "requestId", body.RequestID, "path", r.URL.Path, "error", err)
+		log.Error("middleware.error.internal", "requestId", body.RequestID, "path", redact(r.URL.Path), "error", err)
 	}
 	WriteJSON(w, status, body)
 }
