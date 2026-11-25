@@ -41,7 +41,7 @@ func (a *API) signupSettings(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) updateSignupSettings(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.SignupSettingsInput](r)
+	in, err := decode[platform.SignupSettingsInput](w, r)
 	if err != nil {
 		return err
 	}
@@ -104,7 +104,7 @@ func (a *API) setRole(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	in, err := decode[platform.RoleInput](r)
+	in, err := decode[platform.RoleInput](w, r)
 	if err != nil {
 		return err
 	}

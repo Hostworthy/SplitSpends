@@ -2,6 +2,8 @@
 
 All endpoints live under `/api/v1`. JSON field names are **camelCase**. The same contract is used by the Flutter app, the MCP server, and any third-party client.
 
+A JSON request body holds exactly one JSON value of at most 1 MB (16 MB for `POST /import`); a larger body, an empty one where a body is required, or anything after the value answers 422 `VALIDATION_ERROR` with a message saying which. Fields the server does not know are ignored, so a newer client keeps working against an older server; a misspelled field is therefore ignored too, so clients send field names exactly as documented here.
+
 ## Conventions
 
 ### Authentication

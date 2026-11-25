@@ -106,7 +106,7 @@ func (a *API) listExpenses(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) createExpense(w http.ResponseWriter, r *http.Request) error {
-	body, err := decode[platform.ExpenseInput](r)
+	body, err := decode[platform.ExpenseInput](w, r)
 	if err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func (a *API) updateExpense(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	body, err := decode[platform.ExpenseInput](r)
+	body, err := decode[platform.ExpenseInput](w, r)
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func (a *API) addComment(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	in, err := decode[platform.CommentInput](r)
+	in, err := decode[platform.CommentInput](w, r)
 	if err != nil {
 		return err
 	}
@@ -237,7 +237,7 @@ func (a *API) deleteComment(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) createPayment(w http.ResponseWriter, r *http.Request) error {
-	body, err := decode[platform.PaymentInput](r)
+	body, err := decode[platform.PaymentInput](w, r)
 	if err != nil {
 		return err
 	}

@@ -21,7 +21,7 @@ func (a *API) listPushSubscriptions(w http.ResponseWriter, r *http.Request) erro
 }
 
 func (a *API) createPushSubscription(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.PushSubscriptionCreate](r)
+	in, err := decode[platform.PushSubscriptionCreate](w, r)
 	if err != nil {
 		return err
 	}
