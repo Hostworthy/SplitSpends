@@ -9,11 +9,8 @@ class RemoteFriendsRepository implements FriendsRepository {
   final ApiClient _api;
 
   @override
-  Future<List<Friend>> list() async => (await _api.getList(
-    '/friends',
-    Friend.fromJson,
-    query: {'limit': 200},
-  )).items;
+  Future<List<Friend>> list() async =>
+      (await _api.getList('/friends', Friend.fromJson)).items;
 
   @override
   Future<Friend> add({String? email, String? name}) =>

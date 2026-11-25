@@ -28,7 +28,7 @@ func TestOthersObjectsAreNotFound(t *testing.T) {
 	if err := svc.Expenses.DeleteComment(ctx, ben, note.ID); !errs.Is(err, errs.KindForbidden) {
 		t.Fatalf("Ben sees Ada's comment but may not delete it, got %v", err)
 	}
-	if list, err := svc.Expenses.Comments(ctx, ada, rent.ID); err != nil || len(list) != 1 {
+	if list, _, err := svc.Expenses.Comments(ctx, ada, rent.ID, 0, 0); err != nil || len(list) != 1 {
 		t.Fatalf("the comment must stay: %v %v", list, err)
 	}
 

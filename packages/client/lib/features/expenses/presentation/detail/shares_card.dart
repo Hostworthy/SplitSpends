@@ -36,6 +36,8 @@ class SharesCard extends ConsumerWidget {
               child: Text(
                 expense.isPayment
                     ? 'Payment'
+                    : expense.unknownMethod != null
+                    ? 'Split by ${expense.unknownMethod}'
                     : 'Split ${expense.splitMethod.label.toLowerCase()}',
                 style: text.labelLarge,
               ),

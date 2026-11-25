@@ -3,6 +3,7 @@ package expense
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -576,12 +577,13 @@ func (s *Service) notify(ctx context.Context, actor uuid.UUID, e *Expense, g *gr
 	}
 }
 
-// Comments lists comments on an expense.
-func (s *Service) Comments(ctx context.Context, actor, id uuid.UUID) ([]*Comment, error) {
+// Comments returns a page of the comments on an expense, oldest first, and
+// how many it has. A limit of 0 returns them all.
+func (s *Service) Comments(ctx context.Context, actor, id uuid.UUID, limit, offset int) ([]*Comment, int, error) {
 	if _, _, err := s.load(ctx, actor, id); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return s.comments.List(ctx, id)
+	return s.comments.List(ctx, id, limit, offset)
 }
 
 // Comment adds a comment.
@@ -602,6 +604,18 @@ func (s *Service) Comment(ctx context.Context, actor, id uuid.UUID, body string)
 	}
 	c := &Comment{ID: uuid.New(), ExpenseID: e.ID, UserID: actor, Body: body, CreatedAt: s.clock.Now()}
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		// Locked so that comments posted at the same time cannot pass the
+		// limit together.
+		if _, err := s.repo.Lock(ctx, e.ID); err != nil {
+			return err
+		}
+		n, err := s.comments.Count(ctx, e.ID)
+		if err != nil {
+			return err
+		}
+		if n >= MaxComments {
+			return errs.Conflict(fmt.Sprintf("This expense already has %d comments, the most one expense can hold.", MaxComments))
+		}
 		if err := s.comments.Create(ctx, c); err != nil {
 			return err
 		}

@@ -90,7 +90,7 @@ func (a *API) listTokens(w http.ResponseWriter, r *http.Request) error {
 	for _, t := range tokens {
 		out = append(out, toToken(t, ""))
 	}
-	return list(w, out, len(out))
+	return paged(w, r, out)
 }
 
 func (a *API) createToken(w http.ResponseWriter, r *http.Request) error {

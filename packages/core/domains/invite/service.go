@@ -2,9 +2,11 @@ package invite
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
+	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/clock"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/google/uuid"
@@ -24,14 +26,15 @@ type Service struct {
 	groups  Groups
 	lookup  group.Repository
 	users   *user.Service
+	tx      ports.Tx
 	clock   clock.Clock
 	baseURL string
 }
 
 // NewService builds a Service. lookup reads groups without a membership
 // check, for the public preview.
-func NewService(repo Repository, groups Groups, lookup group.Repository, users *user.Service, c clock.Clock, baseURL string) *Service {
-	return &Service{repo: repo, groups: groups, lookup: lookup, users: users, clock: c, baseURL: baseURL}
+func NewService(repo Repository, groups Groups, lookup group.Repository, users *user.Service, tx ports.Tx, c clock.Clock, baseURL string) *Service {
+	return &Service{repo: repo, groups: groups, lookup: lookup, users: users, tx: tx, clock: c, baseURL: baseURL}
 }
 
 // Issued is a new invite with its token and link; both are shown only once.
@@ -54,10 +57,37 @@ func (s *Service) Create(ctx context.Context, actor, groupID uuid.UUID) (*Issued
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.Create(ctx, inv); err != nil {
+	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		// Locked so that links made at the same time cannot pass the limit
+		// together.
+		if _, err := s.lookup.Lock(ctx, g.ID); err != nil {
+			return err
+		}
+		active, err := s.repo.Active(ctx, g.ID, s.clock.Now())
+		if err != nil {
+			return err
+		}
+		if len(shown(g, active)) >= MaxActive {
+			return errs.Conflict(fmt.Sprintf("This group already has %d invite links, the most it can have. Revoke one you no longer need first.", MaxActive))
+		}
+		return s.repo.Create(ctx, inv)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &Issued{Invite: inv, Token: token, URL: s.baseURL + Path + token}, nil
+}
+
+// shown keeps the invites made by current members: links of people who left
+// no longer work, so they are neither listed nor counted.
+func shown(g *group.Group, invites []*Invite) []*Invite {
+	out := make([]*Invite, 0, len(invites))
+	for _, inv := range invites {
+		if g.HasMember(inv.CreatedBy) {
+			out = append(out, inv)
+		}
+	}
+	return out
 }
 
 // List returns a group's usable invites, without tokens.
@@ -70,13 +100,7 @@ func (s *Service) List(ctx context.Context, actor, groupID uuid.UUID) ([]*Invite
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*Invite, 0, len(active))
-	for _, inv := range active {
-		if g.HasMember(inv.CreatedBy) {
-			out = append(out, inv)
-		}
-	}
-	return out, nil
+	return shown(g, active), nil
 }
 
 // Revoke deletes an invite so its link stops working.

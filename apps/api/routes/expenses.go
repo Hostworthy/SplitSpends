@@ -181,7 +181,8 @@ func (a *API) listComments(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	comments, err := a.svc.Expenses.Comments(r.Context(), me(r), id)
+	limit, offset := window(r)
+	comments, total, err := a.svc.Expenses.Comments(r.Context(), me(r), id, limit, offset)
 	if err != nil {
 		return err
 	}
@@ -201,7 +202,7 @@ func (a *API) listComments(w http.ResponseWriter, r *http.Request) error {
 		}
 		out = append(out, platform.Comment{ID: c.ID.String(), ExpenseID: c.ExpenseID.String(), User: u, Body: c.Body, CreatedAt: stamp(c.CreatedAt)})
 	}
-	return list(w, out, len(out))
+	return list(w, out, total)
 }
 
 func (a *API) addComment(w http.ResponseWriter, r *http.Request) error {
@@ -269,26 +270,28 @@ func (a *API) exportGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	var all []*expense.Expense
-	for offset := 0; ; offset += 200 {
-		items, total, err := a.svc.Expenses.List(r.Context(), expense.Filter{UserID: me(r), GroupID: &id, Limit: 200, Offset: offset})
-		if err != nil {
-			return err
-		}
-		all = append(all, items...)
-		if offset+200 >= total {
-			break
-		}
-	}
-	names := map[uuid.UUID]string{}
+	// The expenses are read twice, a page at a time, so a large group is
+	// never held in memory: once for the people who need a column, once to
+	// write the rows.
+	seen := map[uuid.UUID]bool{}
 	ids := []uuid.UUID{}
-	for _, e := range all {
-		ids = append(ids, e.Participants()...)
+	err = a.pages(r, id, func(e *expense.Expense) error {
+		for _, p := range e.Participants() {
+			if !seen[p] {
+				seen[p] = true
+				ids = append(ids, p)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	people, err := a.svc.Users.Index(r.Context(), ids)
 	if err != nil {
 		return err
 	}
+	names := map[uuid.UUID]string{}
 	for id, u := range people {
 		names[id] = u.Name
 	}
@@ -316,17 +319,46 @@ func (a *API) exportGroup(w http.ResponseWriter, r *http.Request) error {
 		header = append(header, safeCell(names[id]))
 	}
 	_ = cw.Write(header)
-	for i := len(all) - 1; i >= 0; i-- {
-		e := all[i]
+	err = a.pages(r, id, func(e *expense.Expense) error {
 		c, _ := money.Lookup(e.Currency)
 		row := []string{e.Date.Format(time.DateOnly), safeCell(e.Description), safeCell(e.Category), string(e.Kind), e.Currency, decimalString(e.Total, c.Exponent)}
 		for _, id := range order {
 			row = append(row, decimalString(e.Net(id), c.Exponent))
 		}
-		_ = cw.Write(row)
-	}
+		return cw.Write(row)
+	})
 	cw.Flush()
+	if err != nil {
+		return err
+	}
 	return cw.Error()
+}
+
+// exportPage is how many expenses an export reads at a time.
+const exportPage = 200
+
+// pages calls fn with each of the group's expenses, oldest first, reading
+// them a page at a time from the end of the newest-first list.
+func (a *API) pages(r *http.Request, groupID uuid.UUID, fn func(*expense.Expense) error) error {
+	f := expense.Filter{UserID: me(r), GroupID: &groupID, Limit: 1}
+	_, total, err := a.svc.Expenses.List(r.Context(), f)
+	if err != nil {
+		return err
+	}
+	for end := total; end > 0; end -= exportPage {
+		f.Offset = max(0, end-exportPage)
+		f.Limit = end - f.Offset
+		items, _, err := a.svc.Expenses.List(r.Context(), f)
+		if err != nil {
+			return err
+		}
+		for i := len(items) - 1; i >= 0; i-- {
+			if err := fn(items[i]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // safeCell neutralises spreadsheet formula injection in text a person
