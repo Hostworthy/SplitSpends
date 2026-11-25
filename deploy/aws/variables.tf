@@ -26,6 +26,11 @@ variable "signup_mode" {
   description = "Starting sign-up mode: open, invite, approval or closed (administrators can change it in the app)."
   type        = string
   default     = "invite"
+  validation {
+    # domain is still accepted by the server as invite with signup_allowed_domains.
+    condition     = contains(["open", "invite", "approval", "closed", "domain"], var.signup_mode)
+    error_message = "signup_mode must be open, invite, approval or closed."
+  }
 }
 
 variable "admin_email" {
@@ -35,8 +40,9 @@ variable "admin_email" {
 }
 
 variable "signup_allowed_domains" {
-  type    = string
-  default = ""
+  description = "Comma-separated email domains that start out on the sign-up allowed list, for example example.com. Empty for none."
+  type        = string
+  default     = ""
 }
 
 variable "smtp" {
@@ -95,7 +101,7 @@ variable "lambda_web_adapter_layer" {
 }
 
 variable "jobs_schedule" {
-  description = "How often recurring expenses and cleanup run."
+  description = "How often recurring expenses and cleanup run, as an EventBridge schedule expression."
   type        = string
   default     = "rate(30 minutes)"
 }

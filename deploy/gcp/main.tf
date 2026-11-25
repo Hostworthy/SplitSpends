@@ -2,7 +2,7 @@ data "google_project" "this" {}
 
 locals {
   services = ["run.googleapis.com", "secretmanager.googleapis.com", "cloudscheduler.googleapis.com",
-  "artifactregistry.googleapis.com", "sqladmin.googleapis.com", "iam.googleapis.com"]
+  "artifactregistry.googleapis.com", "sqladmin.googleapis.com", "iam.googleapis.com", "cloudbuild.googleapis.com"]
   # Cloud Run's deterministic URL, known before the service exists.
   run_url  = "https://${var.name}-${data.google_project.this.number}.${var.region}.run.app"
   base_url = var.base_url != "" ? trimsuffix(var.base_url, "/") : local.run_url
@@ -173,21 +173,22 @@ resource "google_cloud_run_v2_service" "app" {
 
       dynamic "env" {
         for_each = {
-          SERVERLESS    = "true"
-          BASE_URL      = local.base_url
-          TRUST_PROXY   = "1"
-          SIGNUP_MODE   = var.signup_mode
-          ADMIN_EMAIL   = var.admin_email
-          BLOB_STORE    = "postgres"
-          SMTP_HOST     = var.smtp.host
-          SMTP_PORT     = tostring(var.smtp.port)
-          SMTP_SECURITY = var.smtp.security
-          SMTP_USERNAME = var.smtp.username
-          SMTP_FROM     = var.smtp.from
-          AI_PROVIDER   = var.ai.provider
-          AI_MODEL      = var.ai.model
-          AI_BASE_URL   = var.ai.base_url
-          AI_EFFORT     = var.ai.effort
+          SERVERLESS             = "true"
+          BASE_URL               = local.base_url
+          TRUST_PROXY            = "1"
+          SIGNUP_MODE            = var.signup_mode
+          SIGNUP_ALLOWED_DOMAINS = var.signup_allowed_domains
+          ADMIN_EMAIL            = var.admin_email
+          BLOB_STORE             = "postgres"
+          SMTP_HOST              = var.smtp.host
+          SMTP_PORT              = tostring(var.smtp.port)
+          SMTP_SECURITY          = var.smtp.security
+          SMTP_USERNAME          = var.smtp.username
+          SMTP_FROM              = var.smtp.from
+          AI_PROVIDER            = var.ai.provider
+          AI_MODEL               = var.ai.model
+          AI_BASE_URL            = var.ai.base_url
+          AI_EFFORT              = var.ai.effort
         }
         content {
           name  = env.key
@@ -241,7 +242,7 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
 resource "google_cloud_scheduler_job" "jobs" {
   count    = local.deploy ? 1 : 0
   name     = "${var.name}-jobs"
-  schedule = "*/30 * * * *"
+  schedule = var.jobs_schedule
   region   = var.region
   http_target {
     uri         = "${local.run_url}/internal/jobs"
