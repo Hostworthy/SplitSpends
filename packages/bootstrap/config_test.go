@@ -230,7 +230,7 @@ func TestLoadConfig(t *testing.T) {
 		{name: "BASE_URL without host", env: map[string]string{"BASE_URL": "https://"}, want: "invalid.BASE_URL"},
 		{name: "BASE_URL with trailing slash", env: map[string]string{"BASE_URL": "https://split.example.com/"},
 			check: func(c *bootstrap.Config) bool { return c.BaseURL == "https://split.example.com" }},
-		{name: "BASE_URL unset", check: func(c *bootstrap.Config) bool { return c.BaseURL == "http://localhost:8080" }},
+		{name: "BASE_URL unset", env: map[string]string{"BASE_URL": ""}, check: func(c *bootstrap.Config) bool { return c.BaseURL == "http://localhost:8080" }},
 		{name: "SMTP_PORT zero", env: map[string]string{"SMTP_PORT": "0"}, want: "invalid.SMTP_PORT"},
 		{name: "SMTP_PORT too high", env: map[string]string{"SMTP_PORT": "65536"}, want: "invalid.SMTP_PORT"},
 		{name: "short JOBS_SECRET", env: map[string]string{"JOBS_SECRET": strings.Repeat("j", 10)}, want: "invalid.JOBS_SECRET"},
