@@ -29,6 +29,13 @@ func main() {
 		fmt.Println(version)
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "health" {
+		if err := health(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -83,6 +90,35 @@ func run() error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+// health checks the server running in this container, for the image's
+// HEALTHCHECK: the distroless image has no shell or curl to do it.
+func health() error {
+	cfg, err := bootstrap.LoadConfig()
+	if err != nil {
+		return err
+	}
+	return probe(loopback(cfg.Addr))
+}
+
+// probe succeeds when base/health answers 200 within three seconds.
+func probe(base string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/health", nil)
+	if err != nil {
+		return err
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("api.health.unreachable: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("api.health.unhealthy: %s", res.Status)
+	}
+	return nil
 }
 
 // loopback is the address the in-process MCP endpoint uses to reach the API.
