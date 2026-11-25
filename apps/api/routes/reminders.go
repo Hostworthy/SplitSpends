@@ -4,9 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/reminder"
-	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
-	"github.com/google/uuid"
 )
 
 func (a *API) sendReminder(w http.ResponseWriter, r *http.Request) error {
@@ -14,9 +12,9 @@ func (a *API) sendReminder(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	to, err := uuid.Parse(in.UserID)
+	to, err := requiredID(in.UserID, "userId")
 	if err != nil {
-		return errs.Validation("userId", "Choose who to remind.")
+		return err
 	}
 	groupID, err := optionalID(in.GroupID, "groupId")
 	if err != nil {

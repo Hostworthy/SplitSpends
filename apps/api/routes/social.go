@@ -96,9 +96,9 @@ func toPatch(p platform.GroupPatch) (group.Patch, error) {
 			}
 			out.DefaultSplit.Values = make(map[uuid.UUID]string, len(d.Values))
 			for raw, v := range d.Values {
-				id, err := uuid.Parse(raw)
+				id, err := requiredID(raw, "defaultSplit")
 				if err != nil {
-					return out, errs.Validation("defaultSplit", "Invalid user id.")
+					return out, err
 				}
 				out.DefaultSplit.Values[id] = v
 			}

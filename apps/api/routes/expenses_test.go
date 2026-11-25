@@ -11,6 +11,7 @@ import (
 
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
+	"github.com/google/uuid"
 )
 
 func TestUpdateVersion(t *testing.T) {
@@ -128,5 +129,61 @@ func TestExportNeutralisesNames(t *testing.T) {
 	}
 	if got := rows[1][column]; got != "-1.00" {
 		t.Errorf("Ben's net is %q, want -1.00", got)
+	}
+}
+
+// TestMalformedIDsNameTheirField checks that an id that does not parse is
+// refused on the exact field that holds it, wherever it is sent.
+func TestMalformedIDsNameTheirField(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	p := platform.Prefix
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	me := ada.User.ID
+	expense := func(edit func(*platform.ExpenseInput)) platform.ExpenseInput {
+		in := platform.ExpenseInput{Description: "Groceries", Currency: "EUR", Total: 3000, SplitMethod: "equal",
+			Payers: []platform.Payer{{UserID: me, Amount: 3000}}, Splits: []platform.Split{{UserID: me}, {UserID: me}}}
+		edit(&in)
+		return in
+	}
+	local := uuid.NewString()
+	for _, tc := range []struct {
+		name, path string
+		body       any
+		field      string
+	}{
+		{"a split", p + "/expenses", expense(func(in *platform.ExpenseInput) { in.Splits[1].UserID = "x" }), "splits[1].userId"},
+		{"a payer", p + "/expenses", expense(func(in *platform.ExpenseInput) { in.Payers[0].UserID = "x" }), "payers[0].userId"},
+		{"an item", p + "/expenses", expense(func(in *platform.ExpenseInput) {
+			in.SplitMethod, in.Splits = "itemized", nil
+			in.Items = []platform.Item{{Name: "Bread", Amount: 3000, UserIDs: []string{me, "x"}}}
+		}), "items[0].userIds[1]"},
+		{"a reminder", p + "/reminders", platform.ReminderInput{UserID: "x"}, "userId"},
+		{"an imported person", p + "/import", platform.ImportRequest{MeID: local,
+			People: []platform.ImportPerson{{ID: local, Name: "Ada"}, {ID: "x", Name: "Ben"}}}, "people[1].id"},
+		{"an imported expense", p + "/import", platform.ImportRequest{MeID: local,
+			People:   []platform.ImportPerson{{ID: local, Name: "Ada"}},
+			Expenses: []platform.ImportExpense{{ExpenseInput: expense(func(in *platform.ExpenseInput) { in.ID = &local; in.Splits[0].UserID = "x" })}}},
+			"expenses[0].splits[0].userId"},
+	} {
+		f := s.call(t, http.MethodPost, tc.path, ada.Token, tc.body).want(t, http.StatusUnprocessableEntity).failure(t)
+		if f.Field != tc.field || f.Error != "Invalid id." {
+			t.Errorf("%s: want %q on %s, got %+v", tc.name, "Invalid id.", tc.field, f)
+		}
+	}
+}
+
+// TestImportRefusesUnknownKind checks that an imported entry that is neither
+// an expense nor a payment is refused instead of saved as an expense.
+func TestImportRefusesUnknownKind(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	local, id := uuid.NewString(), uuid.NewString()
+	bundle := platform.ImportRequest{MeID: local, People: []platform.ImportPerson{{ID: local, Name: "Ada"}},
+		Expenses: []platform.ImportExpense{{Kind: "paymnet", ExpenseInput: platform.ExpenseInput{ID: &id, Description: "Rent",
+			Currency: "EUR", Total: 1000, SplitMethod: "equal", Payers: []platform.Payer{{UserID: local, Amount: 1000}},
+			Splits: []platform.Split{{UserID: local}}}}}}
+	f := s.call(t, http.MethodPost, platform.Prefix+"/import", ada.Token, bundle).want(t, http.StatusUnprocessableEntity).failure(t)
+	if f.Field != "expenses[0].kind" {
+		t.Fatalf("want an error on expenses[0].kind, got %+v", f)
 	}
 }

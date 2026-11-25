@@ -2,6 +2,7 @@ package routes
 
 import (
 	"encoding/csv"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,14 +16,6 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 	"github.com/google/uuid"
 )
-
-func parseID(raw, field string) (uuid.UUID, error) {
-	id, err := uuid.Parse(raw)
-	if err != nil {
-		return uuid.Nil, errs.Validation(field, "Invalid user id.")
-	}
-	return id, nil
-}
 
 func toInput(in platform.ExpenseInput) (expense.Input, error) {
 	out := expense.Input{Description: in.Description, Currency: in.Currency, Total: in.Total, Date: in.Date, Category: in.Category,
@@ -44,15 +37,15 @@ func toInput(in platform.ExpenseInput) (expense.Input, error) {
 		}
 		out.UpdatedAt = &at
 	}
-	for _, p := range in.Payers {
-		id, err := parseID(p.UserID, "payers")
+	for i, p := range in.Payers {
+		id, err := requiredID(p.UserID, fmt.Sprintf("payers[%d].userId", i))
 		if err != nil {
 			return out, err
 		}
 		out.Payers = append(out.Payers, expense.Payer{UserID: id, Amount: p.Amount})
 	}
-	for _, s := range in.Splits {
-		id, err := parseID(s.UserID, "splits")
+	for i, s := range in.Splits {
+		id, err := requiredID(s.UserID, fmt.Sprintf("splits[%d].userId", i))
 		if err != nil {
 			return out, err
 		}
@@ -62,10 +55,10 @@ func toInput(in platform.ExpenseInput) (expense.Input, error) {
 		}
 		out.Splits = append(out.Splits, expense.SplitInput{UserID: id, Value: v})
 	}
-	for _, it := range in.Items {
+	for i, it := range in.Items {
 		item := expense.Item{Name: it.Name, Amount: it.Amount}
-		for _, raw := range it.UserIDs {
-			id, err := parseID(raw, "items")
+		for j, raw := range it.UserIDs {
+			id, err := requiredID(raw, fmt.Sprintf("items[%d].userIds[%d]", i, j))
 			if err != nil {
 				return out, err
 			}
@@ -248,10 +241,10 @@ func (a *API) createPayment(w http.ResponseWriter, r *http.Request) error {
 	if in.GroupID, err = optionalID(body.GroupID, "groupId"); err != nil {
 		return err
 	}
-	if in.From, err = parseID(body.FromUserID, "fromUserId"); err != nil {
+	if in.From, err = requiredID(body.FromUserID, "fromUserId"); err != nil {
 		return err
 	}
-	if in.To, err = parseID(body.ToUserID, "toUserId"); err != nil {
+	if in.To, err = requiredID(body.ToUserID, "toUserId"); err != nil {
 		return err
 	}
 	e, err := a.svc.Expenses.RecordPayment(r.Context(), me(r), in)
