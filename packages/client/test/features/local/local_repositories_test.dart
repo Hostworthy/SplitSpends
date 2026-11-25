@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sembast/sembast_memory.dart';
 
+import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/core/storage/local_ledger.dart';
@@ -102,6 +103,274 @@ void main() {
     // Settled members can leave; unsettled ones cannot.
     await groups.removeMember(group.id, sam);
     expect(() => groups.removeMember(group.id, alex), throwsA(anything));
+  });
+
+  Matcher apiError(String field, String message) => isA<ApiError>()
+      .having((e) => e.field, 'field', field)
+      .having((e) => e.message, 'message', message);
+
+  Future<Group> trip(LocalGroupsRepository groups) => groups.create(
+    const GroupInput(
+      name: 'Trip',
+      members: [
+        MemberInput(name: 'Sam'),
+        MemberInput(name: 'Alex'),
+      ],
+    ),
+  );
+
+  test('a group member can record a payment between two others', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final group = await trip(groups);
+    final sam = group.members[1].id, alex = group.members[2].id;
+    final payment = await expenses.recordPayment(
+      groupId: group.id,
+      fromUserId: sam,
+      toUserId: alex,
+      amount: 1500,
+      currency: 'EUR',
+    );
+    expect(payment.isPayment, isTrue);
+    expect(payment.myBalance, 0);
+    final debts = (await groups.balances(group.id)).debts;
+    expect(debts.map((d) => (d.from, d.to, d.amount)), [(alex, sam, 1500)]);
+  });
+
+  test('a group expense without me is accepted', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final group = await trip(groups);
+    final sam = group.members[1].id, alex = group.members[2].id;
+    final taxi = await expenses.create(
+      ExpenseInput(
+        groupId: group.id,
+        description: 'Taxi',
+        currency: 'EUR',
+        total: 2000,
+        date: '2026-11-20',
+        payers: [Payer(userId: sam, amount: 2000)],
+        splits: [
+          SplitEntry(userId: sam),
+          SplitEntry(userId: alex),
+        ],
+      ),
+    );
+    expect(taxi.myBalance, 0);
+    expect((await expenses.list(ExpenseQuery(groupId: group.id))).total, 1);
+  });
+
+  test('a group expense with someone outside the group is rejected', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final group = await trip(groups);
+    final kim = (await LocalFriendsRepository(ledger).add(name: 'Kim')).user.id;
+    await expectLater(
+      expenses.create(
+        ExpenseInput(
+          groupId: group.id,
+          description: 'Taxi',
+          currency: 'EUR',
+          total: 2000,
+          date: '2026-11-20',
+          payers: const [Payer(userId: meId, amount: 2000)],
+          splits: [
+            const SplitEntry(userId: meId),
+            SplitEntry(userId: kim),
+          ],
+        ),
+      ),
+      throwsA(
+        apiError(
+          'splits',
+          'Everyone in the expense must be a member of the group.',
+        ),
+      ),
+    );
+  });
+
+  test(
+    'a non-group expense without me is rejected with field splits',
+    () async {
+      final expenses = LocalExpensesRepository(ledger);
+      final friends = LocalFriendsRepository(ledger);
+      final sam = (await friends.add(name: 'Sam')).user.id;
+      final alex = (await friends.add(name: 'Alex')).user.id;
+      await expectLater(
+        expenses.create(
+          ExpenseInput(
+            description: 'Taxi',
+            currency: 'EUR',
+            total: 2000,
+            date: '2026-11-20',
+            payers: [Payer(userId: sam, amount: 2000)],
+            splits: [
+              SplitEntry(userId: sam),
+              SplitEntry(userId: alex),
+            ],
+          ),
+        ),
+        throwsA(
+          apiError('splits', 'You must be part of an expense outside a group.'),
+        ),
+      );
+      await expectLater(
+        expenses.recordPayment(
+          fromUserId: sam,
+          toUserId: alex,
+          amount: 1500,
+          currency: 'EUR',
+        ),
+        throwsA(
+          apiError(
+            'fromUserId',
+            'You must be part of a payment outside a group.',
+          ),
+        ),
+      );
+      expect((await expenses.list(const ExpenseQuery())).total, 0);
+    },
+  );
+
+  ExpenseInput taxi({String? groupId, required List<String> people}) =>
+      ExpenseInput(
+        groupId: groupId,
+        description: 'Taxi',
+        currency: 'EUR',
+        total: 2000,
+        date: '2026-11-20',
+        payers: const [Payer(userId: meId, amount: 2000)],
+        splits: [for (final id in people) SplitEntry(userId: id)],
+      );
+
+  test('editing a deleted expense is a conflict', () async {
+    final expenses = LocalExpensesRepository(ledger);
+    final sam = (await LocalFriendsRepository(ledger).add(name: 'Sam')).user.id;
+    final e = await expenses.create(taxi(people: [meId, sam]));
+    await expenses.delete(e.id);
+    await expectLater(
+      expenses.update(e.id, taxi(people: [meId, sam])),
+      throwsA(
+        isA<ApiError>().having(
+          (e) => e.message,
+          'message',
+          'Restore the expense before editing it.',
+        ),
+      ),
+    );
+    expect((await expenses.list(const ExpenseQuery())).total, 0);
+  });
+
+  test('update keeps and validates the original group', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final group = await trip(groups);
+    final sam = group.members[1].id;
+    final kim = (await LocalFriendsRepository(ledger).add(name: 'Kim')).user.id;
+    final e = await expenses.create(
+      taxi(groupId: group.id, people: [meId, sam]),
+    );
+    await expectLater(
+      expenses.update(e.id, taxi(people: [meId, kim])),
+      throwsA(
+        apiError(
+          'splits',
+          'Everyone in the expense must be a member of the group.',
+        ),
+      ),
+    );
+    final edited = await expenses.update(e.id, taxi(people: [meId]));
+    expect(edited.groupId, group.id);
+  });
+
+  test('deleting twice records one activity', () async {
+    final expenses = LocalExpensesRepository(ledger);
+    final sam = (await LocalFriendsRepository(ledger).add(name: 'Sam')).user.id;
+    final e = await expenses.create(taxi(people: [meId, sam]));
+    await expenses.delete(e.id);
+    await expenses.delete(e.id);
+    await expenses.restore(e.id);
+    await expenses.restore(e.id);
+    final feed = await LocalActivityRepository(ledger).list(expenseId: e.id);
+    expect(feed.items.map((a) => a.kind).toList()..sort(), [
+      'expense.created',
+      'expense.deleted',
+      'expense.restored',
+    ]);
+  });
+
+  test('restore is refused after a participant left the group', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final group = await trip(groups);
+    final sam = group.members[1].id;
+    final gone = await expenses.create(
+      taxi(groupId: group.id, people: [meId, sam]),
+    );
+    await expenses.delete(gone.id);
+    final kept = await expenses.create(
+      taxi(groupId: group.id, people: [meId, sam]),
+    );
+    await expenses.recordPayment(
+      groupId: group.id,
+      fromUserId: sam,
+      toUserId: meId,
+      amount: 1000,
+      currency: 'EUR',
+    );
+    await groups.removeMember(group.id, sam);
+    await expectLater(
+      expenses.restore(gone.id),
+      throwsA(
+        isA<ApiError>().having(
+          (e) => e.message,
+          'message',
+          'Someone in this expense has left the group, so it cannot be '
+              'restored.',
+        ),
+      ),
+    );
+    await expectLater(
+      expenses.delete(kept.id),
+      throwsA(
+        isA<ApiError>().having(
+          (e) => e.message,
+          'message',
+          'Someone in this expense has left the group, so it cannot be '
+              'deleted.',
+        ),
+      ),
+    );
+    expect((await expenses.get(gone.id)).deleted, isTrue);
+    expect((await groups.balances(group.id)).debts, isEmpty);
+  });
+
+  test('only members change a group\'s expenses', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final group = await trip(groups);
+    final sam = group.members[1].id, alex = group.members[2].id;
+    final e = await expenses.create(
+      ExpenseInput(
+        groupId: group.id,
+        description: 'Taxi',
+        currency: 'EUR',
+        total: 2000,
+        date: '2026-11-20',
+        payers: [Payer(userId: sam, amount: 2000)],
+        splits: [
+          SplitEntry(userId: sam),
+          SplitEntry(userId: alex),
+        ],
+      ),
+    );
+    await groups.removeMember(group.id, meId);
+    final notFound = isA<ApiError>().having((e) => e.code, 'code', 'NOT_FOUND');
+    await expectLater(expenses.delete(e.id), throwsA(notFound));
+    await expectLater(
+      expenses.update(e.id, taxi(people: [sam, alex])),
+      throwsA(notFound),
+    );
   });
 
   test('validation errors use the API field names', () async {

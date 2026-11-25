@@ -6,8 +6,8 @@ enum SignupMode {
   open('Open', 'Anyone with an email address can sign up.'),
   invite(
     'Invite',
-    'The allowed list, people a member added by email, and people with a '
-        'group invite link.',
+    'The allowed list, people a member added by email, people with a '
+        'group invite link, and people an administrator or manager approved.',
   ),
   approval(
     'Approval',
