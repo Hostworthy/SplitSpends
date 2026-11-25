@@ -99,6 +99,17 @@ func (s *Service) visible(ctx context.Context, actor uuid.UUID, e *Expense) (*Ex
 	return e, g, nil
 }
 
+// editable checks that the actor may change an expense they can see. People
+// who left a group keep seeing the expenses they were part of, but only
+// current members change a group's expenses, since that moves the balances
+// of everyone still in it.
+func editable(actor uuid.UUID, g *group.Group) error {
+	if g != nil && !g.HasMember(actor) {
+		return errs.NotFound("Expense")
+	}
+	return nil
+}
+
 // authorize checks that the actor may book an expense with these participants.
 func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.UUID, shares []Share, receiptID *uuid.UUID) (*group.Group, error) {
 	if receiptID != nil {
@@ -133,6 +144,12 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 	if !ok {
 		return nil, errs.Validation("splits", "You can only split non-group expenses with friends.")
 	}
+	if ok, err = s.linked(ctx, shares); err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errs.Validation("splits", "Outside a group, everyone who owes money must be friends with the people they owe it to.")
+	}
 	if !slices.ContainsFunc(shares, func(sh Share) bool { return sh.UserID == actor }) {
 		return nil, errs.Validation("splits", "You must be part of an expense outside a group.")
 	}
@@ -140,7 +157,7 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 }
 
 // members reports whether everyone in shares still belongs to g. Booking,
-// restoring and repeating an expense all require it.
+// deleting, restoring and repeating an expense all require it.
 func members(g *group.Group, shares []Share) bool {
 	for _, sh := range shares {
 		if !g.HasMember(sh.UserID) {
@@ -160,6 +177,27 @@ func (s *Service) connected(ctx context.Context, actor uuid.UUID, shares []Share
 		ok, err := s.connections.Connected(ctx, actor, sh.UserID)
 		if err != nil || !ok {
 			return false, err
+		}
+	}
+	return true, nil
+}
+
+// linked reports whether everyone who gets money back from an expense
+// outside groups is connected to everyone who owes it, since those are the
+// pairs the expense leaves owing each other.
+func (s *Service) linked(ctx context.Context, shares []Share) (bool, error) {
+	for _, c := range shares {
+		if c.Paid <= c.Owed {
+			continue
+		}
+		for _, d := range shares {
+			if d.Paid >= d.Owed {
+				continue
+			}
+			ok, err := s.connections.Connected(ctx, c.UserID, d.UserID)
+			if err != nil || !ok {
+				return false, err
+			}
 		}
 	}
 	return true, nil
@@ -320,7 +358,10 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 	var g *group.Group
 	err := s.tx.Do(ctx, func(ctx context.Context) error {
 		var err error
-		if e, _, err = s.lock(ctx, actor, id); err != nil {
+		if e, g, err = s.lock(ctx, actor, id); err != nil {
+			return err
+		}
+		if err := editable(actor, g); err != nil {
 			return err
 		}
 		if e.DeletedAt != nil {
@@ -397,10 +438,19 @@ func (s *Service) setDeleted(ctx context.Context, actor, id uuid.UUID, deleted b
 		if e, g, err = s.lock(ctx, actor, id); err != nil {
 			return err
 		}
+		if err := editable(actor, g); err != nil {
+			return err
+		}
 		if (e.DeletedAt != nil) == deleted {
 			return nil
 		}
-		if !deleted && g != nil && !members(g, e.Shares) {
+		// Leaving requires a settled balance, so deleting or restoring an
+		// expense of someone who has left would give them a balance in a
+		// group they can no longer act in.
+		if g != nil && !members(g, e.Shares) {
+			if deleted {
+				return errs.Conflict("Someone in this expense has left the group, so it cannot be deleted.")
+			}
 			return errs.Conflict("Someone in this expense has left the group, so it cannot be restored.")
 		}
 		now := s.clock.Now()
@@ -533,6 +583,9 @@ func (s *Service) Comment(ctx context.Context, actor, id uuid.UUID, body string)
 	if err != nil {
 		return nil, err
 	}
+	if err := editable(actor, g); err != nil {
+		return nil, err
+	}
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return nil, errs.Validation("body", "Write a comment first.")
@@ -608,6 +661,10 @@ func (s *Service) repeat(ctx context.Context, id uuid.UUID, today time.Time) (in
 		ok = members(g, src.Shares)
 	} else if ok, err = s.connected(ctx, src.CreatedBy, src.Shares); err != nil {
 		return 0, err
+	} else if ok {
+		if ok, err = s.linked(ctx, src.Shares); err != nil {
+			return 0, err
+		}
 	}
 	// Copies never bill someone who has left the group or is no longer
 	// connected; the series ends and the activity feed says why.

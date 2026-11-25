@@ -67,6 +67,13 @@ class _AmountFieldState extends ConsumerState<AmountField> {
       if (current != widget.initial) {
         _controller.text = Money.toPlain(widget.initial!, exponent);
       }
+    } else if (oldWidget.currency != widget.currency) {
+      // The same text means a different amount (or none) in a currency with
+      // another exponent; report it after this build so the parent can
+      // update its state.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _changed(_controller.text);
+      });
     }
   }
 
@@ -97,6 +104,15 @@ class _AmountFieldState extends ConsumerState<AmountField> {
   Widget build(BuildContext context) {
     final info = ref.watch(configValueProvider).currency(widget.currency);
     final theme = Theme.of(context);
+    final text = _controller.text.trim();
+    final value = _error == null && text.contains(RegExp('[.,]'))
+        ? Money.parse(text, info.exponent)
+        : null;
+    // Separators can be read more than one way, so say how this one was
+    // read unless the text is already in plain form.
+    final reading = value != null && Money.toPlain(value, info.exponent) != text
+        ? Money.format(value, info)
+        : null;
     final style = widget.large
         ? theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700)
         : null;
@@ -131,6 +147,7 @@ class _AmountFieldState extends ConsumerState<AmountField> {
           ),
         ),
         prefixIconConstraints: const BoxConstraints(),
+        helperText: reading,
         errorText: _error,
       ),
     );

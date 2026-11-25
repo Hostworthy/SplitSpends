@@ -2,6 +2,7 @@ project_id   = "my-project"
 region       = "us-central1"
 # Free option: a Neon or Supabase database. Or create_database = true for Cloud SQL.
 database_url = "postgres://user:password@ep-example.us-east-2.aws.neon.tech/splitspends?sslmode=require"
+admin_email  = "you@example.com"
 
 smtp = {
   host     = "smtp.gmail.com"

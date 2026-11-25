@@ -133,6 +133,9 @@ type Policy struct {
 	// of guesses per address bounded.
 	MaxCodesHour  int
 	MaxCodesEmail int
+	// AdminEmail, when set, is the only address that may sign in while no
+	// account is active, so nobody else can claim a new server first.
+	AdminEmail string
 }
 
 // DefaultPolicy returns sensible defaults; Secret must still be set.

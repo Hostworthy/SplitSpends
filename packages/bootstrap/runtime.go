@@ -115,8 +115,11 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 	}
 
 	sender := pushSender(ctx, db, cfg, log)
-	return &Runtime{Config: cfg, Log: log, db: db, notifier: notifier,
-		Services: WireWithPush(db, notifier, blobs, reader, sender, clock.System{}, cfg, log)}, nil
+	services := WireWithPush(db, notifier, blobs, reader, sender, clock.System{}, cfg, log)
+	if open, err := services.Auth.Unclaimed(ctx); err == nil && open {
+		log.Warn("auth.bootstrap.open", "reason", "no account yet and ADMIN_EMAIL is empty: whoever signs in first becomes the administrator, whatever SIGNUP_MODE says")
+	}
+	return &Runtime{Config: cfg, Log: log, db: db, notifier: notifier, Services: services}, nil
 }
 
 // Wire builds services from adapters, without push. Tests call it with
@@ -144,7 +147,7 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	receiptRepo := repositories.NewReceipts(db)
 
 	policy := auth.DefaultPolicy()
-	policy.Secret, policy.Mode, policy.AllowedDomains = cfg.Secret, cfg.SignupMode, cfg.AllowedDomains
+	policy.Secret, policy.Mode, policy.AllowedDomains, policy.AdminEmail = cfg.Secret, cfg.SignupMode, cfg.AllowedDomains, cfg.AdminEmail
 	if cfg.SessionTTL > 0 {
 		policy.SessionTTL = cfg.SessionTTL
 	}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/exchange"
 )
 
@@ -24,6 +25,7 @@ type Config struct {
 	Secret         []byte
 	SignupMode     auth.SignupMode
 	AllowedDomains []string
+	AdminEmail     string
 	SessionTTL     time.Duration
 	CORSOrigins    []string
 	ProxyHops      int
@@ -107,8 +109,12 @@ func hops(v string) (int, error) {
 	return 0, fmt.Errorf("bootstrap.config.env.invalid.TRUST_PROXY: use the number of proxies in front of the server, or false")
 }
 
-// LoadConfig reads configuration from the environment.
+// LoadConfig reads configuration from the environment, after filling it
+// from the secret named by SECRETS_ARN when that is set.
 func LoadConfig() (*Config, error) {
+	if err := secrets(); err != nil {
+		return nil, err
+	}
 	c := &Config{
 		AppName:      env("APP_NAME", "Split Spends"),
 		Addr:         env("ADDR", ":8080"),
@@ -152,6 +158,11 @@ func LoadConfig() (*Config, error) {
 	c.AllowedDomains = list(env("SIGNUP_ALLOWED_DOMAINS", ""))
 	if c.SignupMode == auth.SignupDomain && len(c.AllowedDomains) == 0 {
 		return nil, fmt.Errorf("bootstrap.config.env.required.not-found.SIGNUP_ALLOWED_DOMAINS")
+	}
+	if admin := env("ADMIN_EMAIL", ""); admin != "" {
+		if c.AdminEmail, err = user.NormalizeEmail(admin); err != nil {
+			return nil, fmt.Errorf("bootstrap.config.env.invalid.ADMIN_EMAIL: use the one email address the first administrator signs in with")
+		}
 	}
 	days, err := strconv.Atoi(env("SESSION_TTL_DAYS", "90"))
 	if err != nil || days < 1 {
