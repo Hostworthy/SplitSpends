@@ -4,17 +4,12 @@ package admin
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
-	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/google/uuid"
 )
-
-// MaxAllowed bounds the allowed list.
-const MaxAllowed = 500
 
 // MaxPending bounds the requests waiting for a decision, so the queue stays
 // one administrators can work through.
@@ -86,61 +81,4 @@ type Accounts interface {
 // too; tokens stored anywhere else must be removed here as well.
 type Credentials interface {
 	Revoke(ctx context.Context, userID uuid.UUID, email string) error
-}
-
-// Normalize checks the mode and cleans the allowed list: addresses are
-// lowercased, "example.com" becomes "@example.com", duplicates go.
-func Normalize(mode string, allowed []string) (auth.Signup, error) {
-	s := auth.Signup{Mode: auth.SignupMode(strings.ToLower(strings.TrimSpace(mode)))}
-	valid := false
-	for _, m := range auth.Modes {
-		valid = valid || m == s.Mode
-	}
-	if !valid {
-		return s, errs.Validation("mode", "Choose open, invite, approval or closed.")
-	}
-	if len(allowed) > MaxAllowed {
-		return s, errs.Validation("allowed", "The allowed list is limited to 500 entries.")
-	}
-	seen := map[string]bool{}
-	s.Allowed = []string{}
-	for _, raw := range allowed {
-		entry := strings.ToLower(strings.TrimSpace(raw))
-		if entry == "" {
-			continue
-		}
-		switch {
-		case strings.HasPrefix(entry, "@") || !strings.Contains(entry, "@"):
-			domain := strings.TrimPrefix(entry, "@")
-			if !domainPattern(domain) {
-				return s, errs.Validation("allowed", "“"+raw+"” is not an email address or a domain like @example.com.")
-			}
-			entry = "@" + domain
-		default:
-			email, err := user.NormalizeEmail(entry)
-			if err != nil {
-				return s, errs.Validation("allowed", "“"+raw+"” is not an email address or a domain like @example.com.")
-			}
-			entry = email
-		}
-		if !seen[entry] {
-			seen[entry] = true
-			s.Allowed = append(s.Allowed, entry)
-		}
-	}
-	return s, nil
-}
-
-func domainPattern(d string) bool {
-	if len(d) < 3 || len(d) > 253 || !strings.Contains(d, ".") || strings.HasPrefix(d, ".") || strings.HasSuffix(d, ".") {
-		return false
-	}
-	for _, r := range d {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '.':
-		default:
-			return false
-		}
-	}
-	return true
 }

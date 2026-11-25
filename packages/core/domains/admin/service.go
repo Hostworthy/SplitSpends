@@ -150,7 +150,7 @@ func (s *Service) UpdateSettings(ctx context.Context, actor uuid.UUID, mode stri
 	if _, err := s.actor(ctx, actor, false); err != nil {
 		return nil, err
 	}
-	signup, err := Normalize(mode, allowed)
+	signup, err := auth.Normalize(mode, allowed)
 	if err != nil {
 		return nil, err
 	}

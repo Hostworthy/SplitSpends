@@ -121,3 +121,21 @@ func TestServerlessJobs(t *testing.T) {
 		}
 	}
 }
+
+// TestAllowedDomains accepts domains with or without "@" and refuses
+// entries that are not domains instead of starting with a list that
+// matches nobody.
+func TestAllowedDomains(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
+	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	t.Setenv("SIGNUP_ALLOWED_DOMAINS", "Family.com, @work.org")
+	if _, err := bootstrap.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"not a domain", "family.com,exmaple com", "ada@example.com", "@nodot"} {
+		t.Setenv("SIGNUP_ALLOWED_DOMAINS", value)
+		if _, err := bootstrap.LoadConfig(); err == nil || !strings.Contains(err.Error(), "invalid.SIGNUP_ALLOWED_DOMAINS") {
+			t.Errorf("%q: want a SIGNUP_ALLOWED_DOMAINS error, got %v", value, err)
+		}
+	}
+}
