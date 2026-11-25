@@ -21,11 +21,11 @@ import (
 func (c *Config) loadPush() error {
 	c.VAPIDPublicKey, c.VAPIDPrivateKey = env("VAPID_PUBLIC_KEY", ""), env("VAPID_PRIVATE_KEY", "")
 	if (c.VAPIDPublicKey == "") != (c.VAPIDPrivateKey == "") {
-		return fmt.Errorf("bootstrap.config.env.invalid.VAPID_PRIVATE_KEY: set both VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY, or neither")
+		return fmt.Errorf("bootstrap.config.env.invalid: VAPID_PRIVATE_KEY: set both VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY, or neither")
 	}
 	if c.VAPIDPublicKey != "" {
 		if err := webpush.Check(c.VAPIDPublicKey, c.VAPIDPrivateKey); err != nil {
-			return fmt.Errorf("bootstrap.config.env.invalid.VAPID_PUBLIC_KEY: %w", err)
+			return fmt.Errorf("bootstrap.config.env.invalid: VAPID_PUBLIC_KEY: %w", err)
 		}
 	}
 	c.VAPIDSubject = env("VAPID_SUBJECT", "")
@@ -33,7 +33,7 @@ func (c *Config) loadPush() error {
 		c.VAPIDSubject = defaultSubject(c.BaseURL, c.SMTPFrom)
 	}
 	if !strings.HasPrefix(c.VAPIDSubject, "mailto:") && !strings.HasPrefix(c.VAPIDSubject, "https://") {
-		return fmt.Errorf("bootstrap.config.env.invalid.VAPID_SUBJECT: use a mailto: address or an https:// URL")
+		return fmt.Errorf("bootstrap.config.env.invalid: VAPID_SUBJECT: use a mailto: address or an https:// URL")
 	}
 	var err error
 	c.PushAllowPrivate, err = flag("PUSH_ALLOW_PRIVATE", false)

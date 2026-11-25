@@ -173,7 +173,7 @@ class _Header extends ConsumerWidget {
   String? _history(Map<String, User> people, String? meId) {
     final created = Dates.tryParse(expense.createdAt);
     if (created == null) return null;
-    String who(String id) => id == meId ? 'you' : people.nameOf(id, meId: meId);
+    String who(String id) => id == meId ? 'you' : people.name(id, meId: meId);
     final added =
         'Added by ${who(expense.createdBy ?? '')} ${Dates.relative(created)}';
     final updated = Dates.tryParse(expense.updatedAt);

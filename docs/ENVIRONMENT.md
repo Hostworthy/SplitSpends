@@ -1,6 +1,6 @@
 # Environment Variables
 
-The server reads everything from the environment. Invalid or missing required values stop startup with a dotted error key such as `bootstrap.config.env.required.not-found.DATABASE_URL`.
+The server reads everything from the environment. Invalid or missing required values stop startup with a dotted error key followed by the variable, such as `bootstrap.config.env.required.not-found: DATABASE_URL`.
 
 Switches such as `SERVERLESS` or `GRAVATAR` accept `true`/`false`, `on`/`off`, `yes`/`no` and `1`/`0`, in any case; any other value stops startup.
 

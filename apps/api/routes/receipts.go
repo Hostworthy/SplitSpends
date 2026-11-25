@@ -104,7 +104,7 @@ func (a *API) draftExpense(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := platform.ExpenseDraft{GroupID: idPtr(d.GroupID), ReceiptID: idPtr(d.ReceiptID), Description: d.Description,
+	out := platform.ExpenseDraft{GroupID: optionalString(d.GroupID), ReceiptID: optionalString(d.ReceiptID), Description: d.Description,
 		Currency: d.Currency, Total: d.Total, Date: d.Date, Category: d.Category, SplitMethod: string(d.Method),
 		Payers: []platform.Payer{}, Splits: []platform.Split{}, Items: []platform.Item{}, Tax: d.Tax, Tip: d.Tip, Warnings: d.Warnings}
 	if out.Warnings == nil {

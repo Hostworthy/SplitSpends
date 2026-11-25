@@ -25,7 +25,7 @@ final peopleProvider = Provider<Map<String, User>>((ref) {
 
 extension PeopleNames on Map<String, User> {
   /// "You" for the signed-in user, first name for others.
-  String nameOf(String id, {String? meId, bool full = false}) {
+  String name(String id, {String? meId, bool full = false}) {
     if (id == meId) return 'You';
     final user = this[id];
     if (user == null) return 'Someone';

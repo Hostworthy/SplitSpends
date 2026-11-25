@@ -125,7 +125,7 @@ func flag(key string, fallback bool) (bool, error) {
 	}
 	b, ok := boolean(strings.TrimSpace(v))
 	if !ok {
-		return false, fmt.Errorf("bootstrap.config.env.invalid.%s: use true or false (on/off, yes/no and 1/0 also work)", key)
+		return false, fmt.Errorf("bootstrap.config.env.invalid: %s: use true or false (on/off, yes/no and 1/0 also work)", key)
 	}
 	return b, nil
 }
@@ -142,7 +142,7 @@ func hops(v string) (int, error) {
 		}
 		return 0, nil
 	}
-	return 0, fmt.Errorf("bootstrap.config.env.invalid.TRUST_PROXY: use the number of proxies in front of the server, or false")
+	return 0, fmt.Errorf("bootstrap.config.env.invalid: TRUST_PROXY: use the number of proxies in front of the server, or false")
 }
 
 // baseURL checks BASE_URL is an absolute http(s) URL, since every link in
@@ -150,7 +150,7 @@ func hops(v string) (int, error) {
 func baseURL(v string) (string, error) {
 	u, err := url.Parse(v)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", fmt.Errorf("bootstrap.config.env.invalid.BASE_URL: use the public address with its scheme, for example https://split.example.com")
+		return "", fmt.Errorf("bootstrap.config.env.invalid: BASE_URL: use the public address with its scheme, for example https://split.example.com")
 	}
 	return strings.TrimRight(v, "/"), nil
 }
@@ -160,17 +160,17 @@ func baseURL(v string) (string, error) {
 // someone can guess lets anyone who reads the stored hashes find the codes.
 func checkSecret(secret string) error {
 	if len(secret) < 32 {
-		return fmt.Errorf("bootstrap.config.env.invalid.SECRET_KEY: set at least 32 random characters, for example from `openssl rand -hex 32`")
+		return fmt.Errorf("bootstrap.config.env.invalid: SECRET_KEY: set at least 32 random characters, for example from `openssl rand -hex 32`")
 	}
 	if strings.Contains(strings.ToLower(secret), "change-me") {
-		return fmt.Errorf("bootstrap.config.env.invalid.SECRET_KEY: replace the example value with 32 random characters, for example from `openssl rand -hex 32`")
+		return fmt.Errorf("bootstrap.config.env.invalid: SECRET_KEY: replace the example value with 32 random characters, for example from `openssl rand -hex 32`")
 	}
 	distinct := map[byte]bool{}
 	for i := range len(secret) {
 		distinct[secret[i]] = true
 	}
 	if len(distinct) < 10 {
-		return fmt.Errorf("bootstrap.config.env.invalid.SECRET_KEY: use random characters, for example from `openssl rand -hex 32`; this value repeats too few of them")
+		return fmt.Errorf("bootstrap.config.env.invalid: SECRET_KEY: use random characters, for example from `openssl rand -hex 32`; this value repeats too few of them")
 	}
 	return nil
 }
@@ -213,11 +213,11 @@ func LoadConfig() (*Config, error) {
 
 func (c *Config) loadDatabase() error {
 	if c.DatabaseURL == "" {
-		return fmt.Errorf("bootstrap.config.env.required.not-found.DATABASE_URL")
+		return fmt.Errorf("bootstrap.config.env.required.not-found: DATABASE_URL")
 	}
 	conns, err := strconv.ParseInt(env("DATABASE_MAX_CONNS", "10"), 10, 32)
 	if err != nil || conns < 1 {
-		return fmt.Errorf("bootstrap.config.env.invalid.DATABASE_MAX_CONNS: use a whole number from 1 to 2147483647")
+		return fmt.Errorf("bootstrap.config.env.invalid: DATABASE_MAX_CONNS: use a whole number from 1 to 2147483647")
 	}
 	c.DatabaseConns = int32(conns)
 	return nil
@@ -232,12 +232,12 @@ func (c *Config) loadServer() error {
 	switch c.LogLevel {
 	case "debug", "info", "warn", "error":
 	default:
-		return fmt.Errorf("bootstrap.config.env.invalid.LOG_LEVEL: use debug, info, warn or error")
+		return fmt.Errorf("bootstrap.config.env.invalid: LOG_LEVEL: use debug, info, warn or error")
 	}
 	switch c.LogFormat {
 	case "json", "text":
 	default:
-		return fmt.Errorf("bootstrap.config.env.invalid.LOG_FORMAT: use json or text")
+		return fmt.Errorf("bootstrap.config.env.invalid: LOG_FORMAT: use json or text")
 	}
 	c.ProxyHops, err = hops(env("TRUST_PROXY", "false"))
 	return err
@@ -256,29 +256,29 @@ func (c *Config) loadAuth() error {
 	switch c.SignupMode {
 	case auth.SignupOpen, auth.SignupInvite, auth.SignupDomain, auth.SignupApproval, auth.SignupClosed:
 	default:
-		return fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_MODE: use open, invite, approval or closed (domain still works, as invite with SIGNUP_ALLOWED_DOMAINS)")
+		return fmt.Errorf("bootstrap.config.env.invalid: SIGNUP_MODE: use open, invite, approval or closed (domain still works, as invite with SIGNUP_ALLOWED_DOMAINS)")
 	}
 	c.AllowedDomains = list(env("SIGNUP_ALLOWED_DOMAINS", ""))
 	if len(c.AllowedDomains) > auth.MaxAllowed {
-		return fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_ALLOWED_DOMAINS: use at most %d domains", auth.MaxAllowed)
+		return fmt.Errorf("bootstrap.config.env.invalid: SIGNUP_ALLOWED_DOMAINS: use at most %d domains", auth.MaxAllowed)
 	}
 	for _, d := range c.AllowedDomains {
 		if _, ok := auth.Domain(d); !ok {
-			return fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_ALLOWED_DOMAINS: %q is not a domain like example.com", d)
+			return fmt.Errorf("bootstrap.config.env.invalid: SIGNUP_ALLOWED_DOMAINS: %q is not a domain like example.com", d)
 		}
 	}
 	if c.SignupMode == auth.SignupDomain && len(c.AllowedDomains) == 0 {
-		return fmt.Errorf("bootstrap.config.env.required.not-found.SIGNUP_ALLOWED_DOMAINS")
+		return fmt.Errorf("bootstrap.config.env.required.not-found: SIGNUP_ALLOWED_DOMAINS")
 	}
 	if admin := env("ADMIN_EMAIL", ""); admin != "" {
 		var err error
 		if c.AdminEmail, err = user.NormalizeEmail(admin); err != nil {
-			return fmt.Errorf("bootstrap.config.env.invalid.ADMIN_EMAIL: use the one email address the first administrator signs in with")
+			return fmt.Errorf("bootstrap.config.env.invalid: ADMIN_EMAIL: use the one email address the first administrator signs in with")
 		}
 	}
 	days, err := strconv.Atoi(env("SESSION_TTL_DAYS", "90"))
 	if err != nil || days < 1 {
-		return fmt.Errorf("bootstrap.config.env.invalid.SESSION_TTL_DAYS")
+		return fmt.Errorf("bootstrap.config.env.invalid: SESSION_TTL_DAYS")
 	}
 	c.SessionTTL = time.Duration(days) * 24 * time.Hour
 	return nil
@@ -287,13 +287,13 @@ func (c *Config) loadAuth() error {
 func (c *Config) loadSMTP() error {
 	var err error
 	if c.SMTPPort, err = strconv.Atoi(env("SMTP_PORT", "587")); err != nil || c.SMTPPort < 1 || c.SMTPPort > 65535 {
-		return fmt.Errorf("bootstrap.config.env.invalid.SMTP_PORT: use a port number from 1 to 65535")
+		return fmt.Errorf("bootstrap.config.env.invalid: SMTP_PORT: use a port number from 1 to 65535")
 	}
 	if c.SMTPHost != "" && c.SMTPFrom == "" {
 		c.SMTPFrom = c.SMTPUsername
 	}
 	if c.SMTPHost != "" && c.SMTPFrom == "" {
-		return fmt.Errorf("bootstrap.config.env.required.not-found.SMTP_FROM")
+		return fmt.Errorf("bootstrap.config.env.required.not-found: SMTP_FROM")
 	}
 	return nil
 }
@@ -316,12 +316,12 @@ func (c *Config) loadFlags() error {
 func (c *Config) loadJobs() error {
 	c.JobsSecret = env("JOBS_SECRET", "")
 	if c.JobsSecret != "" && len(c.JobsSecret) < 32 {
-		return fmt.Errorf("bootstrap.config.env.invalid.JOBS_SECRET: use at least 32 random characters")
+		return fmt.Errorf("bootstrap.config.env.invalid: JOBS_SECRET: use at least 32 random characters")
 	}
 	// Without in-process jobs, a scheduler calling /internal/jobs is the only
 	// thing that books recurring expenses and removes expired sign-ins.
 	if c.Serverless && c.JobsSecret == "" {
-		return fmt.Errorf("bootstrap.config.env.required.not-found.JOBS_SECRET: SERVERLESS=true needs a scheduler that calls POST /internal/jobs with it")
+		return fmt.Errorf("bootstrap.config.env.required.not-found: JOBS_SECRET: SERVERLESS=true needs a scheduler that calls POST /internal/jobs with it")
 	}
 	return nil
 }
@@ -331,7 +331,7 @@ func (c *Config) loadRates() error {
 	if strings.EqualFold(c.RatesURL, "none") {
 		c.RatesURL = ""
 	} else if !strings.HasPrefix(c.RatesURL, "https://") && !strings.HasPrefix(c.RatesURL, "http://") {
-		return fmt.Errorf("bootstrap.config.env.invalid.RATES_URL: use an http(s) URL or none")
+		return fmt.Errorf("bootstrap.config.env.invalid: RATES_URL: use an http(s) URL or none")
 	}
 	return nil
 }
@@ -344,10 +344,10 @@ func (c *Config) loadStorage() error {
 	case "local", "postgres":
 	case "s3":
 		if c.S3Bucket == "" {
-			return fmt.Errorf("bootstrap.config.env.required.not-found.S3_BUCKET")
+			return fmt.Errorf("bootstrap.config.env.required.not-found: S3_BUCKET")
 		}
 	default:
-		return fmt.Errorf("bootstrap.config.env.invalid.BLOB_STORE: use local, s3 or postgres")
+		return fmt.Errorf("bootstrap.config.env.invalid: BLOB_STORE: use local, s3 or postgres")
 	}
 	return nil
 }
@@ -358,18 +358,18 @@ func (c *Config) loadAI() error {
 		c.AIProvider = ""
 	case "anthropic":
 		if c.AIAPIKey == "" {
-			return fmt.Errorf("bootstrap.config.env.required.not-found.AI_API_KEY")
+			return fmt.Errorf("bootstrap.config.env.required.not-found: AI_API_KEY")
 		}
 	case "openai":
 		if c.AIBaseURL == "" || c.AIModel == "" {
-			return fmt.Errorf("bootstrap.config.env.required.not-found.AI_BASE_URL and AI_MODEL for AI_PROVIDER=openai")
+			return fmt.Errorf("bootstrap.config.env.required.not-found: AI_BASE_URL and AI_MODEL for AI_PROVIDER=openai")
 		}
 	default:
-		return fmt.Errorf("bootstrap.config.env.invalid.AI_PROVIDER: use anthropic, openai or none")
+		return fmt.Errorf("bootstrap.config.env.invalid: AI_PROVIDER: use anthropic, openai or none")
 	}
 	var err error
 	if c.AIRateLimit, err = strconv.Atoi(env("AI_RATE_LIMIT", "30")); err != nil || c.AIRateLimit < 1 {
-		return fmt.Errorf("bootstrap.config.env.invalid.AI_RATE_LIMIT: use a whole number of requests per person per hour, at least 1")
+		return fmt.Errorf("bootstrap.config.env.invalid: AI_RATE_LIMIT: use a whole number of requests per person per hour, at least 1")
 	}
 	return nil
 }

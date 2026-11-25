@@ -39,11 +39,11 @@ class ExpenseTile extends ConsumerWidget {
           )
           .userId;
       subtitle =
-          '${people.nameOf(from, meId: meId)} paid ${to == meId ? 'you' : people.nameOf(to, meId: meId)}';
+          '${people.name(from, meId: meId)} paid ${to == meId ? 'you' : people.name(to, meId: meId)}';
     } else {
       final payers = expense.payers;
       final who = payers.length == 1
-          ? people.nameOf(payers.first.userId, meId: meId)
+          ? people.name(payers.first.userId, meId: meId)
           : '${payers.length} people';
       subtitle =
           '$who paid ${Money.format(expense.total, info)}'

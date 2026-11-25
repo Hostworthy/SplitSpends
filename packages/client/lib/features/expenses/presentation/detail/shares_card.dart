@@ -47,7 +47,7 @@ class SharesCard extends ConsumerWidget {
                 leading: people[s.userId] == null
                     ? const CircleAvatar(child: Icon(Icons.person))
                     : UserAvatar(user: people[s.userId]!),
-                title: Text(people.nameOf(s.userId, meId: meId, full: true)),
+                title: Text(people.name(s.userId, meId: meId, full: true)),
                 subtitle: Text(
                   [
                     if (s.paid > 0) 'paid ${money(s.paid)}',
@@ -77,7 +77,7 @@ class SharesCard extends ConsumerWidget {
                   title: Text(item.name),
                   subtitle: Text(
                     item.userIds
-                        .map((id) => people.nameOf(id, meId: meId))
+                        .map((id) => people.name(id, meId: meId))
                         .join(', '),
                   ),
                   trailing: Text(money(item.amount)),

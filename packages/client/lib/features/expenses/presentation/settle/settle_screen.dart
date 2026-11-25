@@ -345,7 +345,7 @@ class _Suggestions extends ConsumerWidget {
                   _ => null,
                 },
                 label: Text(
-                  '${people.nameOf(d.from, meId: meId)} → ${people.nameOf(d.to, meId: meId)} · '
+                  '${people.name(d.from, meId: meId)} → ${people.name(d.to, meId: meId)} · '
                   '${Money.format(d.amount, config.currency(d.currency))}',
                 ),
                 onPressed: () => onPick(d),
@@ -440,9 +440,7 @@ class _PersonPicker extends ConsumerWidget {
               const SizedBox(height: 8),
               Text(label, style: text.labelMedium),
               Text(
-                id == null
-                    ? 'Choose'
-                    : people.nameOf(id, meId: meId, full: true),
+                id == null ? 'Choose' : people.name(id, meId: meId, full: true),
                 style: text.titleMedium,
                 textAlign: TextAlign.center,
               ),

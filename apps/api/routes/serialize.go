@@ -38,7 +38,8 @@ func number(value string) *json.Number {
 
 func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
-func stampPtr(t *time.Time) *string {
+// optionalStamp is stamp for a time that may be unset, which stays null.
+func optionalStamp(t *time.Time) *string {
 	if t == nil {
 		return nil
 	}
@@ -46,7 +47,8 @@ func stampPtr(t *time.Time) *string {
 	return &s
 }
 
-func idPtr(id *uuid.UUID) *string {
+// optionalString is an id that may be unset, as a string or null.
+func optionalString(id *uuid.UUID) *string {
 	if id == nil {
 		return nil
 	}
@@ -95,11 +97,11 @@ func (a *API) toMe(u *user.User) platform.Me {
 
 func toPushSubscription(s *push.Subscription) platform.PushSubscription {
 	return platform.PushSubscription{ID: s.ID.String(), Platform: string(s.Platform), Label: s.Label, Endpoint: s.Endpoint,
-		CreatedAt: stamp(s.CreatedAt), LastSuccessAt: stampPtr(s.LastSuccessAt), Failures: s.Failures}
+		CreatedAt: stamp(s.CreatedAt), LastSuccessAt: optionalStamp(s.LastSuccessAt), Failures: s.Failures}
 }
 
 func toToken(s *auth.Session, token string) platform.Token {
-	return platform.Token{ID: s.ID.String(), Name: s.Name, Token: token, CreatedAt: stamp(s.CreatedAt), LastUsedAt: stampPtr(s.LastUsedAt)}
+	return platform.Token{ID: s.ID.String(), Name: s.Name, Token: token, CreatedAt: stamp(s.CreatedAt), LastUsedAt: optionalStamp(s.LastUsedAt)}
 }
 
 func (a *API) toGroup(v *group.View) platform.Group {
@@ -143,9 +145,9 @@ func toExpense(e *expense.Expense, viewer uuid.UUID) platform.Expense {
 		s := e.NextDate.Format(time.DateOnly)
 		next = &s
 	}
-	return platform.Expense{ID: e.ID.String(), GroupID: idPtr(e.GroupID), Kind: string(e.Kind), Description: e.Description,
+	return platform.Expense{ID: e.ID.String(), GroupID: optionalString(e.GroupID), Kind: string(e.Kind), Description: e.Description,
 		Category: e.Category, Currency: e.Currency, Total: e.Total, Date: e.Date.Format(time.DateOnly), Notes: e.Notes,
-		SplitMethod: string(e.Method), Shares: shares, Items: items, Tax: e.Tax, Tip: e.Tip, ReceiptID: idPtr(e.ReceiptID),
+		SplitMethod: string(e.Method), Shares: shares, Items: items, Tax: e.Tax, Tip: e.Tip, ReceiptID: optionalString(e.ReceiptID),
 		Recurrence: string(e.Recurrence), NextDate: next, CreatedBy: e.CreatedBy.String(), UpdatedBy: e.UpdatedBy.String(),
 		CreatedAt: stamp(e.CreatedAt), UpdatedAt: stamp(e.UpdatedAt), Deleted: e.DeletedAt != nil, CommentCount: e.CommentCount,
 		MyBalance: e.Net(viewer)}
@@ -156,6 +158,6 @@ func (a *API) toActivity(e *activity.Activity, actor *user.User) platform.Activi
 	if actor != nil {
 		u = a.toUser(actor)
 	}
-	return platform.Activity{ID: e.ID.String(), Kind: string(e.Kind), Actor: u, GroupID: idPtr(e.GroupID), ExpenseID: idPtr(e.ExpenseID),
+	return platform.Activity{ID: e.ID.String(), Kind: string(e.Kind), Actor: u, GroupID: optionalString(e.GroupID), ExpenseID: optionalString(e.ExpenseID),
 		Summary: activity.Describe(e, u.Name), Data: e.Data, CreatedAt: stamp(e.CreatedAt)}
 }
