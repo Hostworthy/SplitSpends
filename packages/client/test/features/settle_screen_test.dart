@@ -14,7 +14,9 @@ import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/features/expenses/data/local_expenses_repository.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
+import 'package:splitspends/core/widgets/amount_field.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
+import 'package:splitspends/features/groups/presentation/providers.dart';
 
 import '../helpers.dart';
 
@@ -39,6 +41,37 @@ class _Flaky extends LocalExpensesRepository {
     if (ids.length == 1) {
       throw const ApiError.network('Cannot reach the server.');
     }
+    return super.recordPayment(
+      id: id,
+      groupId: groupId,
+      fromUserId: fromUserId,
+      toUserId: toUserId,
+      amount: amount,
+      currency: currency,
+      date: date,
+      notes: notes,
+    );
+  }
+}
+
+/// Records the currency of every payment.
+class _Recording extends LocalExpensesRepository {
+  _Recording(super.ledger);
+
+  final currencies = <String>[];
+
+  @override
+  Future<Expense> recordPayment({
+    String? id,
+    String? groupId,
+    required String fromUserId,
+    required String toUserId,
+    required int amount,
+    required String currency,
+    String? date,
+    String? notes,
+  }) {
+    currencies.add(currency);
     return super.recordPayment(
       id: id,
       groupId: groupId,
@@ -129,5 +162,80 @@ void main() {
           .list(ExpenseQuery(groupId: flat.id)),
     );
     expect(list.items.single.id, flaky.ids.first);
+  });
+
+  testWidgets('settle from a deep link uses the group currency', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    late _Recording recording;
+    final loaded = Completer<Group>();
+    await tester.pumpWidget(
+      ProviderScope(
+        retry: (_, _) => null,
+        overrides: [
+          localStoreProvider.overrideWithValue(MemoryLocalStore()),
+          memoryDatabase(),
+          expensesRepositoryProvider.overrideWith(
+            (ref) => recording = _Recording(ref.watch(localLedgerProvider)),
+          ),
+          groupProvider.overrideWith((ref, id) => loaded.future),
+        ],
+        child: const SplitSpendsApp(),
+      ),
+    );
+    await settle(tester);
+    await tester.tap(find.text('Start'));
+    await settle(tester);
+    await tester.enterText(find.byKey(const Key('local-name')), 'Ada');
+    await tester.tap(find.byKey(const Key('local-start')));
+    await settle(tester);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SplitSpendsApp)),
+    );
+    expect(container.read(meProvider)!.defaultCurrency, isNot('EUR'));
+    final paris = await pumpFuture(
+      tester,
+      container
+          .read(groupsRepositoryProvider)
+          .create(
+            const GroupInput(
+              name: 'Paris',
+              defaultCurrency: 'EUR',
+              members: [MemberInput(name: 'Ben')],
+            ),
+          ),
+    );
+    unawaited(
+      container
+          .read(routerProvider)
+          .push('${Routes.settle}?groupId=${paris.id}'),
+    );
+    await tester.pump();
+    await tester.pump();
+    final record = find.widgetWithText(FilledButton, 'Record payment');
+    expect(tester.widget<FilledButton>(record).onPressed, isNull);
+
+    loaded.complete(paris);
+    await settle(tester);
+    await tester.tap(find.text('Paid to'));
+    await settle(tester);
+    await tester.tap(find.text('Ben').last);
+    await settle(tester);
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AmountField),
+        matching: find.byType(TextField),
+      ),
+      '30',
+    );
+    await tester.tap(record);
+    await settle(tester);
+
+    expect(recording.currencies, ['EUR']);
   });
 }
