@@ -290,7 +290,11 @@ func TestImportLimits(t *testing.T) {
 		"categories": {Categories: make([]transfer.Category, transfer.MaxCategories+1)},
 	} {
 		bundle.Me = uuid.New()
+		// The empty items would fail validation on their own, so the error
+		// must be the limit's, which names no item.
 		_, err := env.Services.Transfer.Import(ctx, cara, bundle)
-		wantKind(t, "too many "+name, err, errs.KindValidation)
+		if de, ok := errs.As(err); !ok || de.Kind != errs.KindValidation || de.Field != "" || !strings.Contains(de.Message, "at a time") {
+			t.Errorf("too many %s: want the import limit, got %v", name, err)
+		}
 	}
 }
