@@ -56,6 +56,9 @@ type Services struct {
 	Admin *admin.Service
 
 	notifier *fanout
+	// quotas and clock let the jobs remove budgets whose window has ended.
+	quotas *repositories.Quotas
+	clock  clock.Clock
 }
 
 // Runtime is a fully wired application.
@@ -229,11 +232,13 @@ func Wire(cfg *Config, a Adapters) *Services {
 		Categories: categories,
 		Admin:      administration,
 		notifier:   notifier,
+		quotas:     quotas,
+		clock:      c,
 	}
 }
 
 // RunJobsOnce creates due recurring expenses and removes expired
-// credentials and receipts no expense uses. Serverless hosts call it from a
+// credentials, receipts no expense uses and budgets whose window has ended. Serverless hosts call it from a
 // scheduler via /internal/jobs. Every job runs even when another fails; the
 // error joins their failures, which are also logged.
 func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
@@ -261,7 +266,14 @@ func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 	if receipts != nil {
 		rt.Log.Error("jobs.receipts.cleanup.failed", "error", receipts)
 	}
-	return errors.Join(recurring, sessions, invites, requests, receipts)
+	pruned, quotas := rt.Services.quotas.Prune(ctx, rt.Services.clock.Now())
+	if pruned > 0 {
+		rt.Log.Info("jobs.quotas.cleanup.completed", "removed", pruned)
+	}
+	if quotas != nil {
+		rt.Log.Error("jobs.quotas.cleanup.failed", "error", quotas)
+	}
+	return errors.Join(recurring, sessions, invites, requests, receipts, quotas)
 }
 
 // passes bounds the recurring passes of one run; each books up to 100 series.
