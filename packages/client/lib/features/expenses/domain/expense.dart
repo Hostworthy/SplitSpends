@@ -1,5 +1,3 @@
-import 'package:splitspends_ledger/split.dart' show paymentCategory;
-
 import 'package:splitspends/core/models/json.dart';
 import 'package:splitspends/core/models/user.dart';
 
@@ -395,7 +393,6 @@ class ExpenseInput {
     currency: currency,
     total: amount,
     date: date,
-    category: paymentCategory,
     notes: notes ?? '',
     splitMethod: SplitMethod.exact,
     payers: [Payer(userId: from, amount: amount)],

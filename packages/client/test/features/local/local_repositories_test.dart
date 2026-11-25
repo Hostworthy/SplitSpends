@@ -303,6 +303,48 @@ void main() {
         splits: [for (final id in people) SplitEntry(userId: id)],
       );
 
+  test('the payment category is only for payments, like the server', () async {
+    final expenses = LocalExpensesRepository(ledger);
+    final sam = (await LocalFriendsRepository(ledger).add(name: 'Sam')).user.id;
+    final input = taxi(people: [meId, sam]);
+    await expectLater(
+      expenses.create(
+        ExpenseInput(
+          description: input.description,
+          currency: input.currency,
+          total: input.total,
+          date: input.date,
+          category: paymentCategory,
+          payers: input.payers,
+          splits: input.splits,
+        ),
+      ),
+      throwsA(
+        apiError(
+          'category',
+          'That category is only for payments. Choose another one.',
+        ),
+      ),
+    );
+    final payment = await expenses.recordPayment(
+      fromUserId: sam,
+      toUserId: meId,
+      amount: 1500,
+      currency: 'EUR',
+    );
+    expect(payment.category, paymentCategory);
+    final offline = optimisticPayment(
+      id: 'p1',
+      fromUserId: sam,
+      toUserId: meId,
+      amount: 1500,
+      currency: 'EUR',
+      meId: meId,
+      today: DateTime.utc(2026, 11, 20),
+    );
+    expect(offline.category, paymentCategory);
+  });
+
   test('editing a deleted expense is a conflict', () async {
     final expenses = LocalExpensesRepository(ledger);
     final sam = (await LocalFriendsRepository(ledger).add(name: 'Sam')).user.id;

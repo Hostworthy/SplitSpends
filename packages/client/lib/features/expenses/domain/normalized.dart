@@ -55,7 +55,9 @@ JsonMap expenseJson(
   'groupId': groupId,
   'kind': kind,
   'description': n.description,
-  'category': n.category,
+  // Payments are filed under the payment category after the rules, which
+  // keep it for payments only, as on the server.
+  'category': kind == 'payment' ? paymentCategory : n.category,
   'currency': n.currency,
   'total': n.total,
   'date': formatDay(n.date),

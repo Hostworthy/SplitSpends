@@ -1,5 +1,5 @@
 {
- "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A case that must be refused gives the failing field as error and the text people see as message. owed lists every person on the expense and adds up to the total; each person's paid is what the input payers give them. A split may give currency (USD when absent), recurrence, date (YYYY-MM-DD) and today, and values, the split values stored for each user after trimming; input description defaults to the name, and description, notes, method and currency give the normalized result; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. balances: named cases of entries with the nets, pairwise debts and simplified debts they produce. sheets: one person's (me) view of their groups, each simplified or not, and of entries outside groups: per friend the total, the amount per group and outside groups, me's net in each group (groupNets), and overall net, owed and owing. recurrence: each series starts on start and books dates in order; monthly and yearly series keep the start day, or use the last day of a shorter month. Pairwise debts within one entry add up to each debtor's and each creditor's net exactly, whatever order the shares are listed in. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members; when current is given, effective says whether the saved split still applies to those members. currencies and categories: the built-in catalogs, currencies sorted by code and categories in display order; the client bundles the same lists for on-device mode.",
+ "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A case that must be refused gives the failing field as error and the text people see as message. owed lists every person on the expense and adds up to the total; each person's paid is what the input payers give them. A split may give currency (USD when absent), category, recurrence, date (YYYY-MM-DD) and today, and values, the split values stored for each user after trimming; input description defaults to the name, and description, notes, method and currency give the normalized result; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. balances: named cases of entries with the nets, pairwise debts and simplified debts they produce. sheets: one person's (me) view of their groups, each simplified or not, and of entries outside groups: per friend the total, the amount per group and outside groups, me's net in each group (groupNets), and overall net, owed and owing. recurrence: each series starts on start and books dates in order; monthly and yearly series keep the start day, or use the last day of a shorter month. Pairwise debts within one entry add up to each debtor's and each creditor's net exactly, whatever order the shares are listed in. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members; when current is given, effective says whether the saved split still applies to those members. currencies and categories: the built-in catalogs, currencies sorted by code and categories in display order; the client bundles the same lists for on-device mode.",
  "splits": [
   {
    "name": "equal three ways",
@@ -2420,6 +2420,29 @@
    },
    "error": "recurrence",
    "message": "Unknown recurrence."
+  },
+  {
+   "name": "the payment category is refused for an expense",
+   "input": {
+    "total": 1000,
+    "category": "payment",
+    "payers": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a",
+      "amount": 1000
+     }
+    ],
+    "splits": [
+     {
+      "userId": "00000000-0000-0000-0000-00000000000a"
+     },
+     {
+      "userId": "00000000-0000-0000-0000-00000000000b"
+     }
+    ]
+   },
+   "error": "category",
+   "message": "That category is only for payments. Choose another one."
   }
  ],
  "balances": [
