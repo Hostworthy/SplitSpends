@@ -144,7 +144,6 @@ class _DetailsSectionState extends ConsumerState<DetailsSection> {
           // The currency comes from the group (or your Account settings for
           // expenses outside groups); it is never picked per expense.
           AmountField(
-            key: ValueKey('total-${form.currency}'),
             currency: form.currency,
             initial: form.total,
             large: true,

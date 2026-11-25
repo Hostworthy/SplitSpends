@@ -28,4 +28,24 @@ void main() {
     await tester.pump();
     expect(find.text(r'$12.00'), findsNothing);
   });
+
+  testWidgets('reads the text again when the currency changes', (tester) async {
+    final reported = <int?>[];
+    await tester.pumpWidget(_field('USD', reported.add));
+    await tester.enterText(find.byType(TextField), '12.50');
+    await tester.pump();
+    expect(reported.last, 1250);
+
+    await tester.pumpWidget(_field('JPY', reported.add));
+    await tester.pump();
+    expect(reported.last, isNull);
+    expect(find.text('Invalid amount'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '12');
+    await tester.pump();
+    await tester.pumpWidget(_field('USD', reported.add));
+    await tester.pump();
+    expect(reported.last, 1200);
+    expect(find.text('12'), findsOneWidget);
+  });
 }

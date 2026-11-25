@@ -88,10 +88,9 @@ abstract final class Money {
         frac = tail;
       }
     }
-    whole = whole.replaceAll(RegExp(r'[.,]'), '').replaceFirst(
-      RegExp(r'^0+'),
-      '',
-    );
+    whole = whole
+        .replaceAll(RegExp(r'[.,]'), '')
+        .replaceFirst(RegExp(r'^0+'), '');
     if (whole.isEmpty) whole = '0';
     // Fifteen digits in minor units stay exact both as a 64-bit int and as
     // a JavaScript number on the web, and cover the largest allowed total.
