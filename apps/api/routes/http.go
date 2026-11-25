@@ -12,6 +12,7 @@ import (
 
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/middleware"
+	"github.com/Hostworthy/SplitSpends/packages/platform"
 	"github.com/google/uuid"
 )
 
@@ -84,8 +85,8 @@ func tooLarge(err error) bool {
 	return errors.As(err, &maxErr)
 }
 
-func details(w http.ResponseWriter, status int, v any) error {
-	middleware.WriteJSON(w, status, map[string]any{"data": v})
+func details[T any](w http.ResponseWriter, status int, v T) error {
+	middleware.WriteJSON(w, status, platform.Details[T]{Data: v})
 	return nil
 }
 
@@ -93,7 +94,7 @@ func list[T any](w http.ResponseWriter, items []T, total int) error {
 	if items == nil {
 		items = []T{}
 	}
-	middleware.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
+	middleware.WriteJSON(w, http.StatusOK, platform.List[T]{Items: items, Total: total})
 	return nil
 }
 
