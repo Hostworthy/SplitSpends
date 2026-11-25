@@ -6,6 +6,14 @@ import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 
 void main() {
+  test('initials take whole characters', () {
+    expect(const User(id: 'x', name: 'Ada Lovelace').initials, 'AL');
+    expect(const User(id: 'x', name: '🎉 Party').initials, '🎉P');
+    expect(const User(id: 'x', name: 'Ünal').initials, 'Ü');
+    expect(const User(id: 'x', name: '👩‍👩‍👧 Family').initials, '👩‍👩‍👧F');
+    expect(const User(id: 'x', name: '𠀀 Wu').initials, '𠀀W');
+  });
+
   test('Gravatar fields parse and survive copies', () {
     final me = Me.fromJson({
       'id': 'u1',
