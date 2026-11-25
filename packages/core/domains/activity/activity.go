@@ -23,6 +23,7 @@ const (
 	CommentCreated     Kind = "comment.created"
 	GroupCreated       Kind = "group.created"
 	GroupUpdated       Kind = "group.updated"
+	GroupDeleted       Kind = "group.deleted"
 	GroupMemberAdded   Kind = "group.member-added"
 	GroupMemberRemoved Kind = "group.member-removed"
 	GroupMemberJoined  Kind = "group.member-joined"
@@ -123,6 +124,8 @@ func Describe(a *Activity, actor string) string {
 		return actor + " created the group " + str("groupName")
 	case GroupUpdated:
 		return actor + " updated the group " + str("groupName")
+	case GroupDeleted:
+		return actor + " deleted the group " + str("groupName")
 	case GroupMemberAdded:
 		return actor + " added " + str("targetName") + " to " + str("groupName")
 	case GroupMemberRemoved:

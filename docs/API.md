@@ -91,7 +91,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
 // Activity
 { "id": "uuid", "kind": "expense.created" | "expense.updated" | "expense.deleted" | "expense.restored"
-  | "expense.stopped" | "payment.created" | "comment.created" | "group.created" | "group.updated" | "group.member-added"
+  | "expense.stopped" | "payment.created" | "comment.created" | "group.created" | "group.updated" | "group.deleted" | "group.member-added"
   | "group.member-removed" | "group.member-joined" | "friend.added" | "reminder.sent",
   "actor": User, "groupId": "uuid" | null, "expenseId": "uuid" | null,
   "summary": "Ada added “Dinner” in Lisbon trip", "data": { ... }, "createdAt": "..." }
@@ -192,7 +192,7 @@ Each account may have up to 1000 people it added by name only (placeholders, fro
 | POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, defaultSplit?, members?: [{ email, name? }] }` | 201 `{ data: Group }`; `defaultSplit` is checked against the members after they are added |
 | GET | `/groups/{groupId}` | | `{ data: Group }` |
 | PATCH | `/groups/{groupId}` | `{ name?, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, archived?, defaultSplit? }` | `{ data: Group }`; `defaultSplit: null` clears it, leaving it out keeps it |
-| DELETE | `/groups/{groupId}` | | 204; 409 when not settled |
+| DELETE | `/groups/{groupId}` | | 204; 403 when the caller may not delete it; 409 when not settled |
 | POST | `/groups/{groupId}/members` | `{ email?, name? }` | 201 `{ data: Group }` (name only adds a placeholder) |
 | DELETE | `/groups/{groupId}/members/{userId}` | | 204; 409 when that member is not settled. A member may remove themselves (leave) |
 | GET | `/groups/{groupId}/balances` | | `{ data: { members: [{ userId, balances: [Balance] }], debts: [Debt] } }` (debts are simplified when `simplifyDebts` is on) |
@@ -200,6 +200,8 @@ Each account may have up to 1000 people it added by name only (placeholders, fro
 | POST | `/groups/{groupId}/invites` | | 201 `{ data: Invite }` with `token` and `url` (shown once). 409 for archived groups |
 | GET | `/groups/{groupId}/invites` | | List of usable `Invite` (unexpired, created by a current member), without `token` and `url` |
 | DELETE | `/groups/{groupId}/invites/{inviteId}` | | 204; the link stops working |
+
+Deleting a group removes it for everyone, with all its expenses, payments, comments and activity. Only the person who created the group may delete it; once the creator is no longer a member, any member may. The group must be settled. The deletion is recorded as `group.deleted` (with `groupId: null` and the name in `data.groupName`) in the feed of everyone who was still a member, so it outlives the group.
 
 A group has at most 100 members, its creator included. `POST /groups` with more `members` and `POST /groups/{groupId}/members` on a full group answer 422 `VALIDATION_ERROR` on `members`; joining a full group through an invite link answers 409 `CONFLICT`.
 

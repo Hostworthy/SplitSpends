@@ -78,6 +78,7 @@ String describe(String kind, JsonMap data, String actor) {
     'comment.created' => '$actor commented on “${str('description')}”',
     'group.created' => '$actor created the group $group',
     'group.updated' => '$actor updated the group $group',
+    'group.deleted' => '$actor deleted the group $group',
     'group.member-added' => '$actor added ${str('targetName')} to $group',
     'group.member-removed' =>
       str('targetName') == actor
