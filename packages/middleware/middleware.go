@@ -184,7 +184,13 @@ func Web(secure bool, next http.Handler) http.Handler {
 }
 
 // CORS allows the listed origins ("*" allows any). Mobile apps do not send an
-// Origin header, so this only matters for browsers on other origins.
+// Origin header, so this only matters for browsers on other origins. An
+// allowed origin is echoed back rather than answered with "*"; that is safe
+// only because the API never uses cookies or Access-Control-Allow-Credentials
+// (ADR-003). Once any origin is configured every response varies by Origin,
+// so a shared cache never serves one origin's answer to another. Only a real
+// preflight from an allowed origin is answered here; any other OPTIONS request
+// goes to next, which answers it as it answers an unknown route or method.
 func CORS(origins []string, next http.Handler) http.Handler {
 	allowAll := false
 	allowed := map[string]bool{}
@@ -196,18 +202,23 @@ func CORS(origins []string, next http.Handler) http.Handler {
 			allowed[strings.TrimRight(o, "/")] = true
 		}
 	}
+	configured := allowAll || len(allowed) > 0
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if origin != "" && (allowAll || allowed[origin]) {
-			h := w.Header()
-			h.Set("Access-Control-Allow-Origin", origin)
-			h.Set("Vary", "Origin")
-			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, Mcp-Session-Id, Mcp-Protocol-Version")
-			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			h.Set("Access-Control-Expose-Headers", "X-Request-Id, Mcp-Session-Id")
-			h.Set("Access-Control-Max-Age", "600")
+		h := w.Header()
+		if configured {
+			h.Add("Vary", "Origin")
 		}
-		if r.Method == http.MethodOptions && origin != "" {
+		origin := r.Header.Get("Origin")
+		if origin == "" || !(allowAll || allowed[origin]) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		h.Set("Access-Control-Allow-Origin", origin)
+		h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, Mcp-Session-Id, Mcp-Protocol-Version")
+		h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		h.Set("Access-Control-Expose-Headers", "X-Request-Id, Mcp-Session-Id")
+		h.Set("Access-Control-Max-Age", "600")
+		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
