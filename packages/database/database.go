@@ -109,6 +109,17 @@ func (t *Tx) Do(ctx context.Context, fn func(ctx context.Context) error) error {
 	})
 }
 
+// TryLock implements ports.Locker with a transaction-level advisory lock.
+func (t *Tx) TryLock(ctx context.Context, key string) (bool, error) {
+	tx, ok := ctx.Value(txKey{}).(pgx.Tx)
+	if !ok {
+		return false, errors.New("database.lock.outside-transaction")
+	}
+	var got bool
+	err := tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))`, key).Scan(&got)
+	return got, err
+}
+
 // IsUniqueViolation reports a unique constraint error.
 func IsUniqueViolation(err error) bool {
 	var pg *pgconn.PgError

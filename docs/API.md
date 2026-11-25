@@ -305,6 +305,8 @@ Deleting hides a category from listings and from new expenses but never rewrites
 
 Rules: runs in one transaction and sends no emails. People with an email resolve to the existing (or a newly invited) user, so their server id may differ from the local id: use the returned `people` map to rewrite local references. People without an email become placeholders that keep the local id. The caller becomes friends with everyone imported. Payments use `kind: "payment"` with one payer and one split (the recipient). Custom categories are created first with their device ids, so expenses can use them; deleted ones are created too and deleted once the expenses are in. A group's `defaultSplit` has its person ids remapped like `memberIds` and must match the group's members (send it only while it still applies). Validation errors name the failing item in `field`, for example `expenses[3].total`. Retrying the same import is safe.
 
+Limits: one import may hold at most 1000 people, 200 custom categories, 500 groups and 20,000 expenses. Each account runs one import at a time (409 `CONFLICT` while another is running) and at most 10 an hour (429 `RATE_LIMITED`); the server runs at most two imports at once and answers 429 `RATE_LIMITED` to a third until one ends.
+
 ### Administration
 
 Roles: `user`, `manager` (approves and declines people waiting to join) and `admin` (everything below). The first account on a server is an administrator; the last active administrator cannot step down or be disabled, and nobody can disable themselves.
