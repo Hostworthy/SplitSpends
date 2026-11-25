@@ -106,10 +106,19 @@ type fanout struct {
 	sync  bool
 	queue chan ports.Notification
 	done  sync.WaitGroup
+	// mu guards closed: requests and jobs still running during shutdown
+	// may call Notify after Close.
+	mu     sync.RWMutex
+	closed bool
+	// drain is how long Close waits for queued notifications; after it,
+	// stop is closed and the workers drop what is left.
+	drain time.Duration
+	stop  chan struct{}
 }
 
 func newFanout(email ports.Notifier, p pusher, log *slog.Logger, sync bool) *fanout {
-	f := &fanout{email: email, push: p, log: log, sync: sync, queue: make(chan ports.Notification, 256)}
+	f := &fanout{email: email, push: p, log: log, sync: sync, queue: make(chan ports.Notification, 256),
+		drain: 2 * pushBudget, stop: make(chan struct{})}
 	if p != nil && !sync {
 		f.done.Add(pushWorkers)
 		for range pushWorkers {
@@ -138,6 +147,12 @@ func (f *fanout) Notify(ctx context.Context, n ports.Notification) {
 		f.deliver(n)
 		return
 	}
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if f.closed {
+		f.log.Warn("push.queue.closed", "kind", n.Kind)
+		return
+	}
 	select {
 	case f.queue <- n:
 	default:
@@ -148,7 +163,12 @@ func (f *fanout) Notify(ctx context.Context, n ports.Notification) {
 func (f *fanout) work() {
 	defer f.done.Done()
 	for n := range f.queue {
-		f.deliver(n)
+		select {
+		case <-f.stop:
+			f.log.Warn("push.queue.dropped", "kind", n.Kind)
+		default:
+			f.deliver(n)
+		}
 	}
 }
 
@@ -168,10 +188,31 @@ func (f *fanout) deliver(n ports.Notification) {
 	}
 }
 
-// Close stops the push workers after draining queued messages.
+// Close stops the push workers after draining queued messages, waiting at
+// most f.drain; later notifications are dropped.
 func (f *fanout) Close() {
-	if f.push != nil && !f.sync {
-		close(f.queue)
+	if f.push == nil || f.sync {
+		return
+	}
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		return
+	}
+	f.closed = true
+	close(f.queue)
+	f.mu.Unlock()
+	drained := make(chan struct{})
+	go func() {
 		f.done.Wait()
+		close(drained)
+	}()
+	timer := time.NewTimer(f.drain)
+	defer timer.Stop()
+	select {
+	case <-drained:
+	case <-timer.C:
+		close(f.stop)
+		f.log.Warn("push.queue.drain.timeout", "waited", f.drain)
 	}
 }

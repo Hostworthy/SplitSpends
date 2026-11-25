@@ -134,6 +134,37 @@ func TestFanoutSlowRecipientDoesNotBlockOthers(t *testing.T) {
 	}
 }
 
+func TestFanoutNotifyAfterClose(t *testing.T) {
+	pushes := &recordingPusher{}
+	f := newFanout(&fakeNotifier{codes: map[string]string{}}, pushes, slog.New(slog.DiscardHandler), false)
+	f.Close()
+	f.Notify(context.Background(), ports.Notification{UserID: uuid.New(), Subject: "late"})
+	f.Close()
+	if pushes.count() != 0 {
+		t.Fatal("a notification after Close should be dropped")
+	}
+}
+
+func TestFanoutCloseHasDeadline(t *testing.T) {
+	pushes := &recordingPusher{wait: make(chan struct{})}
+	defer close(pushes.wait)
+	f := newFanout(&fakeNotifier{codes: map[string]string{}}, pushes, slog.New(slog.DiscardHandler), false)
+	f.drain = 50 * time.Millisecond
+	for range pushWorkers + 3 {
+		f.Notify(context.Background(), ports.Notification{UserID: uuid.New(), Subject: "stuck"})
+	}
+	closed := make(chan struct{})
+	go func() {
+		f.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close waited for stalled deliveries past its deadline")
+	}
+}
+
 func TestFanoutWithoutPush(t *testing.T) {
 	email := &fakeNotifier{codes: map[string]string{}}
 	f := newFanout(email, nil, slog.New(slog.DiscardHandler), false)
