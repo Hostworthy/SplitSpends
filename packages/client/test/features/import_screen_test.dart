@@ -60,18 +60,29 @@ class _LocalSession extends SessionController {
   );
 }
 
-Future<void> _pump(WidgetTester tester, ImportService service) async {
+Future<void> _pump(
+  WidgetTester tester,
+  ImportService service, {
+  _LocalSession Function()? session,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         memoryDatabase(),
-        sessionProvider.overrideWith(_LocalSession.new),
+        sessionProvider.overrideWith(session ?? _LocalSession.new),
         importServiceProvider.overrideWithValue(service),
       ],
       child: const MaterialApp(home: ImportScreen(login: _login)),
     ),
   );
   await settle(tester);
+}
+
+/// A device that cannot store the session token.
+class _BrokenSignIn extends _LocalSession {
+  @override
+  Future<void> signIn({required String token, required Me me}) async =>
+      throw StateError('keystore unavailable');
 }
 
 void main() {
@@ -158,5 +169,18 @@ void main() {
       find.byKey(const Key('import-upload')),
     );
     expect(upload.onPressed, isNotNull);
+  });
+
+  testWidgets('a failed start-fresh sign-in shows the error', (tester) async {
+    await _pump(tester, _FakeImport(), session: _BrokenSignIn.new);
+
+    await tester.tap(find.byKey(const Key('import-skip')));
+    await settle(tester);
+
+    expect(find.text('Something went wrong.'), findsOneWidget);
+    final skip = tester.widget<ButtonStyleButton>(
+      find.byKey(const Key('import-skip')),
+    );
+    expect(skip.onPressed, isNotNull);
   });
 }

@@ -33,17 +33,22 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       .read(sessionProvider.notifier)
       .signIn(token: widget.login.token, me: widget.login.me);
 
-  Future<void> _upload() async {
+  Future<void> _upload() => _run(() async {
+    final server = ref.read(sessionProvider).value?.serverUrl ?? '';
+    await ref
+        .read(importServiceProvider)
+        .upload(serverUrl: server, token: widget.login.token);
+    await _finish();
+  });
+
+  /// Runs [action] with the buttons disabled and shows what went wrong.
+  Future<void> _run(Future<void> Function() action) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final server = ref.read(sessionProvider).value?.serverUrl ?? '';
-      await ref
-          .read(importServiceProvider)
-          .upload(serverUrl: server, token: widget.login.token);
-      await _finish();
+      await action();
     } catch (error) {
       if (!mounted) return;
       setState(
@@ -78,7 +83,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             child: CircularProgressIndicator(strokeWidth: 2),
           )
         : const Icon(Icons.cloud_upload_rounded);
-    final skip = _busy ? null : _finish;
+    final skip = _busy ? null : () => _run(_finish);
     const skipLabel = Text('Start fresh (keep local copy)');
     return AuthLayout(
       title: 'Bring your data along?',
