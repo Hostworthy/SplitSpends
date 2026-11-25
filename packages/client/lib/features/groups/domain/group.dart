@@ -161,6 +161,20 @@ class GroupInput {
   final DefaultSplit? defaultSplit;
   final bool clearDefaultSplit;
 
+  GroupInput copyWith({String? id, String? name}) => GroupInput(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    kind: kind,
+    defaultCurrency: defaultCurrency,
+    simplifyDebts: simplifyDebts,
+    emoji: emoji,
+    color: color,
+    archived: archived,
+    members: members,
+    defaultSplit: defaultSplit,
+    clearDefaultSplit: clearDefaultSplit,
+  );
+
   JsonMap toJson() => {
     'id': ?id,
     'name': ?name,

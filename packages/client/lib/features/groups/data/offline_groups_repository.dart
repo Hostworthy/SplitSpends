@@ -26,15 +26,9 @@ class OfflineGroupsRepository implements GroupsRepository {
     if (name.isEmpty) {
       throw const ApiError.validation('name', 'Give the group a name.');
     }
-    final withId = GroupInput(
+    final withId = input.copyWith(
       id: input.id ?? const Uuid().v4(),
       name: name,
-      kind: input.kind,
-      defaultCurrency: input.defaultCurrency,
-      simplifyDebts: input.simplifyDebts,
-      emoji: input.emoji,
-      color: input.color,
-      members: input.members,
     );
     final body = withId.toJson();
     return _outbox.write(
@@ -92,6 +86,7 @@ class OfflineGroupsRepository implements GroupsRepository {
       simplifyDebts: (body['simplifyDebts'] as bool?) ?? true,
       emoji: body['emoji'] as String?,
       color: body['color'] as String?,
+      defaultSplit: DefaultSplit.parse(body['defaultSplit']),
       members: [?self],
     );
   }
