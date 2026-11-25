@@ -13,7 +13,8 @@ class SplitPreview {
   final String? error;
 
   /// For `exact`: minor units still unassigned (negative when over).
-  /// For `percent`: hundredths of a percent left until 100%.
+  /// For `percent`: ten-thousandths of a percent left until 100% (negative
+  /// when over), see [tenThousandths].
   final int remaining;
 
   bool get isValid => error == null;
@@ -94,12 +95,32 @@ int _remaining(
   }
   return switch (method) {
     SplitMethod.exact => total - sum.truncate().toInt(),
-    SplitMethod.percent =>
-      ((Rational.integer(100) - sum) * Rational.integer(100))
-          .truncate()
-          .toInt(),
+    SplitMethod.percent => tenThousandths(Rational.integer(100) - sum),
     _ => 0,
   };
+}
+
+/// [percent] in ten-thousandths of a percent, the finest step a percentage
+/// may have. A finer value, which the ledger refuses, is rounded away from
+/// zero, so a gap never reads as none.
+int tenThousandths(Rational percent) {
+  final scaled = percent * Rational.integer(10000);
+  final whole = scaled.truncate();
+  return (scaled.isInteger ? whole : whole + BigInt.from(scaled.sign)).toInt();
+}
+
+/// "40% left", "10% over" or "100% assigned", for [units] ten-thousandths
+/// of a percent left.
+String percentLeft(int units) => units == 0
+    ? '100% assigned'
+    : '${percentText(units.abs())}% ${units > 0 ? 'left' : 'over'}';
+
+/// `123456` (units of 0.0001%) as `12.3456`, without trailing zeros.
+String percentText(int units) {
+  final whole = units ~/ 10000;
+  var fraction = (units % 10000).toString().padLeft(4, '0');
+  fraction = fraction.replaceFirst(RegExp(r'0+$'), '');
+  return fraction.isEmpty ? '$whole' : '$whole.$fraction';
 }
 
 String _friendly(LedgerError error, SplitMethod method) {
