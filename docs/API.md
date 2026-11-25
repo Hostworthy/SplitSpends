@@ -91,7 +91,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
 // Activity
 { "id": "uuid", "kind": "expense.created" | "expense.updated" | "expense.deleted" | "expense.restored"
-  | "expense.stopped" | "payment.created" | "comment.created" | "group.created" | "group.updated" | "group.member-added"
+  | "expense.stopped" | "payment.created" | "comment.created" | "group.created" | "group.updated" | "group.deleted" | "group.member-added"
   | "group.member-removed" | "group.member-joined" | "friend.added" | "reminder.sent",
   "actor": User, "groupId": "uuid" | null, "expenseId": "uuid" | null,
   "summary": "Ada added “Dinner” in Lisbon trip", "data": { ... }, "createdAt": "..." }
@@ -110,7 +110,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | `adjustment` | minor units (may be negative) | Each user owes the adjustment, the rest is split evenly |
 | `itemized` | omitted | `items[].userIds` share each item evenly; `tax` and `tip` are spread proportionally to each user's item subtotal; `total` must equal items + tax + tip |
 
-`payers` is a list of `{ "userId", "amount" }` whose amounts sum to `total`. Every user in `payers`, `splits` or `items` must be a group member (group expense) or the caller's friend (non-group expense), and the caller must be involved.
+`payers` is a list of `{ "userId", "amount" }` whose amounts sum to `total`. Every user in `payers`, `splits` or `items` must be a group member (group expense) or the caller's friend (non-group expense), and the caller must be involved. Outside groups, everyone who ends up owing money must also be connected (friends, or members of a common group) with everyone who ends up getting money back, since the expense leaves those pairs owing each other; otherwise 422 on `splits`. A recurring expense outside groups stops repeating once that no longer holds.
 
 `date` runs from `2000-01-01` up to one year after today (422 on `date` otherwise); an update that leaves it out keeps the expense's date.
 
@@ -118,7 +118,7 @@ A recurring expense repeats on its `recurrence`: a background job books each occ
 
 An update may send `updatedAt`: the `updatedAt` of the expense as the client last saw it, unchanged. When the expense has been changed (or deleted) since, the update is refused with 409 `CONFLICT` and nothing is saved, so one person's edit never silently replaces another's; reload the expense and edit again. Without `updatedAt` the update always replaces the current version. Updating a deleted expense is a 409 either way.
 
-`category` is a built-in id or a custom category id (`custom.<uuid>`). A custom id must be one of the caller's own live categories; an update may also keep the category the expense already has, even when it belongs to another member or was deleted.
+`category` is a built-in id other than `payment`, or a custom category id (`custom.<uuid>`). A custom id must be one of the caller's own live categories; an update may also keep the category the expense already has, even when it belongs to another member or was deleted.
 
 ### Default Split
 
@@ -192,20 +192,22 @@ Each account may have up to 1000 people it added by name only (placeholders, fro
 | POST | `/groups` | `{ id?, name, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, defaultSplit?, members?: [{ email, name? }] }` | 201 `{ data: Group }`; `defaultSplit` is checked against the members after they are added |
 | GET | `/groups/{groupId}` | | `{ data: Group }` |
 | PATCH | `/groups/{groupId}` | `{ name?, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, archived?, defaultSplit? }` | `{ data: Group }`; `defaultSplit: null` clears it, leaving it out keeps it |
-| DELETE | `/groups/{groupId}` | | 204; 409 when not settled |
+| DELETE | `/groups/{groupId}` | | 204; 403 when the caller may not delete it; 409 when not settled |
 | POST | `/groups/{groupId}/members` | `{ email?, name? }` | 201 `{ data: Group }` (name only adds a placeholder) |
 | DELETE | `/groups/{groupId}/members/{userId}` | | 204; 409 when that member is not settled. A member may remove themselves (leave) |
 | GET | `/groups/{groupId}/balances` | | `{ data: { members: [{ userId, balances: [Balance] }], debts: [Debt] } }` (debts are simplified when `simplifyDebts` is on) |
 | GET | `/groups/{groupId}/export` | | `text/csv` of all expenses and payments |
 | POST | `/groups/{groupId}/invites` | | 201 `{ data: Invite }` with `token` and `url` (shown once). 409 for archived groups |
-| GET | `/groups/{groupId}/invites` | | List of active (unexpired) `Invite`, without `token` and `url` |
+| GET | `/groups/{groupId}/invites` | | List of usable `Invite` (unexpired, created by a current member), without `token` and `url` |
 | DELETE | `/groups/{groupId}/invites/{inviteId}` | | 204; the link stops working |
+
+Deleting a group removes it for everyone, with all its expenses, payments, comments and activity. Only the person who created the group may delete it; once the creator is no longer a member, any member may. The group must be settled. The deletion is recorded as `group.deleted` (with `groupId: null` and the name in `data.groupName`) in the feed of everyone who was still a member, so it outlives the group.
 
 A group has at most 100 members, its creator included. `POST /groups` with more `members` and `POST /groups/{groupId}/members` on a full group answer 422 `VALIDATION_ERROR` on `members`; joining a full group through an invite link answers 409 `CONFLICT`.
 
 ### Invite Links
 
-Any group member can create a link that lets anyone who has it join the group. Links last 14 days and can be used many times until they expire or are revoked. The token is 32 random bytes in base64url; the server stores only its SHA-256 hash. `url` is `BASE_URL/join/<token>`, which opens the web app (QR codes encode it).
+Any group member can create a link that lets anyone who has it join the group. Links last 14 days and can be used many times until they expire or are revoked. A link stops working once the person who created it leaves or is removed from the group, so removing someone also ends the links they shared. The token is 32 random bytes in base64url; the server stores only its SHA-256 hash. `url` is `BASE_URL/join/<token>`, which opens the web app (QR codes encode it).
 
 ```jsonc
 // Invite
@@ -218,7 +220,7 @@ Any group member can create a link that lets anyone who has it join the group. L
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens alike |
+| GET | `/invites/{token}` | | **public**, rate limited per IP: `{ data: InvitePreview }`. 404 for unknown, revoked and expired tokens, and links whose creator has left the group, alike |
 | POST | `/invites/{token}/accept` | | `{ data: Group }`; adds the caller to the group and records `group.member-joined`. Accepting again, or as a member, returns the group unchanged |
 
 People without an account follow the link, request a login code with `inviteToken`, sign in, then accept.
@@ -231,12 +233,18 @@ People without an account follow the link, request a login code with `inviteToke
 | POST | `/expenses` | `{ id?, groupId?, description, currency?, total, date, category?, notes?, splitMethod, payers, splits?, items?, tax?, tip?, receiptId?, recurrence? }` | 201 `{ data: Expense }` |
 | GET | `/expenses/{expenseId}` | | `{ data: Expense }` |
 | PUT | `/expenses/{expenseId}` | same as POST (full replace), plus `updatedAt?` | `{ data: Expense }`; 409 when `updatedAt` is set and the expense has changed since |
-| DELETE | `/expenses/{expenseId}` | | 204 (soft delete) |
-| POST | `/expenses/{expenseId}/restore` | | `{ data: Expense }` |
+| DELETE | `/expenses/{expenseId}` | | 204 (soft delete); 409 when someone in it has left the group |
+| POST | `/expenses/{expenseId}/restore` | | `{ data: Expense }`; 409 when someone in it has left the group |
 | GET | `/expenses/{expenseId}/comments` | | List of `{ id, expenseId, user: User, body, createdAt }` |
 | POST | `/expenses/{expenseId}/comments` | `{ body }` | 201 `{ data: Comment }` |
 | DELETE | `/comments/{commentId}` | | 204 (author only) |
 | POST | `/payments` | `{ id?, groupId?, fromUserId, toUserId, amount, currency?, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
+
+A payment is always one person paying another. `PUT /expenses/{id}` on a payment takes the usual expense body but must keep that shape: one entry in `payers` paying the whole `total` and one other person in `splits` (422 otherwise). Only the people, `total`, `currency`, `date` and `notes` are used; the description stays `Payment`, the category `payment`, and payments never recur. Only payments use the `payment` category.
+
+Someone who has left a group still sees the group's expenses and payments they were part of, with their comments, but only current members may edit, delete, restore or comment on a group's expenses (404 otherwise). Outside groups, everyone in an expense may.
+
+People leave a group only once they are settled, so a group expense or payment that includes someone who has left can no longer be deleted or restored (409 `CONFLICT`): either would give them a balance in a group they can no longer act in.
 
 ### Reminders
 
@@ -328,7 +336,7 @@ Sign-up modes:
 | Mode | Who can create an account |
 | --- | --- |
 | `open` | Anyone |
-| `invite` | The allowed list, people a member added by email, and holders of a group invite link |
+| `invite` | The allowed list, people a member added by email, holders of a group invite link, and people an administrator or manager approved |
 | `approval` | Anyone can ask: after proving their email with a code, `POST /auth/otp/verify` answers 403 `APPROVAL_PENDING` until an administrator or manager approves them (403 `APPROVAL_DECLINED` once declined). The allowed list and people approved earlier sign in directly. Invited people also wait |
 | `closed` | Nobody new, not even the allowed list |
 
@@ -339,7 +347,7 @@ Existing active accounts always sign in. The allowed list holds addresses and wh
 | GET | `/admin/signup` | | admin: `{ data: { mode, allowed: [], updatedAt } }` |
 | PUT | `/admin/signup` | `{ mode, allowed: [] }` | admin: the saved settings (entries lowercased, `example.com` becomes `@example.com`) |
 | GET | `/admin/requests` | `?status=pending\|approved\|declined` (pending by default) | admin or manager: list of `{ id, email, name, status, requestedAt, decidedAt }` |
-| POST | `/admin/requests/{requestId}/approve` | | admin or manager: the request; the person is emailed and can sign in |
+| POST | `/admin/requests/{requestId}/approve` | | admin or manager: the request; the person is emailed and can sign in. 409 while the sign-up mode is `closed` |
 | POST | `/admin/requests/{requestId}/decline` | | admin or manager: the request |
 | GET | `/admin/accounts` | `?status=active\|invited\|disabled&q=&limit=&offset=` | admin: list of `{ ...User, role, createdAt }` (everyone except people added by name only) |
 | PATCH | `/admin/accounts/{userId}` | `{ role }` | admin: the account |
@@ -352,7 +360,7 @@ Administrators and managers get an `approvals` notification (email and push) for
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
-| POST | `/internal/jobs` | Outside `/api/v1`. Runs recurring expenses and cleanup once; overlapping runs are safe, each occurrence is booked once. Requires `Authorization: Bearer <JOBS_SECRET>`; only mounted when `JOBS_SECRET` is set. For serverless schedulers |
+| POST | `/internal/jobs` | Outside `/api/v1`. Runs recurring expenses and cleanup once; overlapping runs are safe, each occurrence is booked once. Every job runs even when another fails, and a recurring expense that fails is skipped and tried again next run; any failure answers 500 after the rest has run. Requires `Authorization: Bearer <JOBS_SECRET>`; only mounted when `JOBS_SECRET` is set. For serverless schedulers |
 
 ## MCP
 

@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -115,8 +116,11 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 	}
 
 	sender := pushSender(ctx, db, cfg, log)
-	return &Runtime{Config: cfg, Log: log, db: db, notifier: notifier,
-		Services: WireWithPush(db, notifier, blobs, reader, sender, clock.System{}, cfg, log)}, nil
+	services := WireWithPush(db, notifier, blobs, reader, sender, clock.System{}, cfg, log)
+	if open, err := services.Auth.Unclaimed(ctx); err == nil && open {
+		log.Warn("auth.bootstrap.open", "reason", "no account yet and ADMIN_EMAIL is empty: whoever signs in first becomes the administrator, whatever SIGNUP_MODE says")
+	}
+	return &Runtime{Config: cfg, Log: log, db: db, notifier: notifier, Services: services}, nil
 }
 
 // Wire builds services from adapters, without push. Tests call it with
@@ -144,7 +148,7 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	receiptRepo := repositories.NewReceipts(db)
 
 	policy := auth.DefaultPolicy()
-	policy.Secret, policy.Mode, policy.AllowedDomains = cfg.Secret, cfg.SignupMode, cfg.AllowedDomains
+	policy.Secret, policy.Mode, policy.AllowedDomains, policy.AdminEmail = cfg.Secret, cfg.SignupMode, cfg.AllowedDomains, cfg.AdminEmail
 	if cfg.SessionTTL > 0 {
 		policy.SessionTTL = cfg.SessionTTL
 	}
@@ -199,12 +203,37 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 
 // RunJobsOnce creates due recurring expenses and removes expired
 // credentials. Serverless hosts call it from a scheduler via /internal/jobs.
+// Every job runs even when another fails; the error joins their failures,
+// which are also logged.
 func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
-	for pass := 0; pass < 50; pass++ {
+	recurring := rt.recurring(ctx)
+	// Rates are a convenience for AI drafts; an outage never fails the jobs.
+	if err := rt.Services.Rates.Refresh(ctx); err != nil {
+		rt.Log.Warn("jobs.rates.failed", "error", err)
+	}
+	sessions := rt.Services.Auth.Cleanup(ctx)
+	if sessions != nil {
+		rt.Log.Error("jobs.sessions.cleanup.failed", "error", sessions)
+	}
+	invites := rt.Services.Invites.Cleanup(ctx)
+	if invites != nil {
+		rt.Log.Error("jobs.invites.cleanup.failed", "error", invites)
+	}
+	return errors.Join(recurring, sessions, invites)
+}
+
+// passes bounds the recurring passes of one run; each books up to 100 series.
+const passes = 50
+
+// recurring runs passes until nothing is due, logging each series that
+// failed.
+func (rt *Runtime) recurring(ctx context.Context) error {
+	var failed []error
+	for pass := 1; ; pass++ {
 		n, err := rt.Services.Expenses.RunRecurring(ctx)
 		if err != nil {
-			rt.Log.Error("jobs.recurring.failed", "error", err)
-			return err
+			failed = append(failed, err)
+			rt.failed(err)
 		}
 		if n > 0 {
 			rt.Log.Info("jobs.recurring.created", "count", n)
@@ -212,20 +241,28 @@ func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 		if n == 0 {
 			break
 		}
+		if pass == passes {
+			rt.Log.Warn("jobs.recurring.capped", "passes", passes)
+			break
+		}
 	}
-	// Rates are a convenience for AI drafts; an outage never fails the jobs.
-	if err := rt.Services.Rates.Refresh(ctx); err != nil {
-		rt.Log.Warn("jobs.rates.failed", "error", err)
+	return errors.Join(failed...)
+}
+
+// failed logs an error from RunRecurring: one line per skipped series.
+func (rt *Runtime) failed(err error) {
+	list := []error{err}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		list = joined.Unwrap()
 	}
-	if err := rt.Services.Auth.Cleanup(ctx); err != nil {
-		rt.Log.Error("jobs.cleanup.failed", "error", err)
-		return err
+	for _, e := range list {
+		var s *expense.Skipped
+		if errors.As(e, &s) {
+			rt.Log.Error("jobs.recurring.skipped", "expense", s.ID, "error", s.Err)
+			continue
+		}
+		rt.Log.Error("jobs.recurring.failed", "error", e)
 	}
-	if err := rt.Services.Invites.Cleanup(ctx); err != nil {
-		rt.Log.Error("jobs.cleanup.failed", "area", "invites", "error", err)
-		return err
-	}
-	return nil
 }
 
 // RunJobs runs RunJobsOnce every 15 minutes until ctx ends.

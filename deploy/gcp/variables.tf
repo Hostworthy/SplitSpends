@@ -1,5 +1,6 @@
 variable "project_id" {
-  type = string
+  description = "Google Cloud project to deploy into."
+  type        = string
 }
 
 variable "region" {
@@ -9,8 +10,9 @@ variable "region" {
 }
 
 variable "name" {
-  type    = string
-  default = "splitspends"
+  description = "Prefix for every resource."
+  type        = string
+  default     = "splitspends"
 }
 
 variable "image" {
@@ -39,11 +41,30 @@ variable "base_url" {
 }
 
 variable "signup_mode" {
-  type    = string
-  default = "invite"
+  description = "Starting sign-up mode: open, invite, approval or closed (administrators can change it in the app)."
+  type        = string
+  default     = "invite"
+  validation {
+    # domain is still accepted by the server as invite with signup_allowed_domains.
+    condition     = contains(["open", "invite", "approval", "closed", "domain"], var.signup_mode)
+    error_message = "signup_mode must be open, invite, approval or closed."
+  }
+}
+
+variable "admin_email" {
+  description = "Your email address: only it can create the first account, which becomes the administrator. Empty lets whoever signs in first take it."
+  type        = string
+  default     = ""
+}
+
+variable "signup_allowed_domains" {
+  description = "Comma-separated email domains that start out on the sign-up allowed list, for example example.com. Empty for none."
+  type        = string
+  default     = ""
 }
 
 variable "smtp" {
+  description = "SMTP settings for login codes and notifications."
   type = object({
     host     = string
     port     = optional(number, 587)
@@ -56,6 +77,7 @@ variable "smtp" {
 }
 
 variable "ai" {
+  description = "Optional AI provider for receipt scanning."
   type = object({
     provider = optional(string, "none")
     api_key  = optional(string, "")
@@ -69,6 +91,13 @@ variable "ai" {
 }
 
 variable "max_instances" {
-  type    = number
-  default = 2
+  description = "Most Cloud Run instances at once. Each opens up to 10 database connections (DATABASE_MAX_CONNS), so keep max_instances x 10 below your database's connection limit."
+  type        = number
+  default     = 2
+}
+
+variable "jobs_schedule" {
+  description = "How often recurring expenses and cleanup run, as a cron expression in UTC."
+  type        = string
+  default     = "*/30 * * * *"
 }

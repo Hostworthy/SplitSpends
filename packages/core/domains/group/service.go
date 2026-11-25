@@ -300,20 +300,36 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, p Patch) (*Vi
 	return s.view(ctx, actor, g)
 }
 
-// Delete removes a settled group and its expenses.
+// Delete removes a settled group with all its expenses and history. Only the
+// person who created the group may, or any member once its creator has left,
+// because anyone holding an invite link can become a member. The group stays
+// locked from the check to the delete, so nothing booked meanwhile is lost,
+// and the feed entry has no group, so it outlives the group.
 func (s *Service) Delete(ctx context.Context, actor, id uuid.UUID) error {
-	g, err := s.Member(ctx, actor, id)
-	if err != nil {
-		return err
-	}
-	settled, err := s.balances.GroupSettled(ctx, g.ID)
-	if err != nil {
-		return err
-	}
-	if !settled {
-		return errs.Conflict("Settle all balances before deleting the group.")
-	}
-	return s.repo.Delete(ctx, g.ID)
+	return s.tx.Do(ctx, func(ctx context.Context) error {
+		g, err := s.repo.Lock(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !g.HasMember(actor) {
+			return errs.NotFound("Group")
+		}
+		if actor != g.CreatedBy && g.HasMember(g.CreatedBy) {
+			return errs.Forbidden("Only the person who created this group can delete it.")
+		}
+		settled, err := s.balances.GroupSettled(ctx, g.ID)
+		if err != nil {
+			return err
+		}
+		if !settled {
+			return errs.Conflict("Settle all balances before deleting the group.")
+		}
+		if err := s.activity.Record(ctx, activity.Activity{ActorID: actor, Kind: activity.GroupDeleted,
+			Involved: g.Members, Data: map[string]any{"groupName": g.Name}}); err != nil {
+			return err
+		}
+		return s.repo.Delete(ctx, g.ID)
+	})
 }
 
 // AddMember adds someone by email, inviting them if they are new.

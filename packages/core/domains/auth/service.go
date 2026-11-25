@@ -73,6 +73,17 @@ func (s *Service) signup(ctx context.Context) (Signup, error) {
 	return s.gate.Signup(ctx)
 }
 
+// Unclaimed reports whether whoever signs in next, with any address, becomes
+// the administrator: no account is active and the policy names no
+// administrator email.
+func (s *Service) Unclaimed(ctx context.Context) (bool, error) {
+	if s.policy.AdminEmail != "" {
+		return false, nil
+	}
+	n, err := s.users.Count(ctx)
+	return n == 0, err
+}
+
 // CodeTTL returns how long login codes stay valid.
 func (s *Service) CodeTTL() time.Duration { return s.policy.CodeTTL }
 
@@ -87,8 +98,24 @@ const (
 
 // decide applies the sign-up rules to email, which may hold the invite link
 // stored under link. Active accounts always sign in and disabled ones never
-// do; the very first account bootstraps the server whatever the mode.
+// do; the very first account bootstraps the server whatever the mode, and
+// must be the administrator email when the policy names one. It
+// must run inside Tx.Do: while no account is active it holds the users lock
+// until the transaction ends, so the account it lets in is created before
+// anyone else is decided, and only one becomes the administrator.
 func (s *Service) decide(ctx context.Context, email, link string) (decision, error) {
+	count, err := s.users.Count(ctx)
+	if err != nil {
+		return deny, err
+	}
+	if count == 0 {
+		if err := s.users.Lock(ctx); err != nil {
+			return deny, err
+		}
+		if count, err = s.users.Count(ctx); err != nil {
+			return deny, err
+		}
+	}
 	existing, err := s.users.FindByEmail(ctx, email)
 	if err != nil {
 		return deny, err
@@ -104,11 +131,10 @@ func (s *Service) decide(ctx context.Context, email, link string) (decision, err
 			return allow, nil
 		}
 	}
-	count, err := s.users.Count(ctx)
-	if err != nil {
-		return deny, err
-	}
 	if count == 0 {
+		if s.policy.AdminEmail != "" && email != s.policy.AdminEmail {
+			return deny, nil
+		}
 		return allow, nil
 	}
 	cfg, err := s.signup(ctx)
@@ -132,13 +158,20 @@ func (s *Service) decide(ctx context.Context, email, link string) (decision, err
 		}
 		return approval, nil
 	}
-	// Invite mode: the allowed list, people someone added by email, and
-	// holders of a group invite link.
+	// Invite mode: the allowed list, people someone added by email, holders
+	// of a group invite link, and people an administrator or manager
+	// approved, also when they asked to join in approval mode.
 	if cfg.Allows(email) || existing != nil {
 		return allow, nil
 	}
 	if link != "" && s.invites != nil {
 		ok, err := s.invites.Live(ctx, link)
+		if err != nil || ok {
+			return allow, err
+		}
+	}
+	if s.gate != nil {
+		ok, err := s.gate.Approved(ctx, email)
 		if err != nil || ok {
 			return allow, err
 		}

@@ -93,6 +93,15 @@ func (r *Users) Count(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// adminLock is the first key of the transaction advisory lock on who runs
+// the server; it never collides with other advisory locks.
+const adminLock = 1_384_202
+
+func (r *Users) Lock(ctx context.Context) error {
+	_, err := r.db.Q(ctx).Exec(ctx, `SELECT pg_advisory_xact_lock($1, 0)`, adminLock)
+	return err
+}
+
 func (r *Users) Placeholders(ctx context.Context, createdBy uuid.UUID) (int, error) {
 	var n int
 	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM users WHERE created_by = $1 AND status = 'placeholder'`, createdBy).Scan(&n)
