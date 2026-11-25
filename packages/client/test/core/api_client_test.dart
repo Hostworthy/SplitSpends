@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -217,6 +218,45 @@ void main() {
         offline().postData('/groups', {'name': 'Cabin'}, (d) => d),
         network(),
       );
+    });
+
+    test(
+      'an answer without the envelope gets the code for its status',
+      () async {
+        final api = answering(
+          (_) async => http.Response('<html>Too many requests</html>', 429),
+        );
+        await expectLater(
+          api.getData('/me', (d) => d),
+          throwsA(
+            isA<ApiError>()
+                .having((e) => e.status, 'status', 429)
+                .having((e) => e.code, 'code', 'RATE_LIMITED'),
+          ),
+        );
+      },
+    );
+
+    test('a rejected certificate is not read as being offline', () async {
+      cache.entries['http://server.test/api/v1/me'] = {'data': 'cached'};
+      final api = answering(
+        (_) => throw const HandshakeException('CERTIFICATE_VERIFY_FAILED'),
+      );
+      await expectLater(
+        api.getData('/me', (d) => d),
+        throwsA(
+          isA<ApiError>()
+              .having((e) => e.isTls, 'isTls', isTrue)
+              .having((e) => e.isNetwork, 'isNetwork', isFalse),
+        ),
+      );
+      expect(reachable, isEmpty);
+    });
+
+    test('a fault in the app is not reported as a network error', () async {
+      final api = answering((_) => throw StateError('Bad state'));
+      await expectLater(api.getData('/me', (d) => d), throwsStateError);
+      expect(reachable, isEmpty);
     });
 
     test('an error answer is not served from the offline copy', () async {
