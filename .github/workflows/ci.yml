@@ -70,6 +70,42 @@ jobs:
       - name: govulncheck
         run: make vuln
 
+  # Runs on every change rather than behind a paths filter, so it can be a
+  # required check and the release gate covers the deployment files too.
+  deploy:
+    name: deployment files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+      - name: Terraform format
+        run: terraform fmt -check -recursive -diff deploy
+      - name: Terraform validate
+        run: |
+          for d in deploy/aws deploy/gcp; do
+            terraform -chdir="$d" init -backend=false -input=false || exit 1
+            terraform -chdir="$d" validate || exit 1
+          done
+      - name: Compose files
+        env:
+          POSTGRES_PASSWORD: ci
+          DOMAIN: example.com
+        # The stacks read an env_file the operator creates; an empty one is
+        # enough to check the files themselves.
+        run: |
+          touch deploy/.env deploy/docker/.env
+          docker compose -f docker-compose.yml config -q
+          docker compose -f deploy/docker-compose.yml config -q
+          docker compose -f deploy/docker/docker-compose.yml config -q
+      # yq comes with the ubuntu-latest image.
+      - name: Render blueprint parses
+        run: yq e . render.yaml > /dev/null
+
   dart:
     name: app
     runs-on: ubuntu-latest
