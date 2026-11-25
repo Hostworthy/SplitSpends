@@ -49,4 +49,7 @@ var ErrTooLarge = errors.New("push.payload.too-large")
 // webpush adapter implements it.
 type Sender interface {
 	Send(ctx context.Context, s *Subscription, payload []byte) error
+	// PublicKey is the VAPID application server key (base64url) that
+	// browsers and distributors subscribe with.
+	PublicKey() string
 }

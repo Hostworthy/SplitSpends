@@ -5,12 +5,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap"
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
@@ -44,12 +47,14 @@ func (f *fakeSender) Send(_ context.Context, s *push.Subscription, payload []byt
 	return nil
 }
 
+func (f *fakeSender) PublicKey() string { return "test-key" }
+
 // pushSetup wires services with push turned on and delivered before Notify
 // returns.
 func pushSetup(t *testing.T, now time.Time) (*bootstraptest.Env, *fakeSender) {
 	t.Helper()
 	cfg := bootstraptest.Defaults()
-	cfg.Serverless, cfg.VAPIDPublicKey = true, "test-key"
+	cfg.Serverless = true
 	sender := &fakeSender{sent: map[string][]push.Message{}}
 	return bootstraptest.Open(t, bootstraptest.Options{Config: cfg, Now: now, Sender: sender}), sender
 }
@@ -157,6 +162,33 @@ func TestVAPIDKeysAreShared(t *testing.T) {
 	gotPub, gotPriv, err = keys.Ensure(ctx, pub2, priv2)
 	if err != nil || gotPub != pub1 || gotPriv != priv1 {
 		t.Fatal("later starts must reuse the stored pair")
+	}
+}
+
+// TestGeneratedKeysEnablePush checks that a server without VAPID keys in
+// its environment starts with push on, using the stored pair, and that the
+// keys reach the push service through the sender alone: the configuration
+// stays as it was loaded.
+func TestGeneratedKeysEnablePush(t *testing.T) {
+	env, _ := pushSetup(t, time.Now())
+	ctx := context.Background()
+	cfg := bootstraptest.Defaults()
+	cfg.DatabaseURL, cfg.DatabaseConns, cfg.DataDir = os.Getenv("TEST_DATABASE_URL"), 2, t.TempDir()
+	cfg.VAPIDSubject = "mailto:admin@example.com"
+	rt, err := bootstrap.Load(ctx, cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.Close()
+	stored, _, err := repositories.NewVAPIDKeys(env.DB).Ensure(ctx, "unused", "unused")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rt.Services.Push.Enabled() || rt.Services.Push.PublicKey() != stored {
+		t.Fatalf("push should be on with the stored key %q, got enabled=%v key %q", stored, rt.Services.Push.Enabled(), rt.Services.Push.PublicKey())
+	}
+	if cfg.VAPIDPublicKey != "" || cfg.VAPIDPrivateKey != "" {
+		t.Fatal("generated keys must not be written into the configuration")
 	}
 }
 

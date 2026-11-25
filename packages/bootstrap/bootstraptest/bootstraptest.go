@@ -33,7 +33,7 @@ type Options struct {
 	Config *bootstrap.Config
 	// Now is where the clock starts; zero means 2026-01-01 12:00 UTC.
 	Now time.Time
-	// Sender delivers Web Push; nil turns push off unless the config has keys.
+	// Sender delivers Web Push and holds its key; nil turns push off.
 	Sender push.Sender
 	// Reader reads receipts and drafts expenses; nil turns AI off.
 	Reader ports.Assistant
@@ -116,7 +116,8 @@ func Open(t testing.TB, o Options) *Env {
 		now = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	}
 	env := &Env{Config: cfg, DB: &database.DB{Pool: pool}, Blobs: blobs, Notifier: NewNotifier(), Clock: NewClock(now)}
-	env.Services = bootstrap.WireWithPush(env.DB, env.Notifier, blobs, o.Reader, o.Sender, env.Clock, cfg, slog.New(slog.DiscardHandler))
+	env.Services = bootstrap.Wire(cfg, bootstrap.Adapters{DB: env.DB, Email: env.Notifier, Blobs: blobs, Reader: o.Reader,
+		Push: o.Sender, Clock: env.Clock})
 	return env
 }
 

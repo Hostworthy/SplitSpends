@@ -9,6 +9,9 @@ import (
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/clock"
+	"github.com/Hostworthy/SplitSpends/packages/database"
+	"github.com/Hostworthy/SplitSpends/packages/webpush"
 	"github.com/google/uuid"
 )
 
@@ -185,5 +188,26 @@ func TestDefaultSubject(t *testing.T) {
 		if got := defaultSubject(in[0], in[1]); got != want {
 			t.Errorf("defaultSubject(%q, %q) = %q, want %q", in[0], in[1], got, want)
 		}
+	}
+}
+
+// TestWireWithGeneratedKeys checks that push is on whenever the sender has
+// a key: nothing else has to carry it.
+func TestWireWithGeneratedKeys(t *testing.T) {
+	public, private, err := webpush.Keys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender, err := webpush.New(webpush.Config{PublicKey: public, PrivateKey: private, Subject: "mailto:admin@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{AppName: "SplitSpends", BaseURL: "http://test", Serverless: true}
+	services := Wire(cfg, Adapters{DB: &database.DB{}, Email: &fakeNotifier{}, Push: sender, Clock: clock.System{}})
+	if !services.Push.Enabled() || services.Push.PublicKey() != public {
+		t.Fatalf("push should be on with the sender's key, got enabled=%v key %q", services.Push.Enabled(), services.Push.PublicKey())
+	}
+	if off := Wire(cfg, Adapters{DB: &database.DB{}, Email: &fakeNotifier{}, Clock: clock.System{}}); off.Push.Enabled() {
+		t.Fatal("push should be off without a sender")
 	}
 }
