@@ -301,6 +301,91 @@ void main() {
     ]);
   });
 
+  test('local list filters by friend, text and category with paging', () async {
+    final expenses = LocalExpensesRepository(ledger);
+    final friends = LocalFriendsRepository(ledger);
+    final sam = (await friends.add(name: 'Sam')).user.id;
+    final kim = (await friends.add(name: 'Kim')).user.id;
+    Future<Expense> add(
+      String description,
+      String date, {
+      required String friend,
+      String notes = '',
+      String? category,
+    }) {
+      // Later entries on the same day are created later.
+      now = now.add(const Duration(minutes: 1));
+      return expenses.create(
+        ExpenseInput(
+          description: description,
+          currency: 'EUR',
+          total: 1000,
+          date: date,
+          notes: notes,
+          category: category,
+          payers: const [Payer(userId: meId, amount: 1000)],
+          splits: [
+            const SplitEntry(userId: meId),
+            SplitEntry(userId: friend),
+          ],
+        ),
+      );
+    }
+
+    await add('Taxi', '2026-11-20', friend: sam, category: 'transport.taxi');
+    await add('Lunch', '2026-11-22', friend: kim, notes: 'Taxi home after');
+    await add('Dinner', '2026-11-20', friend: sam, category: 'food.dining');
+    final gone = await add('Taxi back', '2026-11-21', friend: kim);
+    await add('Snacks', '2026-11-19', friend: sam, category: 'food.dining');
+    await expenses.delete(gone.id);
+
+    Future<void> lists(
+      ExpenseQuery query,
+      List<String> descriptions, {
+      required int total,
+      int limit = 50,
+      int offset = 0,
+    }) async {
+      final page = await expenses.list(query, limit: limit, offset: offset);
+      expect([for (final e in page.items) e.description], descriptions);
+      expect(page.total, total);
+    }
+
+    // Newest date first, then the one created last on the same day.
+    await lists(const ExpenseQuery(), [
+      'Lunch',
+      'Dinner',
+      'Taxi',
+      'Snacks',
+    ], total: 4);
+    await lists(ExpenseQuery(friendId: sam), [
+      'Dinner',
+      'Taxi',
+      'Snacks',
+    ], total: 3);
+    await lists(ExpenseQuery(friendId: kim), ['Lunch'], total: 1);
+    // Description or notes, ignoring case and spaces around the text.
+    await lists(const ExpenseQuery(q: ' tAXi '), ['Lunch', 'Taxi'], total: 2);
+    await lists(const ExpenseQuery(category: 'food.dining'), [
+      'Dinner',
+      'Snacks',
+    ], total: 2);
+    await lists(
+      ExpenseQuery(friendId: sam, category: 'food.dining', q: 'snack'),
+      ['Snacks'],
+      total: 1,
+    );
+    await lists(const ExpenseQuery(), ['Lunch', 'Dinner'], total: 4, limit: 2);
+    await lists(
+      const ExpenseQuery(),
+      ['Taxi', 'Snacks'],
+      total: 4,
+      limit: 2,
+      offset: 2,
+    );
+    await lists(const ExpenseQuery(), [], total: 4, offset: 4);
+  });
+
   test('restore is refused after a participant left the group', () async {
     final groups = LocalGroupsRepository(ledger);
     final expenses = LocalExpensesRepository(ledger);
