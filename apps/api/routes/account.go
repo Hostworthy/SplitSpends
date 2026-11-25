@@ -14,7 +14,7 @@ func (a *API) requestCode(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := a.svc.Auth.RequestCode(r.Context(), in.Email, in.InviteToken); err != nil {
+	if err := a.svc.Auth.RequestCode(r.Context(), in.Email, in.InviteToken, middleware.ByAddress(a.cfg.ProxyHops)(r)); err != nil {
 		return err
 	}
 	return details(w, http.StatusAccepted, platform.OTPSent{Sent: true, ExpiresInSeconds: int(a.svc.Auth.CodeTTL().Seconds())})

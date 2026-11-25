@@ -142,31 +142,40 @@ func (s *Service) decide(ctx context.Context, email, invite string) (decision, e
 
 // RequestCode emails a login code. It returns nil for disallowed emails too,
 // so callers cannot probe which addresses have accounts. invite is an
-// optional group invite token that lets a new person sign up.
-func (s *Service) RequestCode(ctx context.Context, rawEmail, invite string) error {
+// optional group invite token that lets a new person sign up. client is the
+// caller's network address; the hourly limit counts per network as well as
+// per email, so requests from elsewhere do not use up the owner's share.
+func (s *Service) RequestCode(ctx context.Context, rawEmail, invite, client string) error {
 	email, err := user.NormalizeEmail(rawEmail)
 	if err != nil {
 		return err
 	}
 	now := s.clock.Now()
-	recent, err := s.challenges.CountSince(ctx, email, now.Add(-time.Hour))
-	if err != nil {
-		return err
-	}
-	if recent >= s.policy.MaxCodesHour {
-		return errs.RateLimited("Too many codes requested. Try again in an hour.")
-	}
-	d, err := s.decide(ctx, email, invite)
-	if err != nil || d == deny {
-		return err
-	}
-	code, err := newCode()
-	if err != nil {
-		return err
-	}
-	c := &Challenge{ID: uuid.New(), Email: email, ExpiresAt: now.Add(s.policy.CodeTTL), CreatedAt: now, Pending: d == approval}
-	c.CodeHash = hashCode(s.policy.Secret, c.ID, email, code)
-	if err := s.challenges.Create(ctx, c); err != nil {
+	client = hashClient(s.policy.Secret, client)
+	var code string
+	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.challenges.Lock(ctx, email); err != nil {
+			return err
+		}
+		total, own, err := s.challenges.CountSince(ctx, email, client, now.Add(-time.Hour))
+		if err != nil {
+			return err
+		}
+		if own >= s.policy.MaxCodesHour || total >= s.policy.MaxCodesEmail {
+			return errs.RateLimited("Too many codes requested. Try again in an hour.")
+		}
+		d, err := s.decide(ctx, email, invite)
+		if err != nil || d == deny {
+			return err
+		}
+		if code, err = newCode(); err != nil {
+			return err
+		}
+		c := &Challenge{ID: uuid.New(), Email: email, ExpiresAt: now.Add(s.policy.CodeTTL), CreatedAt: now, Client: client, Pending: d == approval}
+		c.CodeHash = hashCode(s.policy.Secret, c.ID, email, code)
+		return s.challenges.Create(ctx, c)
+	})
+	if err != nil || code == "" {
 		return err
 	}
 	return s.notifier.LoginCode(ctx, email, code, s.policy.CodeTTL)
@@ -190,19 +199,21 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code, name, userAgent st
 	invalid := errs.Unauthorized("That code is invalid or expired. Request a new one.")
 	now := s.clock.Now()
 
-	c, err := s.challenges.Latest(ctx, email)
+	// Every live code of the address counts this attempt before it is
+	// compared, so codes requested by someone else do not hide the one the
+	// owner holds, and no code is compared more than MaxAttempts times.
+	live, err := s.challenges.Attempt(ctx, email, now, s.policy.MaxAttempts)
 	if err != nil {
 		return nil, err
 	}
-	if c == nil || !c.Usable(now, s.policy.MaxAttempts) {
-		return nil, invalid
-	}
-	expected := hashCode(s.policy.Secret, c.ID, email, code)
-	if subtle.ConstantTimeCompare([]byte(expected), []byte(c.CodeHash)) != 1 {
-		c.Attempts++
-		if err := s.challenges.Update(ctx, c); err != nil {
-			return nil, err
+	var c *Challenge
+	for _, x := range live {
+		expected := hashCode(s.policy.Secret, x.ID, email, code)
+		if subtle.ConstantTimeCompare([]byte(expected), []byte(x.CodeHash)) == 1 {
+			c = x
 		}
+	}
+	if c == nil {
 		return nil, invalid
 	}
 
@@ -216,9 +227,12 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code, name, userAgent st
 		}
 	}
 	if d != allow {
-		c.ConsumedAt = &now
-		if err := s.challenges.Update(ctx, c); err != nil {
+		ok, err := s.challenges.Consume(ctx, c.ID, now)
+		if err != nil {
 			return nil, err
+		}
+		if !ok {
+			return nil, invalid
 		}
 		if d == deny || s.gate == nil {
 			return nil, errs.Forbidden("New accounts are not being created on this server right now.")
@@ -235,9 +249,13 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code, name, userAgent st
 
 	var login *Login
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
-		c.ConsumedAt = &now
-		if err := s.challenges.Update(ctx, c); err != nil {
+		// A code opens one session, however many requests carry it.
+		ok, err := s.challenges.Consume(ctx, c.ID, now)
+		if err != nil {
 			return err
+		}
+		if !ok {
+			return invalid
 		}
 		u, isNew, err := s.activate(ctx, email, name, now)
 		if err != nil {

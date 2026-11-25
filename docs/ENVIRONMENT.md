@@ -60,7 +60,7 @@ Buckets stay private: the API checks access and streams receipts itself.
 | `SIGNUP_ALLOWED_DOMAINS` | empty | Comma-separated domains that start out on the allowed list |
 | `SESSION_TTL_DAYS` | `90` | How long app sessions last. API tokens do not expire until revoked |
 
-Login codes are 6 digits, valid for 10 minutes, allow 5 attempts, and at most 5 codes per email per hour. Requests for unknown emails in `invite` mode get the same response as real ones and send nothing.
+Login codes are 6 digits, valid for 10 minutes, allow 5 attempts, and at most 5 codes per email per hour from one network and 10 per email per hour in total. Requests for unknown emails in `invite` mode get the same response as real ones and send nothing.
 
 ## Email
 

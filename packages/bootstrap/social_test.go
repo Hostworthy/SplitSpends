@@ -120,10 +120,10 @@ func TestRemindersAndInviteLinks(t *testing.T) {
 	if issued.URL != "http://test/join/"+issued.Token {
 		t.Fatalf("unexpected url %s", issued.URL)
 	}
-	if err := svc.Auth.RequestCode(ctx, "cy@example.com", ""); err != nil {
+	if err := svc.Auth.RequestCode(ctx, "cy@example.com", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.Auth.RequestCode(ctx, "cy@example.com", "not-a-real-token"); err != nil {
+	if err := svc.Auth.RequestCode(ctx, "cy@example.com", "not-a-real-token", ""); err != nil {
 		t.Fatal(err)
 	}
 	if env.Notifier.Code("cy@example.com") != "" {

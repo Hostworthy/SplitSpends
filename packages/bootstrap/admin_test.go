@@ -21,7 +21,7 @@ func TestAdministration(t *testing.T) {
 	login := func(email, name string) (*user.User, string, error) {
 		t.Helper()
 		notes.Forget(email)
-		if err := svc.Auth.RequestCode(ctx, email, ""); err != nil {
+		if err := svc.Auth.RequestCode(ctx, email, "", ""); err != nil {
 			return nil, "", err
 		}
 		code := notes.Code(email)
