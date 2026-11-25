@@ -10,6 +10,7 @@ import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/widgets/amount_field.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
+import 'package:splitspends/features/expenses/domain/split_calculator.dart';
 import 'package:splitspends/features/expenses/presentation/editor/expense_form.dart';
 
 /// Method picker shared by the split and itemized sections.
@@ -62,12 +63,7 @@ class SplitSection extends ConsumerWidget {
           ? '${Money.format(r, info)} left'
           : '${Money.format(-r, info)} over';
     } else if (form.method == SplitMethod.percent) {
-      final r = preview.remaining / 100;
-      remaining = r == 0
-          ? '100% assigned'
-          : r > 0
-          ? '${r.toStringAsFixed(r % 1 == 0 ? 0 : 2)}% left'
-          : '${(-r).toStringAsFixed(-r % 1 == 0 ? 0 : 2)}% over';
+      remaining = percentLeft(preview.remaining);
     }
 
     return Column(

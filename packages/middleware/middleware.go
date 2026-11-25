@@ -14,11 +14,13 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/invite"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 )
@@ -76,10 +78,14 @@ func (r *recorder) Flush() {
 func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // Observe assigns a request id, recovers panics and writes an access log.
+// A caller's X-Request-Id is kept only when it is a plain token (see
+// validID), so ids in logs and error bodies stay easy to search for.
+// A handler that panics with http.ErrAbortHandler is logged and the panic
+// passed on, so net/http aborts the response as the handler intended.
 func Observe(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Request-Id")
-		if id == "" || len(id) > 64 {
+		if !validID(id) {
 			buf := make([]byte, 8)
 			_, _ = rand.Read(buf)
 			id = hex.EncodeToString(buf)
@@ -89,20 +95,63 @@ func Observe(log *slog.Logger, next http.Handler) http.Handler {
 		rec := &recorder{ResponseWriter: w}
 		start := time.Now()
 		defer func() {
-			if v := recover(); v != nil {
-				log.Error("middleware.panic.recovered", "requestId", id, "panic", v, "path", r.URL.Path)
+			v := recover()
+			err, _ := v.(error)
+			abort := errors.Is(err, http.ErrAbortHandler)
+			if v != nil && !abort {
+				log.Error("middleware.panic.recovered", "requestId", id, "panic", v, "path", redact(r.URL.Path),
+					"stack", string(debug.Stack()))
 				if rec.status == 0 {
 					WriteError(rec, r.WithContext(ctx), log, errors.New("middleware.panic"))
 				}
 			}
-			if r.URL.Path == "/health" {
-				return
+			if r.URL.Path != "/health" {
+				log.Info("http.request.completed", "requestId", id, "method", r.Method, "path", redact(r.URL.Path),
+					"status", rec.status, "bytes", rec.bytes, "durationMs", time.Since(start).Milliseconds())
 			}
-			log.Info("http.request.completed", "requestId", id, "method", r.Method, "path", r.URL.Path,
-				"status", rec.status, "bytes", rec.bytes, "durationMs", time.Since(start).Milliseconds())
+			if abort {
+				panic(v)
+			}
 		}()
 		next.ServeHTTP(rec, r.WithContext(ctx))
 	})
+}
+
+// secretPaths lists the routes whose next path segment is an invite token,
+// a bearer secret that is stored only as a hash and must not reach the logs.
+var secretPaths = []string{invite.Path, platform.Prefix + "/invites/"}
+
+// redact replaces the invite token in path with "{token}" so the path can be
+// logged.
+func redact(path string) string {
+	for _, prefix := range secretPaths {
+		rest, ok := strings.CutPrefix(path, prefix)
+		if !ok || rest == "" {
+			continue
+		}
+		tail := ""
+		if i := strings.IndexByte(rest, '/'); i >= 0 {
+			tail = rest[i:]
+		}
+		return prefix + "{token}" + tail
+	}
+	return path
+}
+
+// validID reports whether a caller's request id is 1 to 64 letters, digits,
+// dots, underscores or hyphens.
+func validID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, c := range []byte(id) {
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '.', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // apiPolicy lets a response load nothing: JSON and stored files need no
@@ -159,7 +208,13 @@ func Web(secure bool, next http.Handler) http.Handler {
 }
 
 // CORS allows the listed origins ("*" allows any). Mobile apps do not send an
-// Origin header, so this only matters for browsers on other origins.
+// Origin header, so this only matters for browsers on other origins. An
+// allowed origin is echoed back rather than answered with "*"; that is safe
+// only because the API never uses cookies or Access-Control-Allow-Credentials
+// (ADR-003). Once any origin is configured every response varies by Origin,
+// so a shared cache never serves one origin's answer to another. Only a real
+// preflight from an allowed origin is answered here; any other OPTIONS request
+// goes to next, which answers it as it answers an unknown route or method.
 func CORS(origins []string, next http.Handler) http.Handler {
 	allowAll := false
 	allowed := map[string]bool{}
@@ -171,18 +226,23 @@ func CORS(origins []string, next http.Handler) http.Handler {
 			allowed[strings.TrimRight(o, "/")] = true
 		}
 	}
+	configured := allowAll || len(allowed) > 0
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if origin != "" && (allowAll || allowed[origin]) {
-			h := w.Header()
-			h.Set("Access-Control-Allow-Origin", origin)
-			h.Set("Vary", "Origin")
-			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, Mcp-Session-Id, Mcp-Protocol-Version")
-			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			h.Set("Access-Control-Expose-Headers", "X-Request-Id, Mcp-Session-Id")
-			h.Set("Access-Control-Max-Age", "600")
+		h := w.Header()
+		if configured {
+			h.Add("Vary", "Origin")
 		}
-		if r.Method == http.MethodOptions && origin != "" {
+		origin := r.Header.Get("Origin")
+		if origin == "" || (!allowAll && !allowed[origin]) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		h.Set("Access-Control-Allow-Origin", origin)
+		h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, Mcp-Session-Id, Mcp-Protocol-Version")
+		h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		h.Set("Access-Control-Expose-Headers", "X-Request-Id, Mcp-Session-Id")
+		h.Set("Access-Control-Max-Age", "600")
+		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -344,6 +404,27 @@ func Limit(l *Limiter, log *slog.Logger, key Key, next http.Handler) http.Handle
 	})
 }
 
+// Slots bounds how many requests run at once. Like Limiter, it counts per
+// server instance.
+type Slots chan struct{}
+
+// NewSlots allows n requests at once.
+func NewSlots(n int) Slots { return make(Slots, n) }
+
+// Bound runs next in one of s's slots and refuses the request when every slot
+// is taken, so slow upstream calls cannot pile up and hold memory.
+func Bound(s Slots, log *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case s <- struct{}{}:
+			defer func() { <-s }()
+			next.ServeHTTP(w, r)
+		default:
+			WriteError(w, r, log, errs.RateLimited("The server is busy. Try again in a moment."))
+		}
+	})
+}
+
 // ClientIP returns the caller's address. hops is the number of trusted
 // proxies in front of the server, each of which appends the address it was
 // connected from to X-Forwarded-For. Entries further left were written by
@@ -408,11 +489,11 @@ func WriteError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err er
 			status = mapped
 		} else {
 			// A kind added to errs without a status still answers, as a 500.
-			log.Error("middleware.error.unmapped", "requestId", body.RequestID, "path", r.URL.Path, "kind", de.Kind)
+			log.Error("middleware.error.unmapped", "requestId", body.RequestID, "path", redact(r.URL.Path), "kind", de.Kind)
 		}
 	} else {
 		body.Error, body.Code = "Something went wrong. Please try again.", "INTERNAL"
-		log.Error("middleware.error.internal", "requestId", body.RequestID, "path", r.URL.Path, "error", err)
+		log.Error("middleware.error.internal", "requestId", body.RequestID, "path", redact(r.URL.Path), "error", err)
 	}
 	WriteJSON(w, status, body)
 }

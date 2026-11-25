@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:splitspends_ledger/ledger.dart';
 
 import 'package:splitspends/features/expenses/domain/expense.dart';
+import 'package:splitspends/features/expenses/domain/split_calculator.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 
 /// State of the "Default split" section in group settings. Pure Dart plus
@@ -42,7 +43,7 @@ class DefaultSplitForm extends ChangeNotifier {
       // Hundredths of a hundredth of a percent, so parts add up to 100.
       final parts = even(1000000, members.length);
       for (var i = 0; i < members.length; i++) {
-        values[members[i]] = _percent(parts[i]);
+        values[members[i]] = percentText(parts[i]);
       }
     } else if (value == SplitMethod.shares) {
       for (final id in members) {
@@ -89,11 +90,7 @@ class DefaultSplitForm extends ChangeNotifier {
     for (final v in _filled.values) {
       sum = sum + (Rational.tryParseDecimal(v) ?? Rational.zero);
     }
-    final left = Rational.integer(100) - sum;
-    if (left.sign == 0) return '100% assigned';
-    final abs = left.sign < 0 ? Rational.integer(0) - left : left;
-    final scaled = (abs * Rational.integer(10000)).truncate().toInt();
-    return '${_percent(scaled)}% ${left.sign > 0 ? 'left' : 'over'}';
+    return percentLeft(tenThousandths(Rational.integer(100) - sum));
   }
 
   /// What to save: null clears the default split.
@@ -121,12 +118,4 @@ class DefaultSplitForm extends ChangeNotifier {
   }
 
   bool get canSave => changed && problem == null;
-
-  /// `123456` (units of 0.0001%) as `12.3456`, without trailing zeros.
-  static String _percent(int units) {
-    final whole = units ~/ 10000;
-    var frac = (units % 10000).toString().padLeft(4, '0');
-    frac = frac.replaceFirst(RegExp(r'0+$'), '');
-    return frac.isEmpty ? '$whole' : '$whole.$frac';
-  }
 }

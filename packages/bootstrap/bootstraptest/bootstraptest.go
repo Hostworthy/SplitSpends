@@ -35,6 +35,8 @@ type Options struct {
 	Now time.Time
 	// Sender delivers Web Push; nil turns push off unless the config has keys.
 	Sender push.Sender
+	// Reader reads receipts and drafts expenses; nil turns AI off.
+	Reader ports.ReceiptReader
 }
 
 // Env is a wired set of services on a fresh schema.
@@ -50,7 +52,7 @@ type Env struct {
 // secret.
 func Defaults() *bootstrap.Config {
 	return &bootstrap.Config{AppName: "SplitSpends", Secret: []byte("0123456789abcdef0123456789abcdef"),
-		SignupMode: auth.SignupOpen, BaseURL: "http://test"}
+		SignupMode: auth.SignupOpen, BaseURL: "http://test", AIRateLimit: 30}
 }
 
 // Open migrates an empty schema on TEST_DATABASE_URL and wires the services
@@ -107,7 +109,7 @@ func Open(t testing.TB, o Options) *Env {
 		now = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	}
 	env := &Env{Config: cfg, DB: &database.DB{Pool: pool}, Notifier: NewNotifier(), Clock: NewClock(now)}
-	env.Services = bootstrap.WireWithPush(env.DB, env.Notifier, blobs, nil, o.Sender, env.Clock, cfg, slog.New(slog.DiscardHandler))
+	env.Services = bootstrap.WireWithPush(env.DB, env.Notifier, blobs, o.Reader, o.Sender, env.Clock, cfg, slog.New(slog.DiscardHandler))
 	return env
 }
 

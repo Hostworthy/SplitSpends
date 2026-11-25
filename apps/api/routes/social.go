@@ -23,7 +23,7 @@ func (a *API) listFriends(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) addFriend(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.Invitee](r)
+	in, err := decode[platform.Invitee](w, r)
 	if err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func (a *API) inviteFriend(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	in, err := decode[platform.FriendInvite](r)
+	in, err := decode[platform.FriendInvite](w, r)
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func (a *API) listGroups(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) createGroup(w http.ResponseWriter, r *http.Request) error {
-	in, err := decode[platform.GroupCreate](r)
+	in, err := decode[platform.GroupCreate](w, r)
 	if err != nil {
 		return err
 	}
@@ -171,7 +171,7 @@ func (a *API) patchGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	in, err := decode[platform.GroupPatch](r)
+	in, err := decode[platform.GroupPatch](w, r)
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func (a *API) addMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	in, err := decode[platform.Invitee](r)
+	in, err := decode[platform.Invitee](w, r)
 	if err != nil {
 		return err
 	}

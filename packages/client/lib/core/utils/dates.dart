@@ -16,6 +16,20 @@ abstract final class Dates {
     return DateTime(now.year, now.month, now.day);
   }
 
+  /// The days a date picker offers: what the server accepts, from 2000 up
+  /// to a year from today, widened to include [date] so an expense stored
+  /// outside that range (before the rule, or by another client) can still
+  /// be opened and moved into it.
+  static ({DateTime first, DateTime last}) pickable(DateTime date) {
+    final now = today();
+    final first = DateTime(2000);
+    final last = DateTime(now.year + 1, now.month, now.day);
+    return (
+      first: date.isBefore(first) ? date : first,
+      last: date.isAfter(last) ? date : last,
+    );
+  }
+
   /// `Nov 20` this year, `Nov 20, 2025` otherwise.
   static String short(DateTime date) {
     final now = DateTime.now();

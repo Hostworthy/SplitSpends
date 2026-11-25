@@ -1,7 +1,10 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -116,9 +119,10 @@ func writeJSON(w http.ResponseWriter, body string) {
 	_, _ = w.Write([]byte(body))
 }
 
-// config answers /config with USD (two decimals) and JPY (none).
+// config answers /config with USD (two decimals), JPY (none) and KWD
+// (three).
 func config(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, `{"data":{"currencies":[{"code":"USD","exponent":2},{"code":"JPY","exponent":0}]}}`)
+	writeJSON(w, `{"data":{"currencies":[{"code":"USD","exponent":2},{"code":"JPY","exponent":0},{"code":"KWD","exponent":3}]}}`)
 }
 
 func TestMinor(t *testing.T) {
@@ -248,5 +252,151 @@ func TestConfigKeptWhenRefreshFails(t *testing.T) {
 	now = now.Add(configTTL)
 	if got, err := c.minor(context.Background(), "1", "USD"); err != nil || got != 100 {
 		t.Fatalf("a failed refresh should keep the known configuration: %d, %v", got, err)
+	}
+}
+
+func TestFormat(t *testing.T) {
+	_, c := serve(t, config)
+	cases := []struct {
+		amount   int64
+		currency string
+		want     string
+	}{
+		{1250, "USD", "12.50 USD"},
+		{-1250, "USD", "-12.50 USD"},
+		{-5, "usd", "-0.05 USD"},
+		{0, "USD", "0.00 USD"},
+		{100, "JPY", "100 JPY"},
+		{-100, "JPY", "-100 JPY"},
+		{1234, "KWD", "1.234 KWD"},
+		{5, "XXX", "5 XXX (minor units)"},
+	}
+	for _, tc := range cases {
+		if got := c.format(context.Background(), tc.amount, tc.currency); got != tc.want {
+			t.Errorf("format(%d, %s) = %q, want %q", tc.amount, tc.currency, got, tc.want)
+		}
+	}
+}
+
+func TestDoErrors(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{"validation with field", http.StatusUnprocessableEntity, `{"error":"Enter a total above zero.","code":"VALIDATION","field":"total"}`, "Enter a total above zero. (field total)"},
+		{"not found", http.StatusNotFound, `{"error":"Expense not found.","code":"NOT_FOUND"}`, "Expense not found."},
+		{"not JSON", http.StatusBadGateway, `<html>bad gateway</html>`, "request failed with status 502"},
+		{"empty", http.StatusInternalServerError, ``, "request failed with status 500"},
+		{"request id", http.StatusInternalServerError, `{"error":"Something went wrong.","code":"INTERNAL","requestId":"req-42"}`, "Something went wrong. (request id req-42)"},
+		{"field and request id", http.StatusBadRequest, `{"error":"Pick a currency.","code":"VALIDATION","field":"currency","requestId":"req-7"}`, "Pick a currency. (field currency) (request id req-7)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			})
+			_, err := c.do(context.Background(), http.MethodGet, "/expenses/e1", nil, nil)
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) || apiErr.Status != tc.status || err.Error() != tc.want {
+				t.Fatalf("got %v, want %d %q", err, tc.status, tc.want)
+			}
+		})
+	}
+}
+
+func TestDoSendsToken(t *testing.T) {
+	var got http.Header
+	_, c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		writeJSON(w, `{"data":{}}`)
+	})
+	if _, err := c.do(context.Background(), http.MethodPost, "/payments", nil, platform.PaymentInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if got.Get("Authorization") != "Bearer ss_test" || got.Get("Content-Type") != "application/json" {
+		t.Fatalf("headers %v", got)
+	}
+	_, anonymous := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		writeJSON(w, `{"data":{}}`)
+	})
+	if _, err := anonymous.with("").do(context.Background(), http.MethodGet, "/me", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["Authorization"]; ok {
+		t.Fatalf("a client without a token must send no Authorization header, sent %q", got.Get("Authorization"))
+	}
+}
+
+func TestOrigin(t *testing.T) {
+	cases := []struct {
+		raw, want string
+		insecure  bool
+		ok        bool
+	}{
+		{"https://split.example.com", "https://split.example.com", false, true},
+		{"https://split.example.com/", "https://split.example.com", false, true},
+		{" https://split.example.com// ", "https://split.example.com", false, true},
+		{"https://example.com/split", "https://example.com/split", false, true},
+		{"http://localhost:8080", "http://localhost:8080", false, true},
+		{"http://127.0.0.1:8080", "http://127.0.0.1:8080", false, true},
+		{"http://[::1]:8080", "http://[::1]:8080", false, true},
+		{"http://split.example.com", "http://split.example.com", true, true},
+		{"http://192.168.1.20:8080", "http://192.168.1.20:8080", true, true},
+		{"split.example.com", "", false, false},
+		{"split.example.com:8080", "", false, false},
+		{"ftp://split.example.com", "", false, false},
+		{"https://", "", false, false},
+		{"https://split.example.com/api/v1", "", false, false},
+		{"https://example.com/split/api/v1/", "", false, false},
+		{"https://user:pw@split.example.com", "", false, false},
+		{"https://split.example.com?x=1", "", false, false},
+		{"https://split.example.com/#top", "", false, false},
+		{"", "", false, false},
+	}
+	for _, tc := range cases {
+		got, insecure, err := Origin(tc.raw)
+		if (err == nil) != tc.ok || got != tc.want || insecure != tc.insecure {
+			t.Errorf("Origin(%q) = %q, %v, %v; want %q, %v, ok %v", tc.raw, got, insecure, err, tc.want, tc.insecure, tc.ok)
+		}
+	}
+}
+
+func TestDoUnreachableHidesAddress(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	addr := srv.Listener.Addr().String()
+	srv.Close()
+	_, err := NewClient("http://"+addr, "ss_test", nil).do(context.Background(), http.MethodGet, "/me", nil, nil)
+	if err == nil || strings.Contains(err.Error(), addr) || strings.Contains(err.Error(), "127.0.0.1") {
+		t.Fatalf("want an error without the address, got %v", err)
+	}
+	if !strings.Contains(fmt.Sprint(errors.Unwrap(err)), addr) {
+		t.Fatalf("the detail should stay available for the log, got %v", errors.Unwrap(err))
+	}
+}
+
+func TestDoResponseTooLarge(t *testing.T) {
+	_, c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":["`))
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 9<<20))
+		_, _ = w.Write([]byte(`"],"total":1}`))
+	})
+	_, err := getList[string](context.Background(), c, "/expenses", nil)
+	if err == nil || !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestDoUnreadableAnswer(t *testing.T) {
+	_, c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, `{"data":`)
+	})
+	_, err := get[platform.Me](context.Background(), c, "/me", nil)
+	if err == nil || err.Error() != unexpected {
+		t.Fatalf("got %v", err)
 	}
 }
