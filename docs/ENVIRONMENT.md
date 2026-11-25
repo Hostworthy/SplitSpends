@@ -137,3 +137,11 @@ Examples:
 | `RATES_URL` | `https://open.er-api.com/v6/latest/USD` | Exchange rates for converting a receipt in another currency into the group's currency. Fetched only when AI is on, at most about twice a day, and cached in the database. Any URL returning the [open ExchangeRate-API](https://www.exchangerate-api.com/docs/free) or [Frankfurter](https://frankfurter.dev) format works, including a self-hosted Frankfurter (`https://<host>/v1/latest?base=USD`). `none` turns conversion off. Only the rate list is downloaded; no user data is sent |
 
 The OpenAI-compatible provider must support JSON-schema response formats and, for receipts, image input. Receipt photos and instructions are sent to the configured provider, so pick one whose data handling you are comfortable with, or run a local model.
+
+## Homelab Backups
+
+Read by the backup service in `deploy/docker/docker-compose.yml`, not by the server. See [Homelab with Docker](HOSTING.md#homelab-with-docker).
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `BACKUP_KEEP_DAYS` | `14` | Days to keep the nightly database dumps and receipt archives in `deploy/docker/backups/`. Older ones are deleted after each successful dump |
