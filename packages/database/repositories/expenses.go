@@ -144,7 +144,9 @@ func (r *Expenses) attachShares(ctx context.Context, list []*expense.Expense) er
 	return rows.Err()
 }
 
-// visible restricts to expenses $1 may see.
+// visible restricts to expenses $1 may see. It is the rule expense canRead
+// states, applied in the query so pages and totals count only those; the two
+// change together.
 const visible = `((e.group_id IS NOT NULL AND EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = e.group_id AND m.user_id = $1 AND m.left_at IS NULL))
 	OR EXISTS (SELECT 1 FROM expense_shares s WHERE s.expense_id = e.id AND s.user_id = $1))`
 

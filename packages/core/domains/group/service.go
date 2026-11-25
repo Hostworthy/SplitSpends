@@ -15,12 +15,39 @@ import (
 	"github.com/google/uuid"
 )
 
+// Users finds and invites the people groups hold.
+type Users interface {
+	Get(ctx context.Context, id uuid.UUID) (*user.User, error)
+	List(ctx context.Context, ids []uuid.UUID) ([]*user.User, error)
+	// Index is List keyed by id; ids that do not exist are missing.
+	Index(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*user.User, error)
+	// Ensure returns the account for email, adding one invited by inviter
+	// when there is none.
+	Ensure(ctx context.Context, email, name string, inviter *user.User) (*user.User, bool, error)
+	SendInvite(ctx context.Context, u, inviter *user.User)
+}
+
+// Balances answers who owes what, in a group and overall.
+type Balances interface {
+	For(ctx context.Context, me uuid.UUID) (*balance.Sheet, error)
+	Group(ctx context.Context, groupID uuid.UUID, simplify bool) (*balance.GroupView, error)
+	// Settled reports whether userID owes and is owed nothing in the group.
+	Settled(ctx context.Context, groupID, userID uuid.UUID) (bool, error)
+	// GroupSettled reports whether everyone in the group is settled.
+	GroupSettled(ctx context.Context, groupID uuid.UUID) (bool, error)
+}
+
+// Recorder adds to the activity feed.
+type Recorder interface {
+	Record(ctx context.Context, a activity.Activity) error
+}
+
 // Service implements group use cases.
 type Service struct {
 	repo     Repository
-	users    *user.Service
-	balances *balance.Service
-	activity *activity.Service
+	users    Users
+	balances Balances
+	activity Recorder
 	notifier ports.Notifier
 	quota    ports.Quota
 	tx       ports.Tx
@@ -36,9 +63,23 @@ const (
 	AddedWindow    = 24 * time.Hour
 )
 
+// Deps groups Service dependencies.
+type Deps struct {
+	Repo     Repository
+	Users    Users
+	Balances Balances
+	Activity Recorder
+	Notifier ports.Notifier
+	Quota    ports.Quota
+	Tx       ports.Tx
+	Clock    clock.Clock
+	BaseURL  string
+}
+
 // NewService builds a Service.
-func NewService(repo Repository, users *user.Service, balances *balance.Service, act *activity.Service, notifier ports.Notifier, quota ports.Quota, tx ports.Tx, c clock.Clock, baseURL string) *Service {
-	return &Service{repo: repo, users: users, balances: balances, activity: act, notifier: notifier, quota: quota, tx: tx, clock: c, baseURL: baseURL}
+func NewService(d Deps) *Service {
+	return &Service{repo: d.Repo, users: d.Users, balances: d.Balances, activity: d.Activity, notifier: d.Notifier,
+		quota: d.Quota, tx: d.Tx, clock: d.Clock, baseURL: d.BaseURL}
 }
 
 // View is a group with members and the caller's balance.
@@ -75,6 +116,20 @@ func (s *Service) Member(ctx context.Context, actor, id uuid.UUID) (*Group, erro
 		return nil, errs.NotFound("Group")
 	}
 	return g, nil
+}
+
+// Lookup returns a group without asking who wants it, for work done on
+// nobody's behalf, such as booking the next copy of a recurring expense.
+// Anything a person asks for goes through Member.
+func (s *Service) Lookup(ctx context.Context, id uuid.UUID) (*Group, error) {
+	return s.repo.Get(ctx, id)
+}
+
+// Hold keeps the group's members as they are until the transaction in ctx
+// ends, so a check made on them still holds when the work it allowed is
+// saved. It returns errs.NotFound when the group is missing.
+func (s *Service) Hold(ctx context.Context, id uuid.UUID) error {
+	return s.repo.Hold(ctx, id)
 }
 
 // existing returns the group with a client-chosen id when it already exists

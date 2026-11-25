@@ -113,8 +113,9 @@ func TestDeleteGroupKeepsConcurrentExpense(t *testing.T) {
 			}
 		}
 	}}
-	svc := group.NewService(repo, env.Services.Users, env.Services.Balances, env.Services.Activity, env.Notifier,
-		repositories.NewQuotas(env.DB), database.NewTx(env.DB), env.Clock, "http://test")
+	svc := group.NewService(group.Deps{Repo: repo, Users: env.Services.Users, Balances: env.Services.Balances,
+		Activity: env.Services.Activity, Notifier: env.Notifier, Quota: repositories.NewQuotas(env.DB), Tx: database.NewTx(env.DB),
+		Clock: env.Clock, BaseURL: "http://test"})
 	deleted := svc.Delete(ctx, ada, g.ID)
 	if err := <-created; err == nil {
 		if !errs.Is(deleted, errs.KindConflict) {
@@ -243,8 +244,9 @@ func TestRemoveMemberKeepsConcurrentExpense(t *testing.T) {
 			created <- err
 		})
 	}}
-	svc := group.NewService(repo, env.Services.Users, env.Services.Balances, env.Services.Activity, env.Notifier,
-		repositories.NewQuotas(env.DB), database.NewTx(env.DB), env.Clock, "http://test")
+	svc := group.NewService(group.Deps{Repo: repo, Users: env.Services.Users, Balances: env.Services.Balances,
+		Activity: env.Services.Activity, Notifier: env.Notifier, Quota: repositories.NewQuotas(env.DB), Tx: database.NewTx(env.DB),
+		Clock: env.Clock, BaseURL: "http://test"})
 	removed := svc.RemoveMember(ctx, ada, g.ID, ben)
 	if err := <-created; err == nil {
 		if !errs.Is(removed, errs.KindConflict) {
@@ -284,8 +286,9 @@ func TestRemoveMemberChecksBalanceAfterLock(t *testing.T) {
 			t.Error(err)
 		}
 	}}
-	svc := group.NewService(repo, env.Services.Users, env.Services.Balances, env.Services.Activity, env.Notifier,
-		repositories.NewQuotas(env.DB), database.NewTx(env.DB), env.Clock, "http://test")
+	svc := group.NewService(group.Deps{Repo: repo, Users: env.Services.Users, Balances: env.Services.Balances,
+		Activity: env.Services.Activity, Notifier: env.Notifier, Quota: repositories.NewQuotas(env.DB), Tx: database.NewTx(env.DB),
+		Clock: env.Clock, BaseURL: "http://test"})
 	if err := svc.RemoveMember(ctx, ada, g.ID, ben); !errs.Is(err, errs.KindConflict) {
 		t.Fatalf("Ben was removed while owing for an expense booked before the lock: %v", err)
 	}

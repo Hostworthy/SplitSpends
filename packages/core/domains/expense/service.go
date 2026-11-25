@@ -26,16 +26,41 @@ type Connections interface {
 	Hold(ctx context.Context, a, b uuid.UUID) error
 }
 
+// Groups is what expenses need from the group context. Member is the one
+// membership check; it returns errs.NotFound unless actor is a current member.
+type Groups interface {
+	Member(ctx context.Context, actor, id uuid.UUID) (*group.Group, error)
+	// Lookup returns a group without asking who wants it, for work done on
+	// nobody's behalf.
+	Lookup(ctx context.Context, id uuid.UUID) (*group.Group, error)
+	// Hold keeps the group's members as they are until the transaction in
+	// ctx ends. It returns errs.NotFound when the group is missing.
+	Hold(ctx context.Context, id uuid.UUID) error
+}
+
+// Users reads the people expenses name.
+type Users interface {
+	Get(ctx context.Context, id uuid.UUID) (*user.User, error)
+	List(ctx context.Context, ids []uuid.UUID) ([]*user.User, error)
+	// Index is List keyed by id; ids that do not exist are missing.
+	Index(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*user.User, error)
+}
+
+// Recorder adds to the activity feed.
+type Recorder interface {
+	Record(ctx context.Context, a activity.Activity) error
+}
+
 // Service implements expense, payment and comment use cases.
 type Service struct {
 	repo        Repository
 	comments    CommentRepository
-	groups      group.Repository
+	groups      Groups
 	connections Connections
 	receipts    Receipts
 	catalog     Catalog
-	users       *user.Service
-	activity    *activity.Service
+	users       Users
+	activity    Recorder
 	notifier    ports.Notifier
 	tx          ports.Tx
 	clock       clock.Clock
@@ -46,12 +71,12 @@ type Service struct {
 type Deps struct {
 	Repo        Repository
 	Comments    CommentRepository
-	Groups      group.Repository
+	Groups      Groups
 	Connections Connections
 	Receipts    Receipts
 	Catalog     Catalog
-	Users       *user.Service
-	Activity    *activity.Service
+	Users       Users
+	Activity    Recorder
 	Notifier    ports.Notifier
 	Tx          ports.Tx
 	Clock       clock.Clock
@@ -64,7 +89,8 @@ func NewService(d Deps) *Service {
 		catalog: d.Catalog, users: d.Users, activity: d.Activity, notifier: d.Notifier, tx: d.Tx, clock: d.Clock, baseURL: d.BaseURL}
 }
 
-// load fetches an expense the actor may see, plus its group if any.
+// load fetches an expense the actor may see, plus its group when the actor is
+// a current member of it.
 func (s *Service) load(ctx context.Context, actor, id uuid.UUID) (*Expense, *group.Group, error) {
 	e, err := s.repo.Get(ctx, id)
 	if err != nil {
@@ -97,30 +123,45 @@ func (s *Service) lock(ctx context.Context, actor, id uuid.UUID) (*Expense, *gro
 	return s.visible(ctx, actor, e)
 }
 
-// visible returns e and its group if the actor may see it.
+// visible returns e if the actor may see it, and its group when the actor is
+// a current member of it (nil otherwise).
 func (s *Service) visible(ctx context.Context, actor uuid.UUID, e *Expense) (*Expense, *group.Group, error) {
-	if e.GroupID == nil {
-		if !e.Involves(actor) {
-			return nil, nil, errs.NotFound("Expense")
+	var g *group.Group
+	if e.GroupID != nil {
+		var err error
+		if g, err = s.groups.Member(ctx, actor, *e.GroupID); err != nil && !errs.Is(err, errs.KindNotFound) {
+			return nil, nil, err
 		}
-		return e, nil, nil
 	}
-	g, err := s.groups.Get(ctx, *e.GroupID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !g.HasMember(actor) && !e.Involves(actor) {
+	if !canRead(actor, e, g != nil) {
 		return nil, nil, errs.NotFound("Expense")
 	}
 	return e, g, nil
 }
 
-// editable checks that the actor may change an expense they can see. People
-// who left a group keep seeing the expenses they were part of, but only
-// current members change a group's expenses, since that moves the balances
-// of everyone still in it.
-func editable(actor uuid.UUID, g *group.Group) error {
-	if g != nil && !g.HasMember(actor) {
+// canRead reports whether actor may see e, given whether they are a current
+// member of its group. People who left a group keep seeing the expenses they
+// were part of. Repositories filter expense lists by the same rule in SQL,
+// so the two change together.
+func canRead(actor uuid.UUID, e *Expense, member bool) bool {
+	return (e.GroupID != nil && member) || e.Involves(actor)
+}
+
+// canWrite reports whether actor may change, delete, restore or comment on e,
+// given whether they are a current member of its group. Outside groups
+// everyone in the expense may; inside one only current members may, since a
+// change moves the balances of everyone still in it.
+func canWrite(actor uuid.UUID, e *Expense, member bool) bool {
+	if e.GroupID == nil {
+		return e.Involves(actor)
+	}
+	return member
+}
+
+// editable checks that the actor may change an expense they can see; g is
+// what load or lock returned with it.
+func editable(actor uuid.UUID, e *Expense, g *group.Group) error {
+	if !canWrite(actor, e, g != nil) {
 		return errs.NotFound("Expense")
 	}
 	return nil
@@ -146,16 +187,10 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 		err := s.groups.Hold(ctx, *groupID)
 		var g *group.Group
 		if err == nil {
-			g, err = s.groups.Get(ctx, *groupID)
+			g, err = s.groups.Member(ctx, actor, *groupID)
 		}
 		if err != nil {
-			if errs.Is(err, errs.KindNotFound) {
-				return nil, errs.Validation("groupId", "Group not found.")
-			}
-			return nil, err
-		}
-		if !g.HasMember(actor) {
-			return nil, errs.Validation("groupId", "Group not found.")
+			return nil, unknownGroup(err)
 		}
 		if !members(g, shares) {
 			return nil, errs.Validation("splits", "Everyone in the expense must be a member of the group.")
@@ -179,6 +214,15 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 		return nil, errs.Validation("splits", "You must be part of an expense outside a group.")
 	}
 	return nil, nil
+}
+
+// unknownGroup answers a group the actor cannot book into, missing or not
+// theirs, as a mistake in the request.
+func unknownGroup(err error) error {
+	if errs.Is(err, errs.KindNotFound) {
+		return errs.Validation("groupId", "Group not found.")
+	}
+	return err
 }
 
 // members reports whether everyone in shares still belongs to g. Booking,
@@ -353,9 +397,9 @@ func (s *Service) currency(ctx context.Context, actor uuid.UUID, groupID *uuid.U
 		return given, nil
 	}
 	if groupID != nil {
-		g, err := s.groups.Get(ctx, *groupID)
+		g, err := s.groups.Member(ctx, actor, *groupID)
 		if err != nil {
-			return "", err
+			return "", unknownGroup(err)
 		}
 		return g.DefaultCurrency, nil
 	}
@@ -402,7 +446,7 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		if e, g, err = s.lock(ctx, actor, id); err != nil {
 			return err
 		}
-		if err := editable(actor, g); err != nil {
+		if err := editable(actor, e, g); err != nil {
 			return err
 		}
 		if e.DeletedAt != nil {
@@ -457,15 +501,12 @@ func (s *Service) Get(ctx context.Context, actor, id uuid.UUID) (*Expense, error
 	return e, err
 }
 
-// List returns expenses visible to the actor.
+// List returns the expenses the actor may see. The repository applies
+// canRead in its query; a group filter needs a current member.
 func (s *Service) List(ctx context.Context, f Filter) ([]*Expense, int, error) {
 	if f.GroupID != nil {
-		g, err := s.groups.Get(ctx, *f.GroupID)
-		if err != nil {
+		if _, err := s.groups.Member(ctx, f.UserID, *f.GroupID); err != nil {
 			return nil, 0, err
-		}
-		if !g.HasMember(f.UserID) {
-			return nil, 0, errs.NotFound("Group")
 		}
 	}
 	return s.repo.List(ctx, f)
@@ -479,7 +520,7 @@ func (s *Service) setDeleted(ctx context.Context, actor, id uuid.UUID, deleted b
 		if e, g, err = s.lock(ctx, actor, id); err != nil {
 			return err
 		}
-		if err := editable(actor, g); err != nil {
+		if err := editable(actor, e, g); err != nil {
 			return err
 		}
 		if (e.DeletedAt != nil) == deleted {
@@ -626,7 +667,7 @@ func (s *Service) Comment(ctx context.Context, actor, id uuid.UUID, body string)
 	if err != nil {
 		return nil, err
 	}
-	if err := editable(actor, g); err != nil {
+	if err := editable(actor, e, g); err != nil {
 		return nil, err
 	}
 	body = strings.TrimSpace(body)
@@ -742,7 +783,7 @@ func (s *Service) repeat(ctx context.Context, due *Expense, today time.Time) (in
 	var g *group.Group
 	var ok bool
 	if src.GroupID != nil {
-		if g, err = s.groups.Get(ctx, *src.GroupID); err != nil {
+		if g, err = s.groups.Lookup(ctx, *src.GroupID); err != nil {
 			return 0, err
 		}
 		ok = members(g, src.Shares)

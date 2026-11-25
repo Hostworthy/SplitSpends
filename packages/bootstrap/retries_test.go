@@ -94,11 +94,13 @@ func TestGroupRetryRace(t *testing.T) {
 	id := uuid.New()
 	name := "Trip"
 	in := group.CreateInput{ID: &id, Patch: group.Patch{Name: &name}}
-	svc := group.NewService(late{repositories.NewGroups(env.DB), &sync.Once{}, func() {
+	repo := late{repositories.NewGroups(env.DB), &sync.Once{}, func() {
 		if _, err := s.Groups.Create(ctx, ada, in); err != nil {
 			t.Error(err)
 		}
-	}}, s.Users, s.Balances, s.Activity, env.Notifier, repositories.NewQuotas(env.DB), database.NewTx(env.DB), env.Clock, "http://test")
+	}}
+	svc := group.NewService(group.Deps{Repo: repo, Users: s.Users, Balances: s.Balances, Activity: s.Activity, Notifier: env.Notifier,
+		Quota: repositories.NewQuotas(env.DB), Tx: database.NewTx(env.DB), Clock: env.Clock, BaseURL: "http://test"})
 	got, err := svc.Create(ctx, ada, in)
 	if err != nil {
 		t.Fatalf("the retry must return the stored group, got %v", err)

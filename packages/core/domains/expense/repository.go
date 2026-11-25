@@ -8,8 +8,8 @@ import (
 )
 
 // Filter narrows expense lists. Results are always limited to what UserID
-// may see: group expenses of their active groups and non-group expenses they
-// take part in.
+// may see: the expenses of the groups they are a current member of, and any
+// expense they take part in, the rule canRead states.
 type Filter struct {
 	UserID         uuid.UUID
 	GroupID        *uuid.UUID

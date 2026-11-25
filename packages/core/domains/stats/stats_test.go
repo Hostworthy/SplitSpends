@@ -3,6 +3,11 @@ package stats
 import (
 	"context"
 	"testing"
+
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/google/uuid"
 )
 
 type names map[string]string
@@ -40,5 +45,49 @@ func TestLabelMergesDeletedCategories(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("row %d = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+}
+
+type members map[uuid.UUID]*group.Group
+
+func (m members) Member(_ context.Context, actor, id uuid.UUID) (*group.Group, error) {
+	g, ok := m[id]
+	if !ok || !g.HasMember(actor) {
+		return nil, errs.NotFound("Group")
+	}
+	return g, nil
+}
+
+type people map[uuid.UUID]*user.User
+
+func (p people) Get(_ context.Context, id uuid.UUID) (*user.User, error) { return p[id], nil }
+
+// asked records the query the service passes on.
+type asked struct{ q *Query }
+
+func (a *asked) Summary(_ context.Context, q Query) (*Summary, error) {
+	a.q = &q
+	return &Summary{Currency: q.Currency}, nil
+}
+
+func TestSummaryNeedsMembership(t *testing.T) {
+	ctx := context.Background()
+	ada, mal := uuid.New(), uuid.New()
+	g := &group.Group{ID: uuid.New(), DefaultCurrency: "JPY", Members: []uuid.UUID{ada}}
+	repo := &asked{}
+	s := NewService(repo, members{g.ID: g}, people{ada: {ID: ada, DefaultCurrency: "EUR"}}, names{})
+	for name, id := range map[string]uuid.UUID{"a group Mal is not in": g.ID, "a group that does not exist": uuid.New()} {
+		if _, err := s.Summary(ctx, Query{UserID: mal, GroupID: &id}); !errs.Is(err, errs.KindNotFound) {
+			t.Errorf("%s must be not found, got %v", name, err)
+		}
+	}
+	if repo.q != nil {
+		t.Fatalf("nothing may be summarized for Mal: %+v", repo.q)
+	}
+	if _, err := s.Summary(ctx, Query{UserID: ada, GroupID: &g.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.q == nil || repo.q.Currency != "JPY" {
+		t.Fatalf("a group summary is in the group's currency: %+v", repo.q)
 	}
 }
