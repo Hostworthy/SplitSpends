@@ -2,6 +2,7 @@ package routes
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/png"
 	"net/http"
@@ -32,14 +33,7 @@ func TestOutsidersSeeNothing(t *testing.T) {
 	cy := s.signIn(t, "cy@example.com", "Cy")
 	dan := s.signIn(t, "dan@example.com", "Dan")
 
-	name, currency := "Flat", "EUR"
-	g := data[platform.Group](t, s.call(t, http.MethodPost, p+"/groups", ada.Token, platform.GroupCreate{
-		GroupPatch: platform.GroupPatch{Name: &name, DefaultCurrency: &currency},
-		Members:    []platform.Invitee{{Email: "ben@example.com"}, {Email: "cy@example.com"}},
-	}).want(t, http.StatusCreated))
-	if len(g.Members) != 3 {
-		t.Fatalf("want 3 members, got %+v", g.Members)
-	}
+	g := s.group(t, ada.Token, "Flat", "ben@example.com", "cy@example.com")
 	rc := data[platform.Receipt](t, s.upload(t, p+"/receipts", ada.Token, pixel(t)).want(t, http.StatusCreated))
 	e := data[platform.Expense](t, s.call(t, http.MethodPost, p+"/expenses", ada.Token, platform.ExpenseInput{
 		GroupID: &g.ID, Description: "Groceries", Currency: "EUR", Total: 3000, SplitMethod: "equal", ReceiptID: &rc.ID,
@@ -56,10 +50,7 @@ func TestOutsidersSeeNothing(t *testing.T) {
 	update := platform.ExpenseInput{Description: "Mine now", Currency: "EUR", Total: 3000, SplitMethod: "equal",
 		Payers: []platform.Payer{{UserID: dan.User.ID, Amount: 3000}}, Splits: []platform.Split{{UserID: dan.User.ID}}}
 	rename := "Dan's"
-	for _, tc := range []struct {
-		method, path string
-		body         any
-	}{
+	s.refused(t, dan.Token, http.StatusNotFound, "NOT_FOUND", []request{
 		{http.MethodGet, "/groups/" + g.ID, nil},
 		{http.MethodPatch, "/groups/" + g.ID, platform.GroupPatch{Name: &rename}},
 		{http.MethodDelete, "/groups/" + g.ID, nil},
@@ -76,16 +67,7 @@ func TestOutsidersSeeNothing(t *testing.T) {
 		{http.MethodGet, "/expenses/" + e.ID + "/comments", nil},
 		{http.MethodPost, "/expenses/" + e.ID + "/comments", platform.CommentInput{Body: "Hello"}},
 		{http.MethodGet, "/receipts/" + rc.ID, nil},
-	} {
-		res := s.call(t, tc.method, p+tc.path, dan.Token, tc.body)
-		if res.status != http.StatusNotFound {
-			t.Errorf("outsider %s %s: want 404, got %d: %s", tc.method, tc.path, res.status, res.body)
-			continue
-		}
-		if e := res.failure(t); e.Code != "NOT_FOUND" || e.Error == "" || e.RequestID == "" {
-			t.Errorf("outsider %s %s: unexpected error envelope %+v", tc.method, tc.path, e)
-		}
-	}
+	})
 
 	// Nothing the outsider tried changed anything, and lists stay private.
 	got := data[platform.Expense](t, s.call(t, http.MethodGet, p+"/expenses/"+e.ID, ada.Token, nil).want(t, http.StatusOK))
@@ -136,5 +118,30 @@ func TestErrorEnvelope(t *testing.T) {
 				t.Errorf("requestId %q must match the X-Request-Id header %q", e.RequestID, res.header.Get("X-Request-Id"))
 			}
 		})
+	}
+}
+
+// TestSignInLimit checks that the sign-in limit counts per client address
+// behind the trusted proxy: many people may sign in from their own
+// addresses, while one address that varies the part of X-Forwarded-For the
+// client writes is still refused after the limit.
+func TestSignInLimit(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	people := make([]string, 15)
+	for i := range people {
+		people[i] = s.signIn(t, fmt.Sprintf("p%d@example.com", i), "Person").User.ID
+	}
+	g := s.group(t, s.signIn(t, "ada@example.com", "Ada").Token, "Trip", "p0@example.com")
+	if e := s.expense(t, s.signIn(t, "p0@example.com", "").Token, g.ID, 1000, people[0], people[0]); e.Total != 1000 {
+		t.Fatalf("unexpected expense %+v", e)
+	}
+
+	for i := range 25 {
+		req := s.request(t, http.MethodPost, platform.Prefix+"/auth/otp/verify", platform.OTPVerify{Email: "nobody@example.com", Code: "000000"})
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d, 203.0.113.9", i))
+		res := s.send(t, req, "")
+		if limited := res.status == http.StatusTooManyRequests; limited != (i >= 20) {
+			t.Fatalf("request %d: got %d: %s", i+1, res.status, res.body)
+		}
 	}
 }
