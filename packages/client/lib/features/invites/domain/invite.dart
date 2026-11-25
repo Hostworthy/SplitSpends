@@ -66,7 +66,13 @@ class JoinLink {
     if (text.isEmpty) return null;
     if (_token.hasMatch(text)) return JoinLink(token: text);
     final uri = Uri.tryParse(text.contains('://') ? text : 'https://$text');
-    if (uri == null || uri.host.isEmpty) return null;
+    // Only http and https have an origin; other schemes are not links to a
+    // server at all.
+    if (uri == null ||
+        !(uri.isScheme('http') || uri.isScheme('https')) ||
+        uri.host.isEmpty) {
+      return null;
+    }
     final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
     final at = segments.lastIndexOf('join');
     if (at < 0 || at != segments.length - 2) return null;

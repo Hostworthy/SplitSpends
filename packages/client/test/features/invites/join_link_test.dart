@@ -41,6 +41,11 @@ void main() {
       expect(JoinLink.parse('https://split.example.com/groups/abc'), isNull);
       expect(JoinLink.parse('https://split.example.com/join/'), isNull);
       expect(JoinLink.parse('https://split.example.com/join/a b'), isNull);
+      expect(JoinLink.parse('ftp://split.example.com/join/$_token'), isNull);
+      expect(
+        JoinLink.parse('splitspends://split.example.com/join/$_token'),
+        isNull,
+      );
     });
   });
 
