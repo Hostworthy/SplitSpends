@@ -32,7 +32,7 @@ func secrets() error {
 		return fmt.Errorf("bootstrap.config.env.invalid: SECRETS_ARN: use the ARN of a Secrets Manager secret, arn:aws:secretsmanager:<region>:<account>:secret:<name>")
 	}
 	region := parts[3]
-	value, err := secretValue(arn, region, env("AWS_ENDPOINT_URL_SECRETS_MANAGER", "https://secretsmanager."+region+".amazonaws.com"))
+	value, err := secretValue(arn, region, env("AWS_ENDPOINT_URL_SECRETS_MANAGER", secretsEndpoint(parts[1], region)))
 	if err != nil {
 		return fmt.Errorf("bootstrap.config.secrets.failed: could not read SECRETS_ARN from Secrets Manager: %w", err)
 	}
@@ -48,6 +48,17 @@ func secrets() error {
 		}
 	}
 	return nil
+}
+
+// secretsEndpoint is the regional Secrets Manager endpoint for the partition
+// named in the ARN. The China regions have their own domain; other isolated
+// partitions set AWS_ENDPOINT_URL_SECRETS_MANAGER.
+func secretsEndpoint(partition, region string) string {
+	domain := "amazonaws.com"
+	if partition == "aws-cn" {
+		domain = "amazonaws.com.cn"
+	}
+	return "https://secretsmanager." + region + "." + domain
 }
 
 // secretValue calls GetSecretValue with the credentials Lambda, ECS and EC2
