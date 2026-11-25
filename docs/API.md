@@ -186,7 +186,7 @@ Delivery: the server encrypts each message (RFC 8291, `aes128gcm`) and signs it 
 | POST | `/friends` | `{ email?, name? }` | 201 `{ data: { user, balances } }`; with an email, creates an invited user when new and emails an invite; with only a name, creates a `placeholder` person |
 | PATCH | `/friends/{userId}` | `{ email }` | `{ data: { user, balances } }`; gives a placeholder you created an email and invites them. 404 for anyone you did not add by name; 409 when the email already has an account or the person already has an email |
 | GET | `/friends/{userId}` | | `{ data: { user, balances, groups: [{ groupId, groupName, balances }], nonGroup: [Balance] } }` |
-| DELETE | `/friends/{userId}` | | 204; 409 when balances are not settled |
+| DELETE | `/friends/{userId}` | | 204; 409 when balances are not settled, or when you are connected only through a group you share (leave the group instead) |
 
 Adding people sends email, so it is limited. `POST /friends`, `PATCH /friends/{userId}`, `POST /groups`, `POST /groups/{groupId}/members` and `POST /reminders` share a budget of 20 requests a minute per account (429 `RATE_LIMITED`). Each account may invite 20 new email addresses a day, counting every address that gets an invitation from these routes; a request that would go over answers 429 `RATE_LIMITED` and adds nobody. The invitation email is sent once the request has succeeded. Someone added to groups by the same person is emailed about it at most 3 times a day; later additions still reach their devices.
 
