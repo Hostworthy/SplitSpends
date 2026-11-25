@@ -24,6 +24,12 @@ const (
 	KindDeclined     Kind = "APPROVAL_DECLINED"
 )
 
+// Kinds lists every Kind, so transports can check that they map each one.
+func Kinds() []Kind {
+	return []Kind{KindValidation, KindNotFound, KindUnauthorized, KindForbidden, KindConflict, KindRateLimited,
+		KindAIDisabled, KindNoRates, KindPending, KindDeclined}
+}
+
 // Error is a domain error with a human-readable message.
 type Error struct {
 	Kind    Kind
