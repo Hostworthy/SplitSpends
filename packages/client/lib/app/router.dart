@@ -6,6 +6,7 @@ import 'package:splitspends/features/admin/presentation/admin_screen.dart';
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/app/shell.dart';
 import 'package:splitspends/core/auth/session.dart';
+import 'package:splitspends/core/widgets/layout.dart';
 import 'package:splitspends/features/account/presentation/account_screen.dart';
 import 'package:splitspends/features/account/presentation/tokens_screen.dart';
 import 'package:splitspends/features/categories/presentation/manage_categories_screen.dart';
@@ -31,12 +32,6 @@ import 'package:splitspends/features/receipts/presentation/scan_receipt_screen.d
 import 'package:splitspends/features/sync/presentation/import_screen.dart';
 
 final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
-
-/// Width at which the app switches to rail + two panes.
-const wideBreakpoint = 700.0;
-
-bool isWide(BuildContext context) =>
-    MediaQuery.sizeOf(context).width >= wideBreakpoint;
 
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier(0);

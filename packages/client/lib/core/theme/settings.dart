@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/theme.dart';
+import 'package:splitspends/core/theme/theme.dart';
 import 'package:splitspends/core/auth/session.dart';
 
 /// Light, dark or following the system, remembered on this device.

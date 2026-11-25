@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/theme.dart';
+import 'package:splitspends/core/theme/theme.dart';
 import 'package:splitspends/core/widgets/swatches.dart';
 
 void main() {
