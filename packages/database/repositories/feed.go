@@ -26,14 +26,17 @@ func (r *Activities) Create(ctx context.Context, a *activity.Activity) error {
 	return err
 }
 
+// feed selects the entries involving $1, optionally of group $2 or expense $3.
+// Containment, unlike = ANY, can use the GIN index on involved.
+const feed = `involved @> ARRAY[$1]::uuid[] AND ($2::uuid IS NULL OR group_id = $2) AND ($3::uuid IS NULL OR expense_id = $3)`
+
 func (r *Activities) List(ctx context.Context, f activity.Filter) ([]*activity.Activity, int, error) {
-	cond := `$1 = ANY(involved) AND ($2::uuid IS NULL OR group_id = $2) AND ($3::uuid IS NULL OR expense_id = $3)`
 	var total int
-	if err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM activities WHERE `+cond, f.UserID, f.GroupID, f.ExpenseID).Scan(&total); err != nil {
+	if err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM activities WHERE `+feed, f.UserID, f.GroupID, f.ExpenseID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	rows, err := r.db.Q(ctx).Query(ctx, `SELECT id, actor_id, group_id, expense_id, created_at, kind, involved, data FROM activities
-		WHERE `+cond+` ORDER BY created_at DESC LIMIT $4 OFFSET $5`, f.UserID, f.GroupID, f.ExpenseID, f.Limit, f.Offset)
+		WHERE `+feed+` ORDER BY created_at DESC, id DESC LIMIT $4 OFFSET $5`, f.UserID, f.GroupID, f.ExpenseID, f.Limit, f.Offset)
 	if err != nil {
 		return nil, 0, err
 	}
