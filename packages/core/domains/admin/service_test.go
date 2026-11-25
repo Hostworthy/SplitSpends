@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -252,5 +253,48 @@ func TestLastAdminStays(t *testing.T) {
 	}
 	if u, _ := users.Get(ctx, w.actor); !u.IsAdmin() {
 		t.Fatalf("the refused change must not be stored: %+v", u)
+	}
+}
+
+func TestRequest(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name, email, typed string
+		stored             string // the stored name; "-" when nothing new is stored
+		declined           bool
+		want               errs.Kind
+	}{
+		{"new request", "fay@else.org", "  Fay\r\n Evans\t", "Fay Evans", false, ""},
+		{"no name", "fay@else.org", "", "fay", false, ""},
+		{"name too long", "fay@else.org", strings.Repeat("x", 81), "-", false, errs.KindValidation},
+		{"already pending", "dan@else.org", "Dan", "-", false, ""},
+		{"already approved", "ed@else.org", "Ed", "-", false, ""},
+		{"declined", "gil@else.org", "Gil", "-", true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(user.RoleAdmin, user.StatusActive)
+			requests := w.svc.d.Requests.(*memRequests)
+			requests.list = append(requests.list,
+				&Request{ID: uuid.New(), Email: "ed@else.org", Status: StatusApproved},
+				&Request{ID: uuid.New(), Email: "gil@else.org", Status: StatusDeclined})
+			before := len(requests.list)
+			declined, err := w.svc.Request(ctx, tc.email, tc.typed)
+			if tc.want != "" {
+				if !errs.Is(err, tc.want) {
+					t.Fatalf("got %v, want %s", err, tc.want)
+				}
+			} else if err != nil || declined != tc.declined {
+				t.Fatalf("got (%v, %v), want (%v, nil)", declined, err, tc.declined)
+			}
+			if tc.stored == "-" {
+				if len(requests.list) != before {
+					t.Fatalf("nothing new may be stored, got %+v", requests.list[before:])
+				}
+				return
+			}
+			if len(requests.list) != before+1 || requests.list[before].Name != tc.stored {
+				t.Fatalf("stored %+v, want one request named %q", requests.list[before:], tc.stored)
+			}
+		})
 	}
 }

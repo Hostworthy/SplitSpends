@@ -61,18 +61,22 @@ func (s *Service) Approved(ctx context.Context, email string) (bool, error) {
 // burst of requests sends one notice instead of one each.
 const announceEvery = time.Hour
 
-// Request files (or refreshes) a request to join and tells administrators
-// and managers about new ones. It reports whether email was declined.
+// Request files a request to join and tells administrators and managers
+// about it. An earlier request stands as it is. It reports whether email was
+// declined.
 func (s *Service) Request(ctx context.Context, email, name string) (bool, error) {
 	r, err := s.d.Requests.Find(ctx, email)
 	if err != nil {
 		return false, err
 	}
-	switch {
-	case r != nil && r.Status == StatusDeclined:
-		return true, nil
-	case r != nil && r.Status == StatusPending:
-		return false, nil
+	if r != nil {
+		// An approval that landed after the caller checked lets the person
+		// in on their next sign-in, so it needs nothing here.
+		return r.Status == StatusDeclined, nil
+	}
+	name, err = user.NormalizeName(name, email)
+	if err != nil {
+		return false, err
 	}
 	latest, pending, err := s.d.Requests.List(ctx, StatusPending, 1, 0)
 	if err != nil {
@@ -80,10 +84,6 @@ func (s *Service) Request(ctx context.Context, email, name string) (bool, error)
 	}
 	if pending >= MaxPending {
 		return false, errs.RateLimited("Too many people are waiting to join right now. Try again in a few days.")
-	}
-	name = strings.TrimSpace(name)
-	if len([]rune(name)) > 80 {
-		name = string([]rune(name)[:80])
 	}
 	now := s.d.Clock.Now()
 	r = &Request{ID: uuid.New(), Email: email, Name: name, Status: StatusPending, RequestedAt: now}
