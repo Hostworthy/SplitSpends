@@ -77,6 +77,20 @@ func (s *Service) Member(ctx context.Context, actor, id uuid.UUID) (*Group, erro
 	return g, nil
 }
 
+// Lookup returns a group without asking who wants it, for work done on
+// nobody's behalf, such as booking the next copy of a recurring expense.
+// Anything a person asks for goes through Member.
+func (s *Service) Lookup(ctx context.Context, id uuid.UUID) (*Group, error) {
+	return s.repo.Get(ctx, id)
+}
+
+// Hold keeps the group's members as they are until the transaction in ctx
+// ends, so a check made on them still holds when the work it allowed is
+// saved. It returns errs.NotFound when the group is missing.
+func (s *Service) Hold(ctx context.Context, id uuid.UUID) error {
+	return s.repo.Hold(ctx, id)
+}
+
 // existing returns the group with a client-chosen id when it already exists
 // and the actor belongs to it, so retried creates are idempotent. An id used
 // for someone else's group is a conflict.

@@ -171,7 +171,7 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
 	receipts := receipt.NewService(receiptRepo, blobs, reader, tx, c)
 	categories := category.NewService(repositories.NewCategories(db), c)
-	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
+	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groups,
 		Connections: friends, Receipts: receiptRepo, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	// Rates only convert AI drafts read in another currency, so nothing is
 	// fetched unless AI is on.
@@ -201,7 +201,7 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 		Transfer: transfer.NewService(users, friendRepo, groups, expenses, categories, tx, tx),
 		Receipts: receipts,
 		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, fx, c),
-		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users, categories),
+		Stats:    stats.NewService(repositories.NewStats(db), groups, users, categories),
 
 		Reminders:  reminders,
 		Invites:    invites,

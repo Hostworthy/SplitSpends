@@ -58,28 +58,32 @@ type Names interface {
 	Names(ctx context.Context, ids []string) (map[string]string, error)
 }
 
+// Groups is what stats need from the group context.
+type Groups interface {
+	// Member returns the group if actor is a current member, and
+	// errs.NotFound otherwise.
+	Member(ctx context.Context, actor, id uuid.UUID) (*group.Group, error)
+}
+
 // Service validates access and fills defaults.
 type Service struct {
 	repo   Repository
-	groups group.Repository
+	groups Groups
 	users  *user.Service
 	names  Names
 }
 
 // NewService builds a Service.
-func NewService(repo Repository, groups group.Repository, users *user.Service, names Names) *Service {
+func NewService(repo Repository, groups Groups, users *user.Service, names Names) *Service {
 	return &Service{repo: repo, groups: groups, users: users, names: names}
 }
 
 // Summary returns spending statistics.
 func (s *Service) Summary(ctx context.Context, q Query) (*Summary, error) {
 	if q.GroupID != nil {
-		g, err := s.groups.Get(ctx, *q.GroupID)
+		g, err := s.groups.Member(ctx, q.UserID, *q.GroupID)
 		if err != nil {
 			return nil, err
-		}
-		if !g.HasMember(q.UserID) {
-			return nil, errs.NotFound("Group")
 		}
 		if q.Currency == "" {
 			q.Currency = g.DefaultCurrency
