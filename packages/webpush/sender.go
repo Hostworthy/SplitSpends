@@ -91,6 +91,9 @@ func Check(public, private string) error {
 	return nil
 }
 
+// PublicKey is the VAPID key devices subscribe with.
+func (w *Sender) PublicKey() string { return w.cfg.PublicKey }
+
 // Send encrypts payload for s and posts it to the push service. A 404 or
 // 410 answer returns push.ErrGone, and a payload larger than
 // push.MaxPayload returns push.ErrTooLarge without contacting anyone.

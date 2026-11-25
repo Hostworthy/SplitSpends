@@ -59,10 +59,12 @@ func defaultSubject(baseURL, from string) string {
 // pushSender builds the Web Push sender. Keys come from the environment or,
 // when unset, from the database, where the first instance to start stores
 // a generated pair. Failing to set up push disables it instead of stopping
-// the server: email keeps working.
+// the server: email keeps working. The keys stay with the sender, which
+// tells devices the public one.
 func pushSender(ctx context.Context, db *database.DB, cfg *Config, log *slog.Logger) push.Sender {
 	public, private := cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey
-	if public == "" {
+	generated := public == ""
+	if generated {
 		candidatePublic, candidatePrivate, err := webpush.Keys()
 		if err == nil {
 			public, private, err = repositories.NewVAPIDKeys(db).Ensure(ctx, candidatePublic, candidatePrivate)
@@ -77,8 +79,7 @@ func pushSender(ctx context.Context, db *database.DB, cfg *Config, log *slog.Log
 		log.Error("bootstrap.push.disabled", "error", err)
 		return nil
 	}
-	cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey = public, private
-	log.Info("bootstrap.push.enabled", "generated", env("VAPID_PUBLIC_KEY", "") == "")
+	log.Info("bootstrap.push.enabled", "generated", generated)
 	return sender
 }
 

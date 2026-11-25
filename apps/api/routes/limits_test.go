@@ -57,13 +57,14 @@ func TestSocialLimit(t *testing.T) {
 type accepting struct{}
 
 func (accepting) Send(context.Context, *push.Subscription, []byte) error { return nil }
+func (accepting) PublicKey() string                                      { return "test-key" }
 
 // TestPushLimits checks that registering devices and testing push are
 // counted per signed-in person: the 21st registration and the 6th test in a
 // minute are refused, while someone else can still do both.
 func TestPushLimits(t *testing.T) {
 	cfg := bootstraptest.Defaults()
-	cfg.Serverless, cfg.VAPIDPublicKey = true, "test-key"
+	cfg.Serverless = true
 	s := newServer(t, bootstraptest.Options{Config: cfg, Sender: accepting{}})
 	ada := s.signIn(t, "ada@example.com", "Ada").Token
 	ben := s.signIn(t, "ben@example.com", "Ben").Token
