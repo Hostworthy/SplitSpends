@@ -174,6 +174,29 @@ void main() {
       currency: 'EUR',
       date: '2026-11-06',
     );
+    // In a group, members book payments and expenses for each other.
+    await expenses.recordPayment(
+      groupId: g.id,
+      fromUserId: kim,
+      toUserId: lee,
+      amount: 777,
+      currency: 'EUR',
+      date: '2026-11-06',
+    );
+    await add(
+      ExpenseInput(
+        groupId: g.id,
+        description: 'Snacks',
+        currency: 'EUR',
+        total: 1001,
+        date: '2026-11-06',
+        payers: [Payer(userId: lee, amount: 1001)],
+        splits: [
+          SplitEntry(userId: sam),
+          SplitEntry(userId: kim),
+        ],
+      ),
+    );
     // A default split and custom categories, one of them deleted but still
     // used by an expense.
     await groups.update(
