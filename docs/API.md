@@ -118,7 +118,7 @@ A recurring expense repeats on its `recurrence`: a background job books each occ
 
 An update may send `updatedAt`: the `updatedAt` of the expense as the client last saw it, unchanged. When the expense has been changed (or deleted) since, the update is refused with 409 `CONFLICT` and nothing is saved, so one person's edit never silently replaces another's; reload the expense and edit again. Without `updatedAt` the update always replaces the current version. Updating a deleted expense is a 409 either way.
 
-`category` is a built-in id or a custom category id (`custom.<uuid>`). A custom id must be one of the caller's own live categories; an update may also keep the category the expense already has, even when it belongs to another member or was deleted.
+`category` is a built-in id other than `payment`, or a custom category id (`custom.<uuid>`). A custom id must be one of the caller's own live categories; an update may also keep the category the expense already has, even when it belongs to another member or was deleted.
 
 ### Default Split
 
@@ -237,6 +237,8 @@ People without an account follow the link, request a login code with `inviteToke
 | POST | `/expenses/{expenseId}/comments` | `{ body }` | 201 `{ data: Comment }` |
 | DELETE | `/comments/{commentId}` | | 204 (author only) |
 | POST | `/payments` | `{ id?, groupId?, fromUserId, toUserId, amount, currency?, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
+
+A payment is always one person paying another. `PUT /expenses/{id}` on a payment takes the usual expense body but must keep that shape: one entry in `payers` paying the whole `total` and one other person in `splits` (422 otherwise). Only the people, `total`, `currency`, `date` and `notes` are used; the description stays `Payment`, the category `payment`, and payments never recur. Only payments use the `payment` category.
 
 ### Reminders
 
