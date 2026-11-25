@@ -17,11 +17,11 @@ type Challenges struct{ db *database.DB }
 // NewChallenges builds Challenges.
 func NewChallenges(db *database.DB) *Challenges { return &Challenges{db: db} }
 
-const challengeColumns = `id, expires_at, consumed_at, created_at, attempts, email, code_hash, client_hash, pending`
+const challengeColumns = `id, expires_at, consumed_at, created_at, attempts, email, code_hash, client_hash, invite_hash`
 
 func (r *Challenges) Create(ctx context.Context, c *auth.Challenge) error {
 	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO login_challenges (`+challengeColumns+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		c.ID, c.ExpiresAt, c.ConsumedAt, c.CreatedAt, c.Attempts, c.Email, c.CodeHash, c.Client, c.Pending)
+		c.ID, c.ExpiresAt, c.ConsumedAt, c.CreatedAt, c.Attempts, c.Email, c.CodeHash, c.Client, c.Invite)
 	return err
 }
 
@@ -53,7 +53,7 @@ func (r *Challenges) Attempt(ctx context.Context, email string, now time.Time, l
 
 func scanChallenge(row pgx.Row) (*auth.Challenge, error) {
 	var c auth.Challenge
-	err := row.Scan(&c.ID, &c.ExpiresAt, &c.ConsumedAt, &c.CreatedAt, &c.Attempts, &c.Email, &c.CodeHash, &c.Client, &c.Pending)
+	err := row.Scan(&c.ID, &c.ExpiresAt, &c.ConsumedAt, &c.CreatedAt, &c.Attempts, &c.Email, &c.CodeHash, &c.Client, &c.Invite)
 	return &c, err
 }
 
