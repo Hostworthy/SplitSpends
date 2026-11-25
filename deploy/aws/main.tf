@@ -168,6 +168,39 @@ resource "aws_iam_role_policy" "receipts" {
   policy = data.aws_iam_policy_document.receipts_access.json
 }
 
+# The server reads its secrets from Secrets Manager at start (SECRETS_ARN), so
+# they stay out of the function configuration, which read-only roles can see.
+locals {
+  secrets = {
+    DATABASE_URL  = var.database_url
+    SECRET_KEY    = random_password.secret_key.result
+    JOBS_SECRET   = random_password.jobs_secret.result
+    SMTP_PASSWORD = var.smtp.password
+    AI_API_KEY    = var.ai.api_key
+  }
+}
+
+resource "aws_secretsmanager_secret" "app" {
+  name_prefix = "${var.name}-app-"
+}
+
+resource "aws_secretsmanager_secret_version" "app" {
+  secret_id     = aws_secretsmanager_secret.app.id
+  secret_string = jsonencode(local.secrets)
+}
+
+data "aws_iam_policy_document" "secrets_access" {
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.app.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "secrets" {
+  role   = aws_iam_role.lambda.id
+  policy = data.aws_iam_policy_document.secrets_access.json
+}
+
 resource "aws_cloudwatch_log_group" "lambda" {
   name              = "/aws/lambda/${var.name}"
   retention_in_days = 30
@@ -194,10 +227,8 @@ resource "aws_lambda_function" "app" {
       AWS_LWA_READINESS_CHECK_PATH = "/health"
       ADDR                         = "127.0.0.1:8080"
       SERVERLESS                   = "true"
-      DATABASE_URL                 = var.database_url
+      SECRETS_ARN                  = aws_secretsmanager_secret.app.arn
       DATABASE_MAX_CONNS           = "3"
-      SECRET_KEY                   = random_password.secret_key.result
-      JOBS_SECRET                  = random_password.jobs_secret.result
       BASE_URL                     = local.base_url
       TRUST_PROXY                  = "2"
       SIGNUP_MODE                  = var.signup_mode
@@ -209,17 +240,18 @@ resource "aws_lambda_function" "app" {
       SMTP_PORT                    = tostring(var.smtp.port)
       SMTP_SECURITY                = var.smtp.security
       SMTP_USERNAME                = var.smtp.username
-      SMTP_PASSWORD                = var.smtp.password
       SMTP_FROM                    = var.smtp.from
       AI_PROVIDER                  = var.ai.provider
-      AI_API_KEY                   = var.ai.api_key
       AI_MODEL                     = var.ai.model
       AI_BASE_URL                  = var.ai.base_url
       AI_EFFORT                    = var.ai.effort
     }
   }
 
-  depends_on = [aws_cloudwatch_log_group.lambda, aws_iam_role_policy_attachment.logs]
+  depends_on = [
+    aws_cloudwatch_log_group.lambda, aws_iam_role_policy_attachment.logs,
+    aws_iam_role_policy.secrets, aws_secretsmanager_secret_version.app,
+  ]
 }
 
 # API Gateway is CloudFront's origin for the server. Auth is enforced by the

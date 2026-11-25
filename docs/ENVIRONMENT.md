@@ -43,6 +43,8 @@ A value that is too high lets clients choose the address that is rate limited; o
 | -------- | ------- | ------- |
 | `SERVERLESS` | `false` | Set on Lambda, Cloud Run and similar: no in-process background jobs, emails are sent before the response returns |
 | `JOBS_SECRET` | empty | At least 32 characters. Enables `POST /internal/jobs` for an external scheduler (needed when `SERVERLESS=true`, every 15 to 60 minutes) |
+| `SECRETS_ARN` | empty | ARN of an AWS Secrets Manager secret holding a JSON object of variables, such as `{"DATABASE_URL": "...", "SECRET_KEY": "..."}`. Read once at start with the function or instance role's credentials (`secretsmanager:GetSecretValue`); each key fills the variable of that name unless it is already set. `deploy/aws` uses it to keep secrets out of the Lambda configuration |
+| `AWS_ENDPOINT_URL_SECRETS_MANAGER` | AWS | Secrets Manager endpoint for `SECRETS_ARN`, for example a local emulator; defaults to the regional endpoint in the ARN |
 | `BLOB_STORE` | `local` | Where receipt images go: `local` (`DATA_DIR`), `s3` or `postgres` (in the database; good for small free-tier hosts) |
 | `S3_BUCKET` | empty | Bucket for `BLOB_STORE=s3` |
 | `S3_REGION` | `AWS_REGION` | Bucket region |

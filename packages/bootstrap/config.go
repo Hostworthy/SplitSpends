@@ -107,8 +107,12 @@ func hops(v string) (int, error) {
 	return 0, fmt.Errorf("bootstrap.config.env.invalid.TRUST_PROXY: use the number of proxies in front of the server, or false")
 }
 
-// LoadConfig reads configuration from the environment.
+// LoadConfig reads configuration from the environment, after filling it
+// from the secret named by SECRETS_ARN when that is set.
 func LoadConfig() (*Config, error) {
+	if err := secrets(); err != nil {
+		return nil, err
+	}
 	c := &Config{
 		AppName:      env("APP_NAME", "Split Spends"),
 		Addr:         env("ADDR", ":8080"),
