@@ -42,8 +42,11 @@ func (m memExpenses) Update(_ context.Context, e *Expense) error {
 	m[e.ID] = &cp
 	return nil
 }
-func (m memExpenses) List(context.Context, Filter) ([]*Expense, int, error)         { return nil, 0, nil }
-func (m memExpenses) Due(context.Context, time.Time, int) ([]*Expense, error)       { return nil, nil }
+func (m memExpenses) List(context.Context, Filter) ([]*Expense, int, error)   { return nil, 0, nil }
+func (m memExpenses) Due(context.Context, time.Time, int) ([]*Expense, error) { return nil, nil }
+func (m memExpenses) After(context.Context, uuid.UUID, *Expense, int) ([]*Expense, error) {
+	return nil, nil
+}
 func (m memExpenses) Claim(context.Context, uuid.UUID, time.Time) (*Expense, error) { return nil, nil }
 func (m memExpenses) EndSeries(context.Context, uuid.UUID, time.Time) error         { return nil }
 

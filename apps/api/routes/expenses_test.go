@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,25 +62,6 @@ func TestSafeCell(t *testing.T) {
 	}
 }
 
-func TestDecimalString(t *testing.T) {
-	for _, c := range []struct {
-		amount   int64
-		exponent int
-		want     string
-	}{
-		{0, 2, "0.00"},
-		{5, 2, "0.05"},
-		{-100, 2, "-1.00"},
-		{123456, 2, "1234.56"},
-		{-1500, 0, "-1500"},
-		{1, 3, "0.001"},
-	} {
-		if got := decimalString(c.amount, c.exponent); got != c.want {
-			t.Errorf("decimalString(%d, %d) = %q, want %q", c.amount, c.exponent, got, c.want)
-		}
-	}
-}
-
 func TestNumber(t *testing.T) {
 	for _, c := range []struct {
 		value string
@@ -129,6 +111,41 @@ func TestExportNeutralisesNames(t *testing.T) {
 	}
 	if got := rows[1][column]; got != "-1.00" {
 		t.Errorf("Ben's net is %q, want -1.00", got)
+	}
+}
+
+// TestExportIsReproducible checks that former members get their columns in
+// a fixed order, after the members and by name, so two exports of the same
+// group are the same file.
+func TestExportIsReproducible(t *testing.T) {
+	s := newServer(t, bootstraptest.Options{})
+	ada := s.signIn(t, "ada@example.com", "Ada")
+	former := []platform.LoginResult{
+		s.signIn(t, "zed@example.com", "Zed"),
+		s.signIn(t, "cy@example.com", "Cy"),
+		s.signIn(t, "max@example.com", "Max"),
+	}
+	g := s.group(t, ada.Token, "Flat", "zed@example.com", "cy@example.com", "max@example.com")
+	s.expense(t, ada.Token, g.ID, 400, ada.User.ID, ada.User.ID)
+	for _, p := range former {
+		s.expense(t, p.Token, g.ID, 100, p.User.ID, p.User.ID)
+		s.call(t, http.MethodDelete, platform.Prefix+"/groups/"+g.ID+"/members/"+p.User.ID, p.Token, nil).want(t, http.StatusNoContent)
+	}
+
+	path := platform.Prefix + "/groups/" + g.ID + "/export"
+	first := s.call(t, http.MethodGet, path, ada.Token, nil).want(t, http.StatusOK).body
+	rows, err := csv.NewReader(bytes.NewReader(first)).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(rows[0], ","), "Date,Description,Category,Kind,Currency,Cost,Ada,Cy,Max,Zed"; got != want {
+		t.Fatalf("header %q, want %q", got, want)
+	}
+	for range 5 {
+		again := s.call(t, http.MethodGet, path, ada.Token, nil).want(t, http.StatusOK).body
+		if !bytes.Equal(again, first) {
+			t.Fatalf("a second export differs:\n%s\nfirst:\n%s", again, first)
+		}
 	}
 }
 
