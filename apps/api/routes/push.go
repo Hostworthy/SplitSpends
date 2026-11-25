@@ -17,7 +17,7 @@ func (a *API) listPushSubscriptions(w http.ResponseWriter, r *http.Request) erro
 	for _, s := range subs {
 		out = append(out, toPushSubscription(s))
 	}
-	return list(w, out, len(out))
+	return paged(w, r, out)
 }
 
 func (a *API) createPushSubscription(w http.ResponseWriter, r *http.Request) error {

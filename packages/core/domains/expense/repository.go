@@ -46,6 +46,10 @@ type Repository interface {
 	EndSeries(ctx context.Context, id uuid.UUID, at time.Time) error
 }
 
+// MaxComments is how many comments one expense can hold. Everyone in the
+// group loads them when they open the expense.
+const MaxComments = 500
+
 // Comment is a note on an expense.
 type Comment struct {
 	ID        uuid.UUID
@@ -59,7 +63,11 @@ type Comment struct {
 type CommentRepository interface {
 	Create(ctx context.Context, c *Comment) error
 	Get(ctx context.Context, id uuid.UUID) (*Comment, error)
-	List(ctx context.Context, expenseID uuid.UUID) ([]*Comment, error)
+	// List returns a page of an expense's comments, oldest first, and how
+	// many it has. A limit of 0 returns them all.
+	List(ctx context.Context, expenseID uuid.UUID, limit, offset int) ([]*Comment, int, error)
+	// Count is how many comments the expense has.
+	Count(ctx context.Context, expenseID uuid.UUID) (int, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 

@@ -76,6 +76,7 @@ func (f *groups) Lock(ctx context.Context, id uuid.UUID) (*group.Group, error)  
 func (f *groups) Update(context.Context, *group.Group) error                          { return nil }
 func (f *groups) Delete(context.Context, uuid.UUID) error                             { return nil }
 func (f *groups) ForUser(context.Context, uuid.UUID, bool) ([]*group.Group, error)    { return nil, nil }
+func (f *groups) Joined(context.Context, uuid.UUID) (int, error)                      { return 0, nil }
 func (f *groups) AddMember(context.Context, uuid.UUID, uuid.UUID, time.Time) error    { return nil }
 func (f *groups) RemoveMember(context.Context, uuid.UUID, uuid.UUID, time.Time) error { return nil }
 
@@ -95,6 +96,10 @@ func (m users) Count(context.Context) (int, error)                      { return
 func (m users) Placeholders(context.Context, uuid.UUID) (int, error)    { return 0, nil }
 func (m users) Lock(context.Context) error                              { return nil }
 
+type noTx struct{}
+
+func (noTx) Do(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
+
 type clockAt struct{ at time.Time }
 
 func (c *clockAt) Now() time.Time { return c.at }
@@ -113,7 +118,7 @@ func setup(t *testing.T, others ...*user.User) (*Service, *groups, *user.User, *
 	}
 	g := &groups{g: &group.Group{ID: uuid.New(), Name: "Flat", Emoji: "🏠", Members: []uuid.UUID{ada.ID}}}
 	c := &clockAt{at: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)}
-	svc := NewService(&memInvites{}, g, g, user.NewService(accounts, nil, nil, c), c, "https://split.test")
+	svc := NewService(&memInvites{}, g, g, user.NewService(accounts, nil, nil, c), noTx{}, c, "https://split.test")
 	return svc, g, ada, c
 }
 
@@ -303,5 +308,50 @@ func TestLinksEndWhenTheGroupIsArchived(t *testing.T) {
 	}
 	if g.g.HasMember(ben) {
 		t.Fatal("Ben joined an archived group")
+	}
+}
+
+// TestActiveLinkLimit checks that a group holds at most MaxActive usable
+// links, and that links which stopped working free their place.
+func TestActiveLinkLimit(t *testing.T) {
+	ctx := context.Background()
+	account, err := user.New("mal@example.com", "Mal", user.StatusActive, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, g, ada, c := setup(t, account)
+	mal := account.ID
+	g.g.Members = append(g.g.Members, mal)
+	if _, err := svc.Create(ctx, mal, g.g.ID); err != nil {
+		t.Fatal(err)
+	}
+	var first *Issued
+	for i := range MaxActive - 1 {
+		issued, err := svc.Create(ctx, ada.ID, g.g.ID)
+		if err != nil {
+			t.Fatalf("link %d: %v", i+2, err)
+		}
+		if first == nil {
+			first = issued
+		}
+	}
+	if _, err := svc.Create(ctx, ada.ID, g.g.ID); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("link %d must be refused, got %v", MaxActive+1, err)
+	}
+
+	// Mal's link stops working when he leaves, so it no longer counts.
+	g.g.Members = []uuid.UUID{ada.ID}
+	if _, err := svc.Create(ctx, ada.ID, g.g.ID); err != nil {
+		t.Fatalf("a link of someone who left must not count: %v", err)
+	}
+	if err := svc.Revoke(ctx, ada.ID, g.g.ID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Create(ctx, ada.ID, g.g.ID); err != nil {
+		t.Fatalf("revoking a link makes room: %v", err)
+	}
+	c.at = c.at.Add(TTL)
+	if _, err := svc.Create(ctx, ada.ID, g.g.ID); err != nil {
+		t.Fatalf("expired links must not count: %v", err)
 	}
 }

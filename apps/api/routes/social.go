@@ -19,7 +19,7 @@ func (a *API) listFriends(w http.ResponseWriter, r *http.Request) error {
 	for _, f := range friends {
 		out = append(out, toFriend(f))
 	}
-	return list(w, out, len(out))
+	return paged(w, r, out)
 }
 
 func (a *API) addFriend(w http.ResponseWriter, r *http.Request) error {
@@ -120,7 +120,8 @@ func toDefaultSplit(d *group.DefaultSplit) *platform.DefaultSplit {
 
 func (a *API) listGroups(w http.ResponseWriter, r *http.Request) error {
 	archived, _ := strconv.ParseBool(r.URL.Query().Get("archived"))
-	groups, err := a.svc.Groups.List(r.Context(), me(r), archived)
+	limit, offset := window(r)
+	groups, total, err := a.svc.Groups.List(r.Context(), me(r), archived, limit, offset)
 	if err != nil {
 		return err
 	}
@@ -128,7 +129,7 @@ func (a *API) listGroups(w http.ResponseWriter, r *http.Request) error {
 	for _, g := range groups {
 		out = append(out, toGroup(g))
 	}
-	return list(w, out, len(out))
+	return list(w, out, total)
 }
 
 func (a *API) createGroup(w http.ResponseWriter, r *http.Request) error {

@@ -34,7 +34,7 @@ func (a *API) listInvites(w http.ResponseWriter, r *http.Request) error {
 	for _, i := range invites {
 		out = append(out, toInvite(i))
 	}
-	return list(w, out, len(out))
+	return paged(w, r, out)
 }
 
 func (a *API) deleteInvite(w http.ResponseWriter, r *http.Request) error {

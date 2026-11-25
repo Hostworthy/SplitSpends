@@ -178,6 +178,12 @@ func (r *Groups) ForUser(ctx context.Context, userID uuid.UUID, archived bool) (
 	return collect(rows, scanGroup)
 }
 
+func (r *Groups) Joined(ctx context.Context, userID uuid.UUID) (int, error) {
+	var n int
+	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM group_members WHERE user_id = $1 AND left_at IS NULL`, userID).Scan(&n)
+	return n, err
+}
+
 func (r *Groups) AddMember(ctx context.Context, groupID, userID uuid.UUID, at time.Time) error {
 	_, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO group_members (group_id, user_id, joined_at) VALUES ($1,$2,$3)
 		ON CONFLICT (group_id, user_id) DO UPDATE SET left_at = NULL, joined_at = EXCLUDED.joined_at`, groupID, userID, at)

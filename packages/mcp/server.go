@@ -463,7 +463,10 @@ func (t *tools) addExpense(ctx context.Context, _ *sdk.CallToolRequest, in addAr
 	case "exact", "percent", "shares":
 		body.SplitMethod = method
 		for _, v := range in.SplitValues {
-			value := v.Value
+			value := strings.TrimSpace(v.Value)
+			if !plain(value) {
+				return fail(fmt.Errorf("the split value %q for %s is not a decimal number such as 60 or 33.5", v.Value, v.UserID))
+			}
 			if method == "exact" {
 				m, err := t.c.minor(ctx, v.Value, currency)
 				if err != nil {
@@ -553,7 +556,7 @@ func (t *tools) remind(ctx context.Context, _ *sdk.CallToolRequest, in remindArg
 }
 
 func (t *tools) deleteExpense(ctx context.Context, _ *sdk.CallToolRequest, in expenseArgs) (*sdk.CallToolResult, any, error) {
-	if err := t.c.do(ctx, http.MethodDelete, "/expenses/"+url.PathEscape(in.ExpenseID), nil, nil, nil); err != nil {
+	if _, err := t.c.do(ctx, http.MethodDelete, "/expenses/"+url.PathEscape(in.ExpenseID), nil, nil); err != nil {
 		return fail(err)
 	}
 	return text("Deleted expense " + in.ExpenseID + ". It can be restored from the app."), nil, nil

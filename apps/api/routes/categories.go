@@ -29,7 +29,7 @@ func (a *API) listCategories(w http.ResponseWriter, r *http.Request) error {
 	for _, c := range all {
 		out = append(out, toCategory(c, me(r)))
 	}
-	return list(w, out, len(out))
+	return paged(w, r, out)
 }
 
 func (a *API) createCategory(w http.ResponseWriter, r *http.Request) error {

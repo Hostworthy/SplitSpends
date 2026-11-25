@@ -1,6 +1,7 @@
 package push
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -35,6 +36,11 @@ const (
 	// devices up to the cap, so one notification costs about one
 	// SendTimeout however its devices answer.
 	parallel = MaxDevices
+
+	// MaxPayload is the most a Web Push message may carry: a 4096-byte
+	// record less the encryption header, tag and padding delimiter
+	// (RFC 8291, section 4).
+	MaxPayload = 3993
 
 	maxTitle = 120
 	maxBody  = 600
@@ -141,18 +147,44 @@ type Message struct {
 	URL   string `json:"url"`
 }
 
-// Payload encodes m, trimming long text so it stays well under the 4 KB
-// Web Push limit.
+// Payload encodes m, trimming long text so it fits in MaxPayload bytes.
+// Characters JSON escapes take up to six bytes each, so the text is
+// shortened further, body first, until the encoded message fits.
 func (m Message) Payload() []byte {
 	m.Title, m.Body = clip(m.Title, maxTitle), clip(m.Body, maxBody)
-	b, _ := json.Marshal(m)
-	return b
+	for {
+		b := m.encode()
+		over := len(b) - MaxPayload
+		switch {
+		case over <= 0:
+			return b
+		case m.Body != "":
+			m.Body = clip(m.Body, utf8.RuneCountInString(m.Body)-over)
+		case m.Title != "":
+			m.Title = clip(m.Title, utf8.RuneCountInString(m.Title)-over)
+		default:
+			return b
+		}
+	}
+}
+
+// encode writes m as JSON without HTML escaping: the payload is shown as
+// text, and escaping <, > and & would triple their size.
+func (m Message) encode() []byte {
+	var b bytes.Buffer
+	e := json.NewEncoder(&b)
+	e.SetEscapeHTML(false)
+	_ = e.Encode(m)
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n"))
 }
 
 func clip(s string, max int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if utf8.RuneCountInString(s) <= max {
 		return s
+	}
+	if max < 1 {
+		return ""
 	}
 	return string([]rune(s)[:max-1]) + "…"
 }
@@ -200,7 +232,8 @@ func (s *Service) Notify(ctx context.Context, n ports.Notification) (Report, err
 
 // deliver sends to the devices concurrently, each within its own timeout.
 // Devices the push service forgot are removed; other failures are counted,
-// and a device that keeps failing is eventually removed too.
+// and a device that keeps failing is eventually removed too. A message too
+// large to send is not the device's fault and is not counted.
 func (s *Service) deliver(ctx context.Context, subs []*Subscription, m Message) Report {
 	payload := m.Payload()
 	results := make([]Report, len(subs))
@@ -240,6 +273,8 @@ func (s *Service) send(ctx context.Context, sub *Subscription, payload []byte) R
 		return Report{Sent: 1, Store: s.repo.Succeeded(store, sub.ID, s.clock.Now())}
 	case errors.Is(err, ErrGone):
 		return Report{Removed: 1, Store: s.repo.Remove(store, sub.ID)}
+	case errors.Is(err, ErrTooLarge):
+		return Report{Failed: 1, Err: err}
 	default:
 		r := Report{Failed: 1, Err: err}
 		n, ferr := s.repo.Failed(store, sub.ID)

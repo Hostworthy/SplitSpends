@@ -109,6 +109,9 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	if err != nil {
 		return nil, err
 	}
+	if err := s.room(ctx, actor, me); err != nil {
+		return nil, err
+	}
 	name := ""
 	if in.Name != nil {
 		name = *in.Name
@@ -148,6 +151,9 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 			if g.HasMember(u.ID) {
 				continue
 			}
+			if err := s.room(ctx, actor, u); err != nil {
+				return err
+			}
 			if err := s.repo.AddMember(ctx, g.ID, u.ID, now); err != nil {
 				return err
 			}
@@ -157,6 +163,13 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		for _, id := range in.People {
 			if g.HasMember(id) {
 				continue
+			}
+			u, err := s.users.Get(ctx, id)
+			if err != nil {
+				return err
+			}
+			if err := s.room(ctx, actor, u); err != nil {
+				return err
 			}
 			if err := s.repo.AddMember(ctx, g.ID, id, now); err != nil {
 				return err
@@ -192,6 +205,18 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		}
 	}
 	return s.View(ctx, actor, g.ID)
+}
+
+// room refuses to add u to another group once they belong to MaxPerUser.
+func (s *Service) room(ctx context.Context, actor uuid.UUID, u *user.User) error {
+	n, err := s.repo.Joined(ctx, u.ID)
+	if err != nil || n < MaxPerUser {
+		return err
+	}
+	if u.ID == actor {
+		return errs.Conflict(fmt.Sprintf("You are already in %d groups, the most one person can be in. Leave or delete a group you no longer use first.", MaxPerUser))
+	}
+	return errs.Conflict(fmt.Sprintf("%s is already in %d groups, the most one person can be in.", u.Name, MaxPerUser))
 }
 
 func full() error {
@@ -244,15 +269,22 @@ func (s *Service) view(ctx context.Context, actor uuid.UUID, g *Group) (*View, e
 	return &View{Group: g, People: people, Balances: mine}, nil
 }
 
-// List returns the actor's groups with their balances.
-func (s *Service) List(ctx context.Context, actor uuid.UUID, archived bool) ([]*View, error) {
+// List returns a page of the actor's groups with their balances, most
+// recently changed first, and how many there are. A limit of 0 returns them
+// all.
+func (s *Service) List(ctx context.Context, actor uuid.UUID, archived bool, limit, offset int) ([]*View, int, error) {
 	groups, err := s.repo.ForUser(ctx, actor, archived)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	total := len(groups)
+	groups = groups[min(offset, total):]
+	if limit > 0 && limit < len(groups) {
+		groups = groups[:limit]
 	}
 	sheet, err := s.balances.For(ctx, actor)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	ids := []uuid.UUID{}
 	for _, g := range groups {
@@ -260,7 +292,7 @@ func (s *Service) List(ctx context.Context, actor uuid.UUID, archived bool) ([]*
 	}
 	people, err := s.users.Index(ctx, ids)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	out := make([]*View, 0, len(groups))
 	for _, g := range groups {
@@ -275,7 +307,7 @@ func (s *Service) List(ctx context.Context, actor uuid.UUID, archived bool) ([]*
 		}
 		out = append(out, v)
 	}
-	return out, nil
+	return out, total, nil
 }
 
 // Update applies a patch.
@@ -356,6 +388,9 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 		if g.HasMember(u.ID) {
 			return errs.Conflict(u.Name + " is already in this group.")
 		}
+		if err := s.room(ctx, actor, u); err != nil {
+			return err
+		}
 		if err := s.repo.AddMember(ctx, g.ID, u.ID, s.clock.Now()); err != nil {
 			return err
 		}
@@ -393,6 +428,9 @@ func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) 
 	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.room(ctx, actor, me); err != nil {
 		return nil, err
 	}
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
