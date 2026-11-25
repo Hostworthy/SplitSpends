@@ -110,4 +110,4 @@ The server creates its push key on first start and keeps it in the database. If 
 - Update regularly: pull the latest code and rebuild. Migrations run automatically on start.
 - If you enable AI, receipt images and expense text are sent to that provider. Choose one you trust, or run a local model through an OpenAI-compatible server.
 - The web app makes no third-party requests. Its engine, its Latin font and the Noto fallback fonts for emoji and other scripts are all in the repository and served by your own server (see [apps/web/README.md](../apps/web/README.md)).
-- Terraform state contains your secrets. Keep it in an encrypted, private backend.
+- Terraform state contains your secrets. Keep it in an encrypted, private backend: `deploy/aws` and `deploy/gcp` ship a `backend.tf.example` for an S3 or Cloud Storage bucket, and their READMEs set it up before the first apply.

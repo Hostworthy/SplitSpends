@@ -22,9 +22,12 @@ EventBridge (every 30 min) ──> /internal/jobs (recurring expenses, cleanup)
 make lambda web-build                  # from the repository root
 cd deploy/aws
 cp terraform.tfvars.example terraform.tfvars   # fill in
+cp backend.tf.example backend.tf               # fill in your state bucket (see below)
 terraform init
 terraform apply
 ```
+
+Terraform state holds every secret of the stack in plain text, so keep it in a private, encrypted S3 bucket rather than in `terraform.tfstate` on your machine: create a bucket with versioning on and public access blocked, and name it in `backend.tf` before the first `terraform init`. `use_lockfile` stops two applies from running at once and needs Terraform 1.10 or later (older versions use a DynamoDB table, as the example explains). If you already applied with local state, add `backend.tf` and run `terraform init -migrate-state` to move it, then delete the local `terraform.tfstate` files.
 
 Open the `url` output. That is also the server URL for the mobile app. Redeploy after changes with `make lambda web-build` and `terraform apply`.
 
@@ -34,7 +37,7 @@ Open the `url` output. That is also the server URL for the mobile app. Redeploy 
 - **Timeouts:** API Gateway allows 30 seconds per request, so AI receipt scans run with `AI_EFFORT=low` here (`effort` in the `ai` variable).
 - **Rate limits** on sign-in are per Lambda instance; per-email code limits are enforced in the database regardless.
 - **Database connections:** every concurrent request runs in its own Lambda execution environment with its own pool of up to 3 connections (`DATABASE_MAX_CONNS`), limited only by the API Gateway throttle (50 requests a second, bursts of 100) and your account's concurrency quota. If your database allows few connections, as free tiers often do, set `max_concurrency` so that `max_concurrency` x 3 stays below that limit; requests beyond it are turned away instead of exhausting the database for everyone. AWS keeps at least 10 executions unreserved per account, so an account whose concurrency quota is 10 (common on new accounts) cannot reserve any: leave `max_concurrency` unset there, or ask AWS to raise the quota.
-- **Secrets** (database URL, SMTP and AI keys, generated `SECRET_KEY` and `JOBS_SECRET`) are kept in one Secrets Manager secret. The function's environment holds only its ARN (`SECRETS_ARN`), and the server reads the secret at start with the function's role, which may read that secret and nothing else. Anyone who can read the function's configuration (the `ReadOnlyAccess` policy, for example) therefore does not see them; reading them needs `secretsmanager:GetSecretValue` on the secret. They are also in Terraform state: use an encrypted remote backend such as S3 with a DynamoDB lock table.
+- **Secrets** (database URL, SMTP and AI keys, generated `SECRET_KEY` and `JOBS_SECRET`) are kept in one Secrets Manager secret. The function's environment holds only its ARN (`SECRETS_ARN`), and the server reads the secret at start with the function's role, which may read that secret and nothing else. Anyone who can read the function's configuration (the `ReadOnlyAccess` policy, for example) therefore does not see them; reading them needs `secretsmanager:GetSecretValue` on the secret. They are also in Terraform state, which is why the Deploy steps keep it in S3.
 
 ## Upgrading a Deployment That Kept Secrets in the Environment
 
