@@ -149,6 +149,31 @@ class Outbox {
     });
   }
 
+  /// Sends a write, or queues it: runs [online] unless writes are already
+  /// waiting (they keep their order), and on a network failure, or when
+  /// queueing, stores the request and returns [offline]. [offline] runs
+  /// first, so input it rejects never reaches the queue; any other server
+  /// answer is rethrown.
+  Future<T> write<T>({
+    required Future<T> Function() online,
+    required T Function() offline,
+    required String method,
+    required String path,
+    Object? body,
+    required String label,
+  }) async {
+    final result = offline();
+    if ((await pending()).isEmpty) {
+      try {
+        return await online();
+      } on ApiError catch (error) {
+        if (!error.isNetwork) rethrow;
+      }
+    }
+    await add(method, path, body: body, label: label);
+    return result;
+  }
+
   /// The owner's queued writes, oldest first, stuck ones included.
   Future<List<OutboxOp>> pending() async => _own(await _records(await _open()));
 
