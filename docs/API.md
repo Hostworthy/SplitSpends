@@ -109,7 +109,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | ------------- | ---------------- | ---- |
 | `equal` | omitted | Total split evenly between listed users |
 | `exact` | minor units | Values must sum to `total` |
-| `percent` | percentage, up to 2 decimals | Values must sum to `100` |
+| `percent` | percentage, up to 4 decimals | Values must sum to `100` |
 | `shares` | positive number | Proportional to shares |
 | `adjustment` | minor units (may be negative) | Each user owes the adjustment, the rest is split evenly |
 | `itemized` | omitted | `items[].userIds` share each item evenly; `tax` and `tip` are spread proportionally to each user's item subtotal; `total` must equal items + tax + tip |
