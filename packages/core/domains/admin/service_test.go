@@ -141,7 +141,8 @@ func newWorld(role user.Role, status user.Status) world {
 	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
 	users := &memUsers{byID: map[uuid.UUID]*user.User{}}
 	add := func(name string, role user.Role, status user.Status) uuid.UUID {
-		u := &user.User{ID: uuid.New(), Name: name, Email: name + "@example.com", Role: role, Status: status, CreatedAt: now}
+		u := &user.User{ID: uuid.New(), Name: name, Email: name + "@example.com", Role: role, Status: status,
+			Notifications: user.DefaultNotifications(), CreatedAt: now}
 		users.byID[u.ID] = u
 		return u.ID
 	}

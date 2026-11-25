@@ -15,6 +15,8 @@ const (
 	PaymentReceived Kind = "paymentReceived"
 	AddedToGroup    Kind = "addedToGroup"
 	Reminder        Kind = "reminders"
+	// Approvals go to administrators and managers when people wait to join.
+	Approvals Kind = "approvals"
 )
 
 // Switches turn one delivery channel on or off per kind.
@@ -25,6 +27,7 @@ type Switches struct {
 	AddedToGroup    bool `json:"addedToGroup"`
 	// Reminders are settle-up nudges from people you owe.
 	Reminders bool `json:"reminders"`
+	Approvals bool `json:"approvals"`
 }
 
 // On reports whether k is switched on. Unknown kinds are on, so a new kind
@@ -41,6 +44,8 @@ func (s Switches) On(k Kind) bool {
 		return s.AddedToGroup
 	case Reminder:
 		return s.Reminders
+	case Approvals:
+		return s.Approvals
 	}
 	return true
 }
@@ -53,9 +58,11 @@ type Notifications struct {
 	Push Switches `json:"push"`
 }
 
-// DefaultNotifications enables every kind on every channel.
+// DefaultNotifications enables every kind on every channel. Stored
+// preferences are read over these defaults, so a switch added later starts
+// on for everyone.
 func DefaultNotifications() Notifications {
-	all := Switches{ExpenseAdded: true, ExpenseUpdated: true, PaymentReceived: true, AddedToGroup: true, Reminders: true}
+	all := Switches{ExpenseAdded: true, ExpenseUpdated: true, PaymentReceived: true, AddedToGroup: true, Reminders: true, Approvals: true}
 	return Notifications{Switches: all, Push: all}
 }
 
@@ -66,6 +73,7 @@ type SwitchesPatch struct {
 	PaymentReceived *bool
 	AddedToGroup    *bool
 	Reminders       *bool
+	Approvals       *bool
 }
 
 // NotificationsPatch changes some preferences. The embedded switches are the
@@ -86,6 +94,7 @@ func (s *Switches) apply(p SwitchesPatch) {
 	set(&s.PaymentReceived, p.PaymentReceived)
 	set(&s.AddedToGroup, p.AddedToGroup)
 	set(&s.Reminders, p.Reminders)
+	set(&s.Approvals, p.Approvals)
 }
 
 // Apply merges p into n.

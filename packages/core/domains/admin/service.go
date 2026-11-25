@@ -14,9 +14,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Approvals is the notification kind for people waiting to join.
-const Approvals user.Kind = "approvals"
-
 // Deps are the Service's collaborators.
 type Deps struct {
 	Settings    SettingsRepository
@@ -117,7 +114,7 @@ func (s *Service) announce(ctx context.Context, r *Request) {
 		who = r.Name + " (" + r.Email + ")"
 	}
 	for _, u := range staff {
-		n, ok := u.Notice(Approvals, who+" wants to join "+s.d.AppName,
+		n, ok := u.Notice(user.Approvals, who+" wants to join "+s.d.AppName,
 			[]string{who + " asked to join " + s.d.AppName + ".", "Approve or decline them in Account, Administration."},
 			s.d.BaseURL+"/account/admin")
 		if ok {
