@@ -138,6 +138,7 @@ class _EditorBodyState extends ConsumerState<_EditorBody> {
       meId: widget.me.id,
       currency: group?.defaultCurrency ?? widget.me.defaultCurrency,
       groupId: group?.id,
+      groupLocked: widget.existing != null,
       people: group != null
           ? group.members.map((m) => m.id).toList()
           : [widget.me.id, ?widget.friendId],
