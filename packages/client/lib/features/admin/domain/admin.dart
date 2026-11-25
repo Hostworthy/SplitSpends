@@ -25,23 +25,39 @@ enum SignupMode {
   final String label;
   final String description;
 
-  static SignupMode named(String? name) =>
-      values.where((m) => m.name == name).firstOrNull ?? invite;
+  /// Null for a mode this app does not know, such as one a newer server
+  /// added; guessing one would rewrite the server's policy on the next save.
+  static SignupMode? named(String? name) =>
+      values.where((m) => m.name == name).firstOrNull;
 }
 
 /// Sign-up mode plus the allowed list of emails and `@domains`.
 class SignupSettings {
-  const SignupSettings({required this.mode, this.allowed = const []});
+  const SignupSettings({
+    required this.mode,
+    this.allowed = const [],
+    this.unknownMode,
+  });
 
-  factory SignupSettings.fromJson(JsonMap json) => SignupSettings(
-    mode: SignupMode.named(json['mode'] as String?),
-    allowed: (json['allowed'] as List? ?? const []).cast<String>(),
-  );
+  factory SignupSettings.fromJson(JsonMap json) {
+    final name = json['mode'] as String?;
+    final mode = SignupMode.named(name);
+    return SignupSettings(
+      mode: mode,
+      allowed: (json['allowed'] as List? ?? const []).cast<String>(),
+      unknownMode: mode == null ? name : null,
+    );
+  }
 
-  final SignupMode mode;
+  /// Null when the server uses a mode this app does not know.
+  final SignupMode? mode;
   final List<String> allowed;
 
-  JsonMap toJson() => {'mode': mode.name, 'allowed': allowed};
+  /// The server's own name for a mode this app does not know, sent back
+  /// unchanged so saving the allowed list keeps the server's mode.
+  final String? unknownMode;
+
+  JsonMap toJson() => {'mode': mode?.name ?? unknownMode, 'allowed': allowed};
 }
 
 /// Someone who proved their email and waits to join (or was decided).
