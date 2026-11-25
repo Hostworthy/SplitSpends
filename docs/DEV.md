@@ -45,6 +45,7 @@ Migrations are embedded in the binary and applied on start.
 - CI runs the same checks: the `backend` job runs gofmt, vet and golangci-lint; the `app` job runs dart format and flutter analyze; the `vuln` job runs govulncheck, also weekly so new advisories show up without a push.
 - CI, the release workflow and the Docker image run `flutter pub get --enforce-lockfile`, which fails when `pubspec.lock` does not match the pubspec files or a package archive does not match its recorded hash. Commit the updated `pubspec.lock` with every dependency change.
 - Dependabot (`.github/dependabot.yml`) proposes weekly update pull requests for Go modules, pub packages, workflow actions and the Dockerfile base images.
+- The Dockerfile pins its base images by digest and checks the Flutter archive against `FLUTTER_SHA256`. When you change `.flutter-version`, set `FLUTTER_SHA256` to that release's `sha256` from [releases_linux.json](https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json); the image build fails until the two match.
 
 ## Repository Layout
 
