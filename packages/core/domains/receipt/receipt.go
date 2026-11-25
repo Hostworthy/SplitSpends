@@ -221,6 +221,15 @@ func (s *Service) Scan(ctx context.Context, actor, id uuid.UUID, currency string
 	if s.reader == nil {
 		return nil, errs.AIDisabled("AI features are not enabled on this server.")
 	}
+	// The hint goes into the provider's instructions, so only a known code
+	// may reach them.
+	if currency != "" {
+		cur, ok := money.Lookup(currency)
+		if !ok {
+			return nil, errs.Validation("currency", "Unsupported currency.")
+		}
+		currency = cur.Code
+	}
 	r, body, err := s.Open(ctx, actor, id)
 	if err != nil {
 		return nil, err

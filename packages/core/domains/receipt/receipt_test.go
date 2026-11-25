@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -382,5 +383,35 @@ func TestToScanCurrencyAndEmptyReceipts(t *testing.T) {
 	if s := toScan(ports.ReceiptExtract{Total: "-5", Date: "20.11.2026", Category: expense.PaymentCategory}, "EUR"); s.Total != 0 ||
 		s.Date != "" || s.Category != expense.DefaultCategory {
 		t.Fatalf("bad total, date and category are dropped: %+v", s)
+	}
+}
+
+// TestScanChecksCurrency checks that the currency hint is a known code,
+// normalised, before anything reaches the AI reader.
+func TestScanChecksCurrency(t *testing.T) {
+	ctx := context.Background()
+	ada := uuid.New()
+	ai := &reader{}
+	s := NewService(&shown{}, stored{}, ai, noTx{}, clock.Fixed{At: time.Now()})
+	r, err := s.Upload(ctx, ada, jpeg(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"not a code", "EURO", strings.Repeat("A", 1<<20)} {
+		_, err := s.Scan(ctx, ada, r.ID, bad)
+		if e, ok := errs.As(err); !ok || e.Kind != errs.KindValidation || e.Field != "currency" {
+			t.Errorf("%.20q: want a validation error on currency, got %v", bad, err)
+		}
+	}
+	if len(ai.calls) != 0 {
+		t.Fatalf("an unknown currency must not reach the AI reader: %d calls", len(ai.calls))
+	}
+	for _, tc := range []struct{ in, want string }{{" eur ", "EUR"}, {"", ""}} {
+		if _, err := s.Scan(ctx, ada, r.ID, tc.in); err != nil {
+			t.Fatal(err)
+		}
+		if got := ai.calls[len(ai.calls)-1].Currency; got != tc.want {
+			t.Errorf("%q: want %q passed to the reader, got %q", tc.in, tc.want, got)
+		}
 	}
 }
