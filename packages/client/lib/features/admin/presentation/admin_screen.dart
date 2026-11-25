@@ -352,8 +352,8 @@ class _PeopleState extends ConsumerState<_People> {
               onRetry: () => ref.invalidate(accountsProvider),
             ),
           ],
-          data: (list) => [
-            for (final a in list)
+          data: (page) => [
+            for (final a in page.items)
               MaxWidth(
                 child: ListTile(
                   key: Key('account-${a.user.id}'),
@@ -375,6 +375,17 @@ class _PeopleState extends ConsumerState<_People> {
                           visualDensity: VisualDensity.compact,
                         ),
                   onTap: () => _manage(a),
+                ),
+              ),
+            if (page.hasMore)
+              MaxWidth(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Showing ${page.items.length} of ${page.total}. '
+                    'Search to narrow the list.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
               ),
           ],

@@ -6,6 +6,7 @@ import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/app/theme.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/user.dart';
+import 'package:splitspends/core/paging/page_result.dart';
 import 'package:splitspends/features/admin/domain/admin.dart';
 import 'package:splitspends/features/admin/presentation/admin_screen.dart';
 
@@ -51,11 +52,9 @@ class FakeAdmin implements AdminRepository {
   @override
   Future<SignupRequest> decline(String id) async => throw UnimplementedError();
 
-  @override
-  Future<List<Account>> accounts({
-    String status = '',
-    String query = '',
-  }) async => const [
+  /// How many accounts the server has; the list holds the first ones.
+  int total = 2;
+  List<Account> people = const [
     Account(
       user: User(id: 'u1', email: 'ada@example.com', name: 'Ada'),
       role: 'admin',
@@ -65,6 +64,12 @@ class FakeAdmin implements AdminRepository {
       role: 'user',
     ),
   ];
+
+  @override
+  Future<PageResult<Account>> accounts({
+    String status = '',
+    String query = '',
+  }) async => PageResult(items: people, total: total);
 
   @override
   Future<Account> setRole(String userId, String role) async {
@@ -183,6 +188,40 @@ void main() {
     await tester.tap(find.text('Manager (approves people)'));
     await tester.pumpAndSettle();
     expect(fake.calls, ['role u2 manager']);
+  });
+
+  testWidgets('a long account list says it is not complete', (tester) async {
+    final admin = FakeAdmin()
+      ..total = 250
+      ..people = [
+        for (var i = 0; i < 200; i++)
+          Account(
+            user: User(id: 'u$i', name: 'Person $i'),
+            role: 'user',
+          ),
+      ];
+    await pump(tester, 'admin', admin: admin);
+    await tester.tap(find.text('People'));
+    await tester.pumpAndSettle();
+    final hint = find.text('Showing 200 of 250. Search to narrow the list.');
+    await tester.scrollUntilVisible(
+      hint,
+      500,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(hint, findsOneWidget);
+  });
+
+  testWidgets('a complete account list has no hint', (tester) async {
+    await pump(tester, 'admin');
+    await tester.tap(find.text('People'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Search to narrow'), findsNothing);
   });
 
   testWidgets('everyone else sees nothing', (tester) async {

@@ -1,5 +1,6 @@
 import 'package:splitspends/core/models/json.dart';
 import 'package:splitspends/core/models/user.dart';
+import 'package:splitspends/core/paging/page_result.dart';
 
 /// Who may create an account on the server.
 enum SignupMode {
@@ -110,7 +111,9 @@ abstract interface class AdminRepository {
   Future<List<SignupRequest>> requests({String status = 'pending'});
   Future<SignupRequest> approve(String id);
   Future<SignupRequest> decline(String id);
-  Future<List<Account>> accounts({String status = '', String query = ''});
+
+  /// The first page of accounts matching the filters, with the total.
+  Future<PageResult<Account>> accounts({String status = '', String query = ''});
   Future<Account> setRole(String userId, String role);
   Future<Account> disable(String userId);
   Future<Account> enable(String userId);

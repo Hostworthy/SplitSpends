@@ -54,10 +54,10 @@ class RemoteAdminRepository implements AdminRepository {
   );
 
   @override
-  Future<List<Account>> accounts({
+  Future<PageResult<Account>> accounts({
     String status = '',
     String query = '',
-  }) async => (await _api.getList(
+  }) => _api.getList(
     '/admin/accounts',
     Account.fromJson,
     query: {
@@ -65,7 +65,7 @@ class RemoteAdminRepository implements AdminRepository {
       if (status.isNotEmpty) 'status': status,
       if (query.isNotEmpty) 'q': query,
     },
-  )).items;
+  );
 
   @override
   Future<Account> setRole(String userId, String role) => _api.patchData(
