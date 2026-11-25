@@ -246,6 +246,7 @@ resource "aws_lambda_function" "app" {
       AI_MODEL                     = var.ai.model
       AI_BASE_URL                  = var.ai.base_url
       AI_EFFORT                    = var.ai.effort
+      AI_RATE_LIMIT                = tostring(var.ai.rate_limit)
     }
   }
 

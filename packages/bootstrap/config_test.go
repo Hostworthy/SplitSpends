@@ -161,3 +161,33 @@ func TestMCPAdminTools(t *testing.T) {
 		t.Error("an invalid MCP_ADMIN_TOOLS must stop startup")
 	}
 }
+
+// TestAIRateLimit reads the hourly AI budget per person and rejects values
+// that would turn AI off or are not counts.
+func TestAIRateLimit(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
+	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	for _, tc := range []struct {
+		value string
+		want  int
+	}{
+		{"", 30},
+		{"1", 1},
+		{"200", 200},
+	} {
+		t.Setenv("AI_RATE_LIMIT", tc.value)
+		c, err := bootstrap.LoadConfig()
+		if err != nil {
+			t.Fatalf("%q: %v", tc.value, err)
+		}
+		if c.AIRateLimit != tc.want {
+			t.Errorf("%q: want %d requests, got %d", tc.value, tc.want, c.AIRateLimit)
+		}
+	}
+	for _, value := range []string{"0", "-1", "ten"} {
+		t.Setenv("AI_RATE_LIMIT", value)
+		if _, err := bootstrap.LoadConfig(); err == nil || !strings.Contains(err.Error(), "AI_RATE_LIMIT") {
+			t.Errorf("%q: want an AI_RATE_LIMIT error, got %v", value, err)
+		}
+	}
+}
