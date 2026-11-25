@@ -9,6 +9,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/clock"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/money"
 	"github.com/google/uuid"
@@ -76,11 +77,12 @@ type Service struct {
 	groups Groups
 	users  Users
 	names  Names
+	clock  clock.Clock
 }
 
 // NewService builds a Service.
-func NewService(repo Repository, groups Groups, users Users, names Names) *Service {
-	return &Service{repo: repo, groups: groups, users: users, names: names}
+func NewService(repo Repository, groups Groups, users Users, names Names, c clock.Clock) *Service {
+	return &Service{repo: repo, groups: groups, users: users, names: names, clock: c}
 }
 
 // Summary returns spending statistics.
@@ -107,7 +109,7 @@ func (s *Service) Summary(ctx context.Context, q Query) (*Summary, error) {
 	}
 	q.Currency = c.Code
 	if q.To.IsZero() {
-		q.To = time.Now().UTC()
+		q.To = clock.Today(s.clock)
 	}
 	if q.From.IsZero() {
 		q.From = q.To.AddDate(-1, 0, 0)

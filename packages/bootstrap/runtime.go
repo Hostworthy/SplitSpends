@@ -202,7 +202,7 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 		Transfer: transfer.NewService(users, friendRepo, groups, expenses, categories, tx, tx),
 		Receipts: receipts,
 		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, fx, c),
-		Stats:    stats.NewService(repositories.NewStats(db), groups, users, categories),
+		Stats:    stats.NewService(repositories.NewStats(db), groups, users, categories, c),
 
 		Reminders:  reminders,
 		Invites:    invites,
