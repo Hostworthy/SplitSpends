@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:test/test.dart';
 
 import 'package:splitspends_ledger/ledger.dart';
@@ -170,6 +172,93 @@ void main() {
     expect(next.isAfter(DateTime.utc(2026)), isTrue);
     (dates, _) = missed('none', DateTime.utc(2026), DateTime.utc(2026, 3));
     expect(dates, isEmpty);
+  });
+
+  group('pairwise', () {
+    // Balanced entries with several payers each, so most leave rounding
+    // remainders between creditors.
+    List<LedgerEntry> randomLedger(Random r) {
+      final users = ['a', 'b', 'c', 'd', 'e', 'f'];
+      List<int> cuts(int total, int n) {
+        final parts = List.filled(n, 0);
+        for (var k = 0; k < total; k++) {
+          parts[r.nextInt(n)]++;
+        }
+        return parts;
+      }
+
+      return [
+        for (var k = 0; k < 200; k++)
+          () {
+            users.shuffle(r);
+            final people = users.sublist(0, 2 + r.nextInt(users.length - 1));
+            final total = 1 + r.nextInt(500);
+            final paid = cuts(total, 1 + r.nextInt(people.length));
+            final owed = cuts(total, people.length);
+            return LedgerEntry(
+              currency: r.nextBool() ? 'USD' : 'EUR',
+              shares: [
+                for (var i = 0; i < people.length; i++)
+                  LedgerShare(
+                    people[i],
+                    i < paid.length ? paid[i] : 0,
+                    owed[i],
+                  ),
+              ],
+            );
+          }(),
+      ];
+    }
+
+    test('debts add up to every member net', () {
+      final r = Random(1);
+      for (var round = 0; round < 50; round++) {
+        final entries = randomLedger(r);
+        final want = nets(entries);
+        final got = <String, Balances>{};
+        for (final d in pairwise(entries)) {
+          got.putIfAbsent(d.to, () => {}).addAmount(d.currency, d.amount);
+          got.putIfAbsent(d.from, () => {}).addAmount(d.currency, -d.amount);
+        }
+        want.forEach((id, b) {
+          for (final cur in ['USD', 'EUR']) {
+            expect(got[id]?[cur] ?? 0, b[cur] ?? 0, reason: '$round $id $cur');
+          }
+        });
+      }
+    });
+
+    test('every creditor is owed what they fronted', () {
+      const entry = LedgerEntry(
+        currency: 'USD',
+        shares: [
+          LedgerShare('a', 2, 1),
+          LedgerShare('b', 2, 1),
+          LedgerShare('c', 0, 1),
+          LedgerShare('d', 0, 1),
+        ],
+      );
+      expect(pairwise([entry]), const [
+        LedgerDebt('c', 'a', 'USD', 1),
+        LedgerDebt('d', 'b', 'USD', 1),
+      ]);
+    });
+
+    test('share order does not change the debts', () {
+      final r = Random(2);
+      final entries = randomLedger(r);
+      final want = pairwise(entries);
+      for (var k = 0; k < 20; k++) {
+        final shuffled = [
+          for (final e in entries)
+            LedgerEntry(
+              currency: e.currency,
+              shares: [...e.shares]..shuffle(r),
+            ),
+        ];
+        expect(pairwise(shuffled), want);
+      }
+    });
   });
 
   test('sheet honours simplification per group plus non-group pairwise', () {
