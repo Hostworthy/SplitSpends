@@ -32,3 +32,7 @@ __pycache__/
 
 # Database dumps from deploy/docker hold personal data
 deploy/docker/backups/
+
+# Binaries that go build leaves at the repository root
+/api
+/mcp
