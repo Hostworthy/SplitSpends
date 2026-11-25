@@ -98,7 +98,7 @@ func TestGroupRetryRace(t *testing.T) {
 		if _, err := s.Groups.Create(ctx, ada, in); err != nil {
 			t.Error(err)
 		}
-	}}, s.Users, s.Balances, s.Activity, env.Notifier, database.NewTx(env.DB), env.Clock, "http://test")
+	}}, s.Users, s.Balances, s.Activity, env.Notifier, repositories.NewQuotas(env.DB), database.NewTx(env.DB), env.Clock, "http://test")
 	got, err := svc.Create(ctx, ada, in)
 	if err != nil {
 		t.Fatalf("the retry must return the stored group, got %v", err)
