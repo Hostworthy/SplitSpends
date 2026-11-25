@@ -96,20 +96,10 @@ func (s *Service) Register(ctx context.Context, actor uuid.UUID, in Input) (*Sub
 	if !sub.Reachable(s.settings.AllowPrivate) {
 		return nil, false, errs.Validation("endpoint", "The push endpoint must not be a private or local address.")
 	}
-	known, err := s.repo.Exists(ctx, sub.Endpoint)
-	if err != nil {
-		return nil, false, err
+	created, err := s.repo.Save(ctx, sub, MaxDevices)
+	if errors.Is(err, ErrFull) {
+		return nil, false, errs.Conflict("You have too many devices registered for push notifications. Remove one first.")
 	}
-	if !known {
-		n, err := s.repo.Count(ctx, actor)
-		if err != nil {
-			return nil, false, err
-		}
-		if n >= MaxDevices {
-			return nil, false, errs.Conflict("You have too many devices registered for push notifications. Remove one first.")
-		}
-	}
-	created, err := s.repo.Save(ctx, sub)
 	if err != nil {
 		return nil, false, err
 	}
