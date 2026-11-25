@@ -21,13 +21,23 @@ abstract final class Dates {
   /// outside that range (before the rule, or by another client) can still
   /// be opened and moved into it.
   static ({DateTime first, DateTime last}) pickable(DateTime date) {
-    final now = today();
+    final now = DateTime.now();
     final first = DateTime(2000);
-    final last = DateTime(now.year + 1, now.month, now.day);
+    final last = latest(now, now.toUtc());
     return (
       first: date.isBefore(first) ? date : first,
       last: date.isAfter(last) ? date : last,
     );
+  }
+
+  /// The last day the server accepts for an expense: a year from the
+  /// earlier of [local]'s and [utc]'s date. The server counts from its UTC
+  /// date, which east of UTC is a day behind for part of the day.
+  static DateTime latest(DateTime local, DateTime utc) {
+    final mine = DateTime(local.year, local.month, local.day);
+    final server = DateTime(utc.year, utc.month, utc.day);
+    final from = server.isBefore(mine) ? server : mine;
+    return DateTime(from.year + 1, from.month, from.day);
   }
 
   /// `Nov 20` this year, `Nov 20, 2025` otherwise.
