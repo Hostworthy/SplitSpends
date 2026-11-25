@@ -100,6 +100,17 @@ func (s *Service) visible(ctx context.Context, actor uuid.UUID, e *Expense) (*Ex
 	return e, g, nil
 }
 
+// editable checks that the actor may change an expense they can see. People
+// who left a group keep seeing the expenses they were part of, but only
+// current members change a group's expenses, since that moves the balances
+// of everyone still in it.
+func editable(actor uuid.UUID, g *group.Group) error {
+	if g != nil && !g.HasMember(actor) {
+		return errs.NotFound("Expense")
+	}
+	return nil
+}
+
 // authorize checks that the actor may book an expense with these participants.
 func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.UUID, shares []Share, receiptID *uuid.UUID) (*group.Group, error) {
 	if receiptID != nil {
@@ -301,7 +312,10 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 	var g *group.Group
 	err := s.tx.Do(ctx, func(ctx context.Context) error {
 		var err error
-		if e, _, err = s.lock(ctx, actor, id); err != nil {
+		if e, g, err = s.lock(ctx, actor, id); err != nil {
+			return err
+		}
+		if err := editable(actor, g); err != nil {
 			return err
 		}
 		if e.DeletedAt != nil {
@@ -370,6 +384,9 @@ func (s *Service) setDeleted(ctx context.Context, actor, id uuid.UUID, deleted b
 		var g *group.Group
 		var err error
 		if e, g, err = s.lock(ctx, actor, id); err != nil {
+			return err
+		}
+		if err := editable(actor, g); err != nil {
 			return err
 		}
 		if (e.DeletedAt != nil) == deleted {
@@ -534,6 +551,9 @@ func (s *Service) Comments(ctx context.Context, actor, id uuid.UUID) ([]*Comment
 func (s *Service) Comment(ctx context.Context, actor, id uuid.UUID, body string) (*Comment, error) {
 	e, g, err := s.load(ctx, actor, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := editable(actor, g); err != nil {
 		return nil, err
 	}
 	body = strings.TrimSpace(body)

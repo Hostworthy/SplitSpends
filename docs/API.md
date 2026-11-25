@@ -238,6 +238,8 @@ People without an account follow the link, request a login code with `inviteToke
 | DELETE | `/comments/{commentId}` | | 204 (author only) |
 | POST | `/payments` | `{ id?, groupId?, fromUserId, toUserId, amount, currency?, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
 
+Someone who has left a group still sees the group's expenses and payments they were part of, with their comments, but only current members may edit, delete, restore or comment on a group's expenses (404 otherwise). Outside groups, everyone in an expense may.
+
 ### Reminders
 
 | Method | Path | Body | Response |
