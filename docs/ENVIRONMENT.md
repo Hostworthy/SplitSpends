@@ -51,7 +51,7 @@ A value that is too high lets clients choose the address that is rate limited; o
 | `BLOB_STORE` | `local` | Where receipt images go: `local` (`DATA_DIR`), `s3` or `postgres` (in the database; good for small free-tier hosts) |
 | `S3_BUCKET` | empty | Bucket for `BLOB_STORE=s3` |
 | `S3_REGION` | `AWS_REGION` | Bucket region |
-| `S3_ENDPOINT` | AWS | Other S3-compatible services: `<account>.r2.cloudflarestorage.com`, `storage.googleapis.com`, `minio:9000` |
+| `S3_ENDPOINT` | AWS | Other S3-compatible services: `<account>.r2.cloudflarestorage.com`, `storage.googleapis.com`, `http://minio:9000`. The store uses TLS unless the endpoint starts with `http://`; use plain HTTP only on a local network |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | empty | Static keys; without them the standard `AWS_*` variables and instance or function roles are used |
 | `S3_PREFIX` | empty | Optional key prefix |
 
@@ -125,6 +125,8 @@ Split Spends does not run a model. When a provider is configured, the server sen
 | `AI_BASE_URL` | empty | For `openai`: the API root before `/chat/completions` (examples below) |
 | `AI_EFFORT` | model default | Anthropic only: `low`, `medium`, `high`, `xhigh`, `max` |
 | `AI_RATE_LIMIT` | `30` | AI requests (receipt scans and expense drafts together) each person may make per hour. Each server instance counts on its own, so with several instances (serverless) a person can make this many on each |
+
+A scan or draft waits at most 3 minutes for the provider, a retry of a rate-limited or failing Anthropic call included, and then fails. Serverless platforms that end a function sooner cut it off first, so give the API function at least that long.
 
 Examples:
 

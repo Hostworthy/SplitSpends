@@ -36,7 +36,10 @@ type Options struct {
 	// Sender delivers Web Push; nil turns push off unless the config has keys.
 	Sender push.Sender
 	// Reader reads receipts and drafts expenses; nil turns AI off.
-	Reader ports.ReceiptReader
+	Reader ports.Assistant
+	// Blobs wraps the store images are kept in, which is on disk; nil
+	// keeps it as it is.
+	Blobs func(ports.BlobStore) ports.BlobStore
 }
 
 // Env is a wired set of services on a fresh schema.
@@ -90,9 +93,12 @@ func Open(t testing.TB, o Options) *Env {
 	if err := database.Migrate(ctx, pool, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatal(err)
 	}
-	blobs, err := storage.NewLocal(t.TempDir())
-	if err != nil {
+	var blobs ports.BlobStore
+	if blobs, err = storage.NewLocal(t.TempDir()); err != nil {
 		t.Fatal(err)
+	}
+	if o.Blobs != nil {
+		blobs = o.Blobs(blobs)
 	}
 
 	cfg := o.Config

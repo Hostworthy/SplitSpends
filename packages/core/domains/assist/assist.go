@@ -6,7 +6,6 @@ package assist
 
 import (
 	"context"
-	"io"
 	"math/big"
 	"strings"
 	"time"
@@ -55,7 +54,7 @@ type Draft struct {
 
 // Service builds drafts.
 type Service struct {
-	reader   ports.ReceiptReader
+	reader   ports.Assistant
 	users    *user.Service
 	groups   *group.Service
 	friends  friend.Repository
@@ -65,7 +64,7 @@ type Service struct {
 }
 
 // NewService builds a Service. reader may be nil when AI is disabled.
-func NewService(reader ports.ReceiptReader, users *user.Service, groups *group.Service, friends friend.Repository, receipts *receipt.Service, r *rates.Service, c clock.Clock) *Service {
+func NewService(reader ports.Assistant, users *user.Service, groups *group.Service, friends friend.Repository, receipts *receipt.Service, r *rates.Service, c clock.Clock) *Service {
 	return &Service{reader: reader, users: users, groups: groups, friends: friends, receipts: receipts, rates: r, clock: c}
 }
 
@@ -167,16 +166,10 @@ func (s *Service) Draft(ctx context.Context, actor uuid.UUID, req Request) (*Dra
 		in.GroupID = req.GroupID.String()
 	}
 	if req.ReceiptID != nil {
-		r, body, err := s.receipts.Open(ctx, actor, *req.ReceiptID)
+		in.Image, in.ContentType, err = s.receipts.Image(ctx, actor, *req.ReceiptID)
 		if err != nil {
 			return nil, err
 		}
-		in.Image, err = io.ReadAll(io.LimitReader(body, receipt.MaxSize+1))
-		body.Close()
-		if err != nil {
-			return nil, err
-		}
-		in.ContentType = r.ContentType
 	}
 
 	ext, err := s.reader.DraftExpense(ctx, in)

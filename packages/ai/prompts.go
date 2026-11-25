@@ -1,14 +1,26 @@
-// Package ai implements ports.ReceiptReader with Anthropic's Claude API or any
+// Package ai implements ports.Assistant with Anthropic's Claude API or any
 // OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter, LiteLLM and so on).
 package ai
 
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+)
+
+// Every provider call gets the same budget. requestTimeout covers the whole
+// call, retries included, so a scan or draft never waits longer than this for
+// the provider; the API server's write timeout is sized to it. retries is how
+// often the Anthropic SDK repeats a rate-limited or failing call within that
+// budget; the OpenAI-compatible adapter does not retry.
+const (
+	requestTimeout = 3 * time.Minute
+	retries        = 1
 )
 
 const receiptPrompt = `You read photos of receipts and bills for an expense-splitting app.
@@ -215,6 +227,21 @@ func instructions(in ports.DraftInput) string {
 		return in.Text
 	}
 	return "Add this receipt. I paid; split it equally unless the receipt says otherwise."
+}
+
+// rejection is a request the provider refused. It carries the status but
+// not the provider's answer, which can echo the receipt or the prompt, so it
+// is safe to log.
+type rejection struct {
+	key    string
+	Status int
+}
+
+func (r *rejection) Error() string { return r.key }
+
+// LogValue keeps the message a stable key and logs the status beside it.
+func (r *rejection) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("key", r.key), slog.Int("status", r.Status))
 }
 
 // imageSupported rejects formats vision models do not accept.

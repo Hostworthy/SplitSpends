@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,12 +24,13 @@ type OpenAICompatible struct {
 	apiKey  string
 	model   string
 	http    *http.Client
+	timeout time.Duration
 }
 
 // NewOpenAICompatible builds a reader. baseURL ends before /chat/completions,
 // for example http://localhost:11434/v1.
 func NewOpenAICompatible(baseURL, apiKey, model string) *OpenAICompatible {
-	return &OpenAICompatible{baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, model: model, http: &http.Client{Timeout: 3 * time.Minute}}
+	return &OpenAICompatible{baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, model: model, http: &http.Client{}, timeout: requestTimeout}
 }
 
 type chatMessage struct {
@@ -37,6 +39,8 @@ type chatMessage struct {
 }
 
 func (o *OpenAICompatible) ask(ctx context.Context, system string, user any, name string, schema map[string]any) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, o.timeout)
+	defer cancel()
 	body, err := json.Marshal(map[string]any{
 		"model":    o.model,
 		"messages": []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}},
@@ -60,12 +64,17 @@ func (o *OpenAICompatible) ask(ctx context.Context, system string, user any, nam
 		return "", fmt.Errorf("ai.openai.request.failed: %w", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if resp.StatusCode == http.StatusTooManyRequests {
+	switch {
+	case resp.StatusCode == http.StatusTooManyRequests:
 		return "", errs.RateLimited("The AI provider is busy. Try again in a minute.")
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		return "", &rejection{key: "ai.openai.auth.failed", Status: resp.StatusCode}
+	case resp.StatusCode >= http.StatusMultipleChoices:
+		return "", &rejection{key: "ai.openai.request.rejected", Status: resp.StatusCode}
 	}
-	if resp.StatusCode >= http.StatusMultipleChoices {
-		return "", fmt.Errorf("ai.openai.status.%d: %s", resp.StatusCode, truncate(string(raw), 300))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return "", fmt.Errorf("ai.openai.response.unreadable: %w", err)
 	}
 	var parsed struct {
 		Choices []struct {
@@ -75,8 +84,11 @@ func (o *OpenAICompatible) ask(ctx context.Context, system string, user any, nam
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.Unmarshal(raw, &parsed); err != nil || len(parsed.Choices) == 0 {
-		return "", fmt.Errorf("ai.openai.response.invalid: %s", truncate(string(raw), 300))
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return "", fmt.Errorf("ai.openai.response.invalid: %w", err)
+	}
+	if len(parsed.Choices) == 0 {
+		return "", errors.New("ai.openai.response.empty")
 	}
 	if parsed.Choices[0].Message.Refusal != "" {
 		return "", errs.Validation("file", "The AI model declined to read this input.")
@@ -84,8 +96,11 @@ func (o *OpenAICompatible) ask(ctx context.Context, system string, user any, nam
 	return parsed.Choices[0].Message.Content, nil
 }
 
-// ReadReceipt implements ports.ReceiptReader.
+// ReadReceipt implements ports.Assistant.
 func (o *OpenAICompatible) ReadReceipt(ctx context.Context, in ports.ReceiptInput) (ports.ReceiptExtract, error) {
+	if err := imageSupported(in.ContentType); err != nil {
+		return ports.ReceiptExtract{}, err
+	}
 	url := "data:" + in.ContentType + ";base64," + base64.StdEncoding.EncodeToString(in.Image)
 	content := []map[string]any{
 		{"type": "image_url", "image_url": map[string]any{"url": url}},
@@ -98,7 +113,7 @@ func (o *OpenAICompatible) ReadReceipt(ctx context.Context, in ports.ReceiptInpu
 	return parseReceipt(raw)
 }
 
-// DraftExpense implements ports.ReceiptReader.
+// DraftExpense implements ports.Assistant.
 func (o *OpenAICompatible) DraftExpense(ctx context.Context, in ports.DraftInput) (ports.DraftExtract, error) {
 	var user any = instructions(in)
 	if len(in.Image) > 0 {
@@ -116,11 +131,4 @@ func (o *OpenAICompatible) DraftExpense(ctx context.Context, in ports.DraftInput
 		return ports.DraftExtract{}, err
 	}
 	return parseDraft(raw)
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }
