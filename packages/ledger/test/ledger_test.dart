@@ -62,6 +62,57 @@ void main() {
     expect(n.shares.single.value, '2');
   });
 
+  test('normalize caps people and items like the server', () {
+    final many = [
+      for (var i = 1; i <= maxPeople + 1; i++)
+        '00000000-0000-0000-0000-${i.toRadixString(16).padLeft(12, '0')}',
+    ];
+    final a = many.first;
+    final cases = {
+      'payers': ExpenseRequest(
+        description: 'Taxi',
+        currency: 'USD',
+        total: 100,
+        payers: [
+          PayerInput(a, 100),
+          for (final id in many.skip(1)) PayerInput(id, 0),
+        ],
+        splits: [SplitValueInput(a)],
+      ),
+      'items': ExpenseRequest(
+        description: 'Tea',
+        currency: 'USD',
+        total: maxItems + 1,
+        method: 'itemized',
+        payers: [PayerInput(a, maxItems + 1)],
+        items: [
+          for (var i = 0; i <= maxItems; i++) ItemInput('Tea', 1, [a]),
+        ],
+      ),
+      'item users': ExpenseRequest(
+        description: 'Cake',
+        currency: 'USD',
+        total: 100,
+        method: 'itemized',
+        payers: [PayerInput(a, 100)],
+        items: [ItemInput('Cake', 100, many)],
+      ),
+    };
+    cases.forEach((name, request) {
+      expect(
+        () => normalize(request, today: DateTime.utc(2026)),
+        throwsA(
+          isA<LedgerError>().having(
+            (e) => e.field,
+            'field',
+            name == 'payers' ? 'payers' : 'items',
+          ),
+        ),
+        reason: name,
+      );
+    });
+  });
+
   test('recurrence overflows months like Go AddDate', () {
     expect(
       formatDay(nextOccurrence('monthly', DateTime.utc(2026, 1, 31))!),

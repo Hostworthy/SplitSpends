@@ -1,7 +1,10 @@
 package expense
 
 import (
+	"bytes"
+	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -14,6 +17,14 @@ import (
 // MaxTotal caps a single expense (about 10 billion major units in 2-decimal
 // currencies) so sums never approach int64 overflow.
 const MaxTotal int64 = 1_000_000_000_000
+
+// MaxPeople caps the payers, the splits and the people on one item, and
+// MaxItems the items, so the work one expense costs stays small. Groups hold
+// far fewer people (group.MaxMembers).
+const (
+	MaxPeople = 200
+	MaxItems  = 200
+)
 
 // Payer says how much one user paid.
 type Payer struct {
@@ -133,6 +144,9 @@ func payers(list []Payer, total int64) (map[uuid.UUID]int64, error) {
 	if len(list) == 0 {
 		return nil, errs.Validation("payers", "Choose who paid.")
 	}
+	if len(list) > MaxPeople {
+		return nil, errs.Validation("payers", fmt.Sprintf("At most %d people can pay for one expense.", MaxPeople))
+	}
 	out := make(map[uuid.UUID]int64, len(list))
 	var sum int64
 	for _, p := range list {
@@ -160,6 +174,9 @@ func split(in Input) (owed map[uuid.UUID]int64, values map[uuid.UUID]string, err
 	}
 	if len(in.Splits) == 0 {
 		return nil, nil, errs.Validation("splits", "Choose who this expense is split between.")
+	}
+	if len(in.Splits) > MaxPeople {
+		return nil, nil, errs.Validation("splits", fmt.Sprintf("An expense can be split between at most %d people.", MaxPeople))
 	}
 	ids := make([]uuid.UUID, len(in.Splits))
 	seen := make(map[uuid.UUID]bool, len(in.Splits))
@@ -252,6 +269,9 @@ func itemized(in Input) (map[uuid.UUID]int64, map[uuid.UUID]string, error) {
 	if len(in.Items) == 0 {
 		return nil, nil, errs.Validation("items", "Add at least one item.")
 	}
+	if len(in.Items) > MaxItems {
+		return nil, nil, errs.Validation("items", fmt.Sprintf("An expense can have at most %d items.", MaxItems))
+	}
 	if in.Tax < 0 || in.Tip < 0 {
 		return nil, nil, errs.Validation("tax", "Tax and tip cannot be negative.")
 	}
@@ -272,6 +292,9 @@ func itemized(in Input) (map[uuid.UUID]int64, map[uuid.UUID]string, error) {
 		}
 		if len(item.UserIDs) == 0 {
 			return nil, nil, errs.Validation("items", "Assign every item to at least one person.")
+		}
+		if len(item.UserIDs) > MaxPeople {
+			return nil, nil, errs.Validation("items", fmt.Sprintf("An item can be shared by at most %d people.", MaxPeople))
 		}
 		seen := map[uuid.UUID]bool{}
 		for _, id := range item.UserIDs {
@@ -320,20 +343,14 @@ func merge(paid, owed map[uuid.UUID]int64, values map[uuid.UUID]string) []Share 
 	}
 	add(paid)
 	add(owed)
-	sortIDs(order)
+	// Byte order equals the order of the lowercase hex strings, which is how
+	// the Dart ledger sorts.
+	slices.SortFunc(order, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
 	shares := make([]Share, 0, len(order))
 	for _, id := range order {
 		shares = append(shares, Share{UserID: id, Paid: paid[id], Owed: owed[id], Value: values[id]})
 	}
 	return shares
-}
-
-func sortIDs(ids []uuid.UUID) {
-	for i := 1; i < len(ids); i++ {
-		for j := i; j > 0 && ids[j].String() < ids[j-1].String(); j-- {
-			ids[j], ids[j-1] = ids[j-1], ids[j]
-		}
-	}
 }
 
 func decimal(s string) (*big.Rat, error) {

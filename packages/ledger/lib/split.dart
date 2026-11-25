@@ -7,6 +7,13 @@ import 'package:splitspends_ledger/rational.dart';
 /// Caps a single expense so sums never approach integer limits.
 const maxTotal = 1000000000000;
 
+/// Caps the payers, the splits and the people on one item, so the work one
+/// expense costs stays small.
+const maxPeople = 200;
+
+/// Caps the items of an itemized expense.
+const maxItems = 200;
+
 /// The earliest date an expense can have. Dates also stop a year after
 /// today, so a typo cannot start a series that runs for centuries.
 final firstDay = DateTime.utc(2000);
@@ -207,6 +214,12 @@ NormalizedExpense normalize(
 
 Map<String, int> _payers(List<PayerInput> list, int total) {
   if (list.isEmpty) throw const LedgerError('payers', 'Choose who paid.');
+  if (list.length > maxPeople) {
+    throw const LedgerError(
+      'payers',
+      'At most $maxPeople people can pay for one expense.',
+    );
+  }
   final out = <String, int>{};
   var sum = 0;
   for (final p in list) {
@@ -236,6 +249,12 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
     throw const LedgerError(
       'splits',
       'Choose who this expense is split between.',
+    );
+  }
+  if (input.splits.length > maxPeople) {
+    throw const LedgerError(
+      'splits',
+      'An expense can be split between at most $maxPeople people.',
     );
   }
   final ids = <String>[];
@@ -340,6 +359,12 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
   if (input.items.isEmpty) {
     throw const LedgerError('items', 'Add at least one item.');
   }
+  if (input.items.length > maxItems) {
+    throw const LedgerError(
+      'items',
+      'An expense can have at most $maxItems items.',
+    );
+  }
   if (input.tax < 0 || input.tip < 0) {
     throw const LedgerError('tax', 'Tax and tip cannot be negative.');
   }
@@ -366,6 +391,12 @@ Map<String, int> _payers(List<PayerInput> list, int total) {
       throw const LedgerError(
         'items',
         'Assign every item to at least one person.',
+      );
+    }
+    if (raw.userIds.length > maxPeople) {
+      throw const LedgerError(
+        'items',
+        'An item can be shared by at most $maxPeople people.',
       );
     }
     final seen = <String>{};

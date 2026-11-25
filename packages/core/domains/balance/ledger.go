@@ -3,6 +3,7 @@
 package balance
 
 import (
+	"bytes"
 	"math/big"
 	"sort"
 
@@ -94,7 +95,7 @@ func addPair(pairs map[pairKey]int64, from, to uuid.UUID, currency string, amoun
 	if amount == 0 || from == to {
 		return
 	}
-	if from.String() < to.String() {
+	if before(from, to) {
 		pairs[pairKey{from, to, currency}] += amount
 	} else {
 		pairs[pairKey{to, from, currency}] -= amount
@@ -146,7 +147,7 @@ func Simplify(nets map[uuid.UUID]money.Balances) []Debt {
 				if ps[i].amount != ps[j].amount {
 					return ps[i].amount > ps[j].amount
 				}
-				return ps[i].id.String() < ps[j].id.String()
+				return before(ps[i].id, ps[j].id)
 			})
 		}
 		for len(creditors) > 0 && len(debtors) > 0 {
@@ -201,8 +202,14 @@ func sortDebts(ds []Debt) {
 			return ds[i].Amount > ds[j].Amount
 		}
 		if ds[i].From != ds[j].From {
-			return ds[i].From.String() < ds[j].From.String()
+			return before(ds[i].From, ds[j].From)
 		}
-		return ds[i].To.String() < ds[j].To.String()
+		return before(ds[i].To, ds[j].To)
 	})
+}
+
+// before orders ids without formatting them; byte order equals the order of
+// the lowercase hex strings, which is how the Dart ledger sorts.
+func before(a, b uuid.UUID) bool {
+	return bytes.Compare(a[:], b[:]) < 0
 }

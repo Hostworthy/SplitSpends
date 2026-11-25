@@ -112,6 +112,8 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 
 `payers` is a list of `{ "userId", "amount" }` whose amounts sum to `total`. Every user in `payers`, `splits` or `items` must be a group member (group expense) or the caller's friend (non-group expense), and the caller must be involved. Outside groups, everyone who ends up owing money must also be connected (friends, or members of a common group) with everyone who ends up getting money back, since the expense leaves those pairs owing each other; otherwise 422 on `splits`. A recurring expense outside groups stops repeating once that no longer holds.
 
+An expense lists at most 200 payers and 200 people in `splits`; an itemized expense has at most 200 items with at most 200 people each (422 on `payers`, `splits` or `items` otherwise).
+
 `date` runs from `2000-01-01` up to one year after today (422 on `date` otherwise); an update that leaves it out keeps the expense's date.
 
 A recurring expense repeats on its `recurrence`: a background job books each occurrence as a new expense, and the schedule moves to the newest copy, so editing the latest expense edits the series. When a series has fallen behind, only the 12 most recent missed occurrences are booked and older ones are skipped. A series ends instead of repeating once someone in it has left the group (or, outside groups, is no longer connected to the person who created it); that is recorded as `expense.stopped`.
