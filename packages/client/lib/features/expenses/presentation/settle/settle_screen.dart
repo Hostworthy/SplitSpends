@@ -21,6 +21,7 @@ import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/friends/domain/friend.dart';
 import 'package:splitspends/features/friends/presentation/people.dart';
 import 'package:splitspends/features/friends/presentation/providers.dart';
+import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';
 
 /// Record a payment between two people (settle up).
@@ -37,7 +38,10 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
   String? _from;
   String? _to;
   int? _amount;
-  late String _currency;
+
+  /// The currency of a chosen suggestion or of [SettleArgs]; otherwise the
+  /// group's (once loaded) or yours, see [_currencyFor].
+  String? _currency;
   DateTime _date = Dates.today();
   final _notes = TextEditingController();
   bool _saving = false;
@@ -54,15 +58,16 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
     _from = widget.args.fromUserId ?? me?.id;
     _to = widget.args.toUserId;
     _amount = widget.args.amount;
-    final groupId = widget.args.groupId;
-    final group = groupId == null
-        ? null
-        : ref.read(groupProvider(groupId)).value;
-    _currency =
-        widget.args.currency ??
-        group?.defaultCurrency ??
-        me?.defaultCurrency ??
-        'USD';
+    _currency = widget.args.currency;
+  }
+
+  /// Null while the group is still loading: a payment in a group is in the
+  /// group's currency, and guessing another one would book it apart from
+  /// the debt it settles.
+  String? _currencyFor(Group? group, User? me) {
+    if (_currency != null) return _currency;
+    if (widget.args.groupId != null) return group?.defaultCurrency;
+    return me?.defaultCurrency ?? 'USD';
   }
 
   @override
@@ -91,6 +96,12 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
       showMessage(context, 'Enter an amount');
       return;
     }
+    final groupId = widget.args.groupId;
+    final currency = _currencyFor(
+      groupId == null ? null : ref.read(groupProvider(groupId)).value,
+      ref.read(meProvider),
+    );
+    if (currency == null) return;
     setState(() => _saving = true);
     try {
       await ref
@@ -101,7 +112,7 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
             fromUserId: _from!,
             toUserId: _to!,
             amount: _amount!,
-            currency: _currency,
+            currency: currency,
             date: Dates.toApi(_date),
             notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
           );
@@ -144,9 +155,10 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
     final me = ref.watch(meProvider);
     final people = ref.watch(peopleProvider);
     final groupId = widget.args.groupId;
-    final group = groupId == null
+    final groupState = groupId == null
         ? null
-        : ref.watch(groupProvider(groupId)).value;
+        : ref.watch(groupProvider(groupId));
+    final group = groupState?.value;
     final candidates =
         group?.members ??
         [
@@ -156,6 +168,7 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
         ];
     final config = ref.watch(configValueProvider);
     final text = Theme.of(context).textTheme;
+    final currency = _currencyFor(group, me);
 
     final suggestions = <Widget>[];
     if (groupId != null) {
@@ -274,15 +287,23 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
                 const SizedBox(height: 16),
                 // Payments use the debt's currency: the group's, or yours
                 // outside groups. There is no per-payment currency choice.
-                AmountField(
-                  key: ValueKey('settle-$_currency-$_amountVersion'),
-                  currency: _currency,
-                  initial: _amount,
-                  large: true,
-                  autofocus: _amount == null,
-                  onSubmitted: _save,
-                  onChanged: (v) => _amount = v,
-                ),
+                if (currency == null && groupState!.hasError)
+                  ErrorView(
+                    error: groupState.error!,
+                    onRetry: () => ref.invalidate(groupProvider(groupId!)),
+                  )
+                else if (currency == null)
+                  const Center(child: CircularProgressIndicator())
+                else
+                  AmountField(
+                    key: ValueKey('settle-$currency-$_amountVersion'),
+                    currency: currency,
+                    initial: _amount,
+                    large: true,
+                    autofocus: _amount == null,
+                    onSubmitted: _save,
+                    onChanged: (v) => _amount = v,
+                  ),
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerLeft,
@@ -310,7 +331,7 @@ class _SettleScreenState extends ConsumerState<SettleScreen> {
                 ),
                 const SizedBox(height: 24),
                 FilledButton.icon(
-                  onPressed: _saving ? null : _save,
+                  onPressed: _saving || currency == null ? null : _save,
                   icon: const Icon(Icons.check_rounded),
                   label: const Text('Record payment'),
                 ),
