@@ -1,6 +1,7 @@
 package assist
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -146,5 +147,21 @@ func TestNoRatesNoGuessing(t *testing.T) {
 	_, err := build(world(), Request{GroupID: &trip}, ports.DraftExtract{Amount: "10", Currency: "USD"}, "2026-10-06", "USD", noRates)
 	if !errs.Is(err, errs.KindNoRates) {
 		t.Fatalf("without rates the draft must not silently keep another currency: %v", err)
+	}
+}
+
+// TestInputCarriesNoEmails checks that the people sent to the AI provider are
+// ids and names only.
+func TestInputCarriesNoEmails(t *testing.T) {
+	k := world()
+	k.me.Email = "ada@example.com"
+	k.people[ben].Email = "ben@example.com"
+	k.people[cleo].Email = "cleo@example.com"
+	in := k.input("dinner with Ben", "2026-10-06", "USD")
+	if len(in.People) != 2 || in.Me.Name != "Ada" {
+		t.Fatalf("people missing: %+v", in)
+	}
+	if sent := fmt.Sprintf("%+v", in); strings.Contains(sent, "@") {
+		t.Fatalf("the draft input must not carry email addresses: %s", sent)
 	}
 }

@@ -44,6 +44,7 @@ type Env struct {
 	Services *bootstrap.Services
 	Config   *bootstrap.Config
 	DB       *database.DB
+	Blobs    ports.BlobStore
 	Notifier *Notifier
 	Clock    *Clock
 }
@@ -108,7 +109,7 @@ func Open(t testing.TB, o Options) *Env {
 	if now.IsZero() {
 		now = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	}
-	env := &Env{Config: cfg, DB: &database.DB{Pool: pool}, Notifier: NewNotifier(), Clock: NewClock(now)}
+	env := &Env{Config: cfg, DB: &database.DB{Pool: pool}, Blobs: blobs, Notifier: NewNotifier(), Clock: NewClock(now)}
 	env.Services = bootstrap.WireWithPush(env.DB, env.Notifier, blobs, o.Reader, o.Sender, env.Clock, cfg, slog.New(slog.DiscardHandler))
 	return env
 }

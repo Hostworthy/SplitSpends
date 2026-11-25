@@ -162,7 +162,7 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	balances := balance.NewService(expenseRepo)
 	groups := group.NewService(groupRepo, users, balances, act, notifier, quotas, tx, c, cfg.BaseURL)
 	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
-	receipts := receipt.NewService(receiptRepo, blobs, reader, c)
+	receipts := receipt.NewService(receiptRepo, blobs, reader, tx, c)
 	categories := category.NewService(repositories.NewCategories(db), c)
 	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
 		Connections: friends, Receipts: receiptRepo, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
@@ -205,9 +205,9 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 }
 
 // RunJobsOnce creates due recurring expenses and removes expired
-// credentials. Serverless hosts call it from a scheduler via /internal/jobs.
-// Every job runs even when another fails; the error joins their failures,
-// which are also logged.
+// credentials and receipts no expense uses. Serverless hosts call it from a
+// scheduler via /internal/jobs. Every job runs even when another fails; the
+// error joins their failures, which are also logged.
 func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 	recurring := rt.recurring(ctx)
 	// Rates are a convenience for AI drafts; an outage never fails the jobs.
@@ -226,7 +226,14 @@ func (rt *Runtime) RunJobsOnce(ctx context.Context) error {
 	if requests != nil {
 		rt.Log.Error("jobs.requests.cleanup.failed", "error", requests)
 	}
-	return errors.Join(recurring, sessions, invites, requests)
+	removed, receipts := rt.Services.Receipts.Cleanup(ctx)
+	if removed > 0 {
+		rt.Log.Info("jobs.receipts.cleanup.completed", "removed", removed)
+	}
+	if receipts != nil {
+		rt.Log.Error("jobs.receipts.cleanup.failed", "error", receipts)
+	}
+	return errors.Join(recurring, sessions, invites, requests, receipts)
 }
 
 // passes bounds the recurring passes of one run; each books up to 100 series.

@@ -291,10 +291,14 @@ Deleting hides a category from listings and from new expenses but never rewrites
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| POST | `/receipts` | `multipart/form-data` field `file` (jpeg, png, webp, heic; max 10 MB) | 201 `{ data: { id, contentType, size, createdAt } }` |
+| POST | `/receipts` | `multipart/form-data` field `file` (jpeg, png, webp, heic; max 10 MB) | 201 `{ data: { id, contentType, size, createdAt } }`; 409 `CONFLICT` when you already hold 50 receipts, or 200 MB, that no expense uses; 429 `RATE_LIMITED` after 60 uploads in an hour |
 | GET | `/receipts/{receiptId}` | | the image bytes |
 | POST | `/receipts/{receiptId}/scan` | `{ currency? }` | `{ data: ReceiptScan }`; 503 `AI_DISABLED` when the host did not configure AI |
 | POST | `/ai/expense-draft` | `{ text?, groupId?, receiptId? }` | `{ data: ExpenseDraft }` in the group's (or your) currency, converted when the receipt is in another one; 503 `AI_DISABLED` when the host did not configure AI, 503 `RATES_UNAVAILABLE` when a conversion is needed but no rate is available |
+
+A receipt that no expense uses (deleted expenses count, since they can be restored) is removed by the cleanup job a day after its upload, image and all; attach it to an expense before then.
+
+Anyone who can see an expense can read its receipt, but only the person who uploaded a receipt may put it on an expense (`receiptId`); otherwise the request answers 422 `VALIDATION_ERROR` on `receiptId`. Editing an expense that already has someone else's receipt keeps it.
 
 Every AI request is billed to the host, so `POST /receipts/{receiptId}/scan` and `POST /ai/expense-draft` share a budget per account of `AI_RATE_LIMIT` requests an hour (30 unless the host changed it), and one server runs at most 8 of them at once. Beyond either limit the request answers 429 `RATE_LIMITED` without reaching the provider.
 
@@ -315,7 +319,7 @@ Every AI request is billed to the host, so `POST /receipts/{receiptId}/scan` and
   "warnings": ["Could not match “Sam” to anyone you know."] }
 ```
 
-**How drafts work.** Split Spends runs no model itself. The server sends the user's instructions (for example "Ben had the pasta, split the rest with everyone in Lisbon trip"), the receipt photo when `receiptId` is given, and a system prompt to the provider the host configured (see [ENVIRONMENT.md](ENVIRONMENT.md#ai-optional)). The system prompt lists today's date, the user's people and groups with their ids, group members and currencies, the categories, and the rules for filling the answer; the provider must answer in a fixed JSON schema. The server then checks the answer: ids the user cannot use are dropped (with a warning), people outside the chosen group are left out, item totals are reconciled with the receipt total, and the result is a valid expense body. A draft becomes an expense only when the user saves it. `POST /receipts/{receiptId}/scan` remains for clients that only want the raw receipt lines.
+**How drafts work.** Split Spends runs no model itself. The server sends the user's instructions (for example "Ben had the pasta, split the rest with everyone in Lisbon trip"), the receipt photo when `receiptId` is given, and a system prompt to the provider the host configured (see [ENVIRONMENT.md](ENVIRONMENT.md#ai-optional)). The system prompt lists today's date, the user's own name, the people they can split with (each by id and display name only, numbered when two share a name; no email addresses or other details), their groups with ids, members and currencies, the categories, and the rules for filling the answer; the provider must answer in a fixed JSON schema. The server then checks the answer: ids the user cannot use are dropped (with a warning), people outside the chosen group are left out, item totals are reconciled with the receipt total, and the result is a valid expense body. A draft becomes an expense only when the user saves it. `POST /receipts/{receiptId}/scan` remains for clients that only want the raw receipt lines.
 
 ### Offline Clients and Import
 
