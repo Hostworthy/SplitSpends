@@ -85,7 +85,9 @@ func (b *blobs) Put(context.Context, string, io.Reader) error {
 	return b.fail
 }
 
-func (b *blobs) Open(context.Context, string) (io.ReadCloser, error) { return nil, errs.NotFound("File") }
+func (b *blobs) Open(context.Context, string) (io.ReadCloser, error) {
+	return nil, errs.NotFound("File")
+}
 
 func (b *blobs) Delete(context.Context, string) error { return b.remove }
 
