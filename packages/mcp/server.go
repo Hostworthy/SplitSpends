@@ -33,7 +33,7 @@ func (t *tools) index(ctx context.Context) (platform.Me, people, error) {
 type empty struct{}
 
 func (t *tools) overview(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
-	me, _, err := t.index(ctx)
+	me, err := get[platform.Me](ctx, t.c, "/me", nil)
 	if err != nil {
 		return t.fail(ctx, err)
 	}
