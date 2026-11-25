@@ -5,6 +5,7 @@ package ai
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
@@ -215,6 +216,21 @@ func instructions(in ports.DraftInput) string {
 		return in.Text
 	}
 	return "Add this receipt. I paid; split it equally unless the receipt says otherwise."
+}
+
+// rejection is a request the provider refused. It carries the status but
+// not the provider's answer, which can echo the receipt or the prompt, so it
+// is safe to log.
+type rejection struct {
+	key    string
+	Status int
+}
+
+func (r *rejection) Error() string { return r.key }
+
+// LogValue keeps the message a stable key and logs the status beside it.
+func (r *rejection) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("key", r.key), slog.Int("status", r.Status))
 }
 
 // imageSupported rejects formats vision models do not accept.

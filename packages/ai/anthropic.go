@@ -64,10 +64,13 @@ func (a *Anthropic) ask(ctx context.Context, system string, content []anthropic.
 		if errors.As(err, &apiErr) {
 			switch apiErr.StatusCode {
 			case http.StatusUnauthorized, http.StatusForbidden:
-				return "", fmt.Errorf("ai.anthropic.auth.failed: %w", err)
+				return "", &rejection{key: "ai.anthropic.auth.failed", Status: apiErr.StatusCode}
 			case http.StatusTooManyRequests:
 				return "", errs.RateLimited("The AI provider is busy. Try again in a minute.")
 			}
+			// The SDK's message carries the provider's answer, which can
+			// echo the request.
+			return "", &rejection{key: "ai.anthropic.request.rejected", Status: apiErr.StatusCode}
 		}
 		return "", fmt.Errorf("ai.anthropic.request.failed: %w", err)
 	}
