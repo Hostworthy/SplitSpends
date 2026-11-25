@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -178,19 +179,39 @@ func (c *Client) exponent(ctx context.Context, code string) (int, error) {
 	return 0, fmt.Errorf("unsupported currency %q", code)
 }
 
+// decimal is the API's plain decimal syntax for split values (money.Decimal
+// in core: no exponents, fractions, base prefixes or digit separators),
+// without a sign, since nothing an assistant sends here is negative.
+var decimal = regexp.MustCompile(`^(\d+(\.\d*)?|\.\d+)$`)
+
+// decimalLength is the API's length limit for a split value.
+const decimalLength = 20
+
+// plain reports whether s, already trimmed, is a decimal the API accepts.
+func plain(s string) bool {
+	return len(s) <= decimalLength && decimal.MatchString(s)
+}
+
 // minor converts a decimal string such as "12.50" into minor units.
 func (c *Client) minor(ctx context.Context, amount, currency string) (int64, error) {
 	exp, err := c.exponent(ctx, currency)
 	if err != nil {
 		return 0, err
 	}
-	r, ok := new(big.Rat).SetString(strings.TrimSpace(amount))
+	s := strings.TrimSpace(amount)
+	if !plain(s) {
+		return 0, fmt.Errorf("amount %q is not a decimal number such as 12.50", amount)
+	}
+	r, ok := new(big.Rat).SetString(s)
 	if !ok {
-		return 0, fmt.Errorf("amount %q is not a decimal number", amount)
+		return 0, fmt.Errorf("amount %q is not a decimal number such as 12.50", amount)
 	}
 	r.Mul(r, new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(exp)), nil)))
 	if !r.IsInt() {
 		return 0, fmt.Errorf("amount %q has more decimals than %s allows", amount, currency)
+	}
+	if !r.Num().IsInt64() {
+		return 0, fmt.Errorf("amount %q is too large", amount)
 	}
 	return r.Num().Int64(), nil
 }
