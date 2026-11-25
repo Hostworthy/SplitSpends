@@ -211,19 +211,12 @@ func (s *Service) Accounts(ctx context.Context, actor uuid.UUID, status, q strin
 // SetRole makes someone a user, manager or administrator. The last active
 // administrator cannot step down.
 func (s *Service) SetRole(ctx context.Context, actor, id uuid.UUID, role string) (*user.User, error) {
-	if _, err := s.actor(ctx, actor, false); err != nil {
-		return nil, err
-	}
 	r, err := user.ParseRole(role)
 	if err != nil {
 		return nil, err
 	}
 	var out *user.User
-	err = s.d.Tx.Do(ctx, func(ctx context.Context) error {
-		u, err := s.d.Users.Get(ctx, id)
-		if err != nil {
-			return err
-		}
+	err = s.change(ctx, actor, id, func(ctx context.Context, u *user.User) error {
 		switch u.Status {
 		case user.StatusPlaceholder:
 			return errs.Validation("userId", "People added by name only have no account.")
@@ -242,18 +235,11 @@ func (s *Service) SetRole(ctx context.Context, actor, id uuid.UUID, role string)
 
 // Disable turns an account off and signs it out everywhere.
 func (s *Service) Disable(ctx context.Context, actor, id uuid.UUID) (*user.User, error) {
-	if _, err := s.actor(ctx, actor, false); err != nil {
-		return nil, err
-	}
 	if actor == id {
 		return nil, errs.Validation("userId", "You cannot disable your own account.")
 	}
 	var out *user.User
-	err := s.d.Tx.Do(ctx, func(ctx context.Context) error {
-		u, err := s.d.Users.Get(ctx, id)
-		if err != nil {
-			return err
-		}
+	err := s.change(ctx, actor, id, func(ctx context.Context, u *user.User) error {
 		if err := s.keepAnAdmin(ctx, u, true); err != nil {
 			return err
 		}
@@ -272,17 +258,35 @@ func (s *Service) Disable(ctx context.Context, actor, id uuid.UUID) (*user.User,
 
 // Enable lets a disabled account sign in again with its old email.
 func (s *Service) Enable(ctx context.Context, actor, id uuid.UUID) (*user.User, error) {
-	if _, err := s.actor(ctx, actor, false); err != nil {
-		return nil, err
-	}
-	u, err := s.d.Users.Get(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if err := u.Enable(s.d.Clock.Now()); err != nil {
-		return nil, err
-	}
-	return u, s.d.Users.Update(ctx, u)
+	var out *user.User
+	err := s.change(ctx, actor, id, func(ctx context.Context, u *user.User) error {
+		if err := u.Enable(s.d.Clock.Now()); err != nil {
+			return err
+		}
+		out = u
+		return s.d.Users.Update(ctx, u)
+	})
+	return out, err
+}
+
+// change runs fn on account id for administrator actor. Changes to accounts
+// take the users lock first and check the actor and read the account under
+// it, so concurrent changes see each other: two administrators cannot each
+// remove the other and leave the server with none.
+func (s *Service) change(ctx context.Context, actor, id uuid.UUID, fn func(ctx context.Context, u *user.User) error) error {
+	return s.d.Tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.d.Users.Lock(ctx); err != nil {
+			return err
+		}
+		if _, err := s.actor(ctx, actor, false); err != nil {
+			return err
+		}
+		u, err := s.d.Users.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		return fn(ctx, u)
+	})
 }
 
 // keepAnAdmin refuses to remove the last active administrator.
