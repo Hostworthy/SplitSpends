@@ -130,6 +130,8 @@ jobs:
     name: android
     needs: [version, ci]
     runs-on: ubuntu-latest
+    outputs:
+      cert: ${{ steps.cert.outputs.sha256 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -172,6 +174,16 @@ jobs:
             --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER"
           mkdir -p ../../dist
           cp build/app/outputs/flutter-apk/app-release.apk "../../dist/$apk"
+      - name: Signing certificate
+        # The release notes show the certificate's SHA-256 so people can check
+        # a downloaded APK, for example with apksigner or AppVerifier.
+        id: cert
+        run: |
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          sha256=$("$tools/apksigner" verify --print-certs apps/apk/build/app/outputs/flutter-apk/app-release.apk |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: \([0-9a-f]\{64\}\)$/\1/p')
+          [ -n "$sha256" ] || { echo "::error::apksigner printed no signing certificate digest."; exit 1; }
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -310,6 +322,7 @@ jobs:
         env:
           TAG: ${{ needs.version.outputs.tag }}
           DIGEST: ${{ needs.docker.outputs.digest }}
+          CERT: ${{ needs.android.outputs.cert }}
         run: |
           [ -n "$DIGEST" ] || { echo "::error::The docker job reported no image digest."; exit 1; }
           cd dist && sha256sum * > SHA256SUMS && cd ..
@@ -317,8 +330,10 @@ jobs:
           apk="splitspends-android-${TAG}.apk"; apk_note=""
           if [ -e "dist/splitspends-android-${TAG}-debug-signed.apk" ]; then
             apk="splitspends-android-${TAG}-debug-signed.apk"
-            apk_note=" **Signed with a temporary key**: it cannot update an earlier install, so uninstall the old app first, which removes its local data"
+            apk_note=" **Signed with a temporary key**: it cannot update an earlier install, so uninstall the old app first, which removes its local data."
           fi
+          [ -n "$CERT" ] || { echo "::error::The android job reported no signing certificate digest."; exit 1; }
+          apk_note="${apk_note} Signing certificate SHA-256: \`${CERT}\`."
           sed -e "s|{{TAG}}|${TAG}|g" -e "s|{{REPO}}|${GITHUB_REPOSITORY}|g" \
             -e "s|{{APK}}|${apk}|g" -e "s|{{APK_NOTE}}|${apk_note}|g" \
             -e "s|{{IMAGE}}|${name}:${TAG}|g" -e "s|{{IMAGE_DIGEST}}|${name}@${DIGEST}|g" \
