@@ -101,7 +101,8 @@ The server creates its push key on first start and keeps it in the database. If 
 
 ## Security Checklist
 
-- Always serve over HTTPS. Every option above does, except plain LAN setups.
+- Always serve over HTTPS. Every option above does, except plain LAN setups. When `BASE_URL` starts with `https://`, the server sends `Strict-Transport-Security` itself, so browsers keep using HTTPS behind any proxy.
+- The server sends a `Content-Security-Policy` with every response. API responses and receipts may load nothing; the web app may run scripts only from your server, and may connect to any HTTPS server (so it can sign in to a server you type in and show Gravatar pictures), and to plain HTTP servers too when `BASE_URL` is plain HTTP. If you change `apps/web/web/index.html`, keep scripts in files: inline scripts are blocked.
 - Set a long random `SECRET_KEY` (`openssl rand -hex 32`) and keep it secret.
 - Set `ADMIN_EMAIL` to your own email address before the server is reachable. The first account to sign in becomes the administrator, and new HTTPS names are found by scanners within minutes. With `ADMIN_EMAIL` set, only you can create that first account. Without it, sign in yourself right after the first start; until then the server logs `auth.bootstrap.open`.
 - Keep `SIGNUP_MODE=invite` unless you really want strangers to sign up. `approval` lets anyone ask while you decide who gets in, and `closed` stops new accounts. You can change this later in the app (Account, Administration).
