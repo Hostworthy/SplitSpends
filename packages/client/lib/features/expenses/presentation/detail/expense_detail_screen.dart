@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/refresh.dart';
 import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/widgets/back_home_button.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
@@ -34,10 +35,13 @@ class ExpenseDetailScreen extends ConsumerWidget {
   Future<void> _delete(BuildContext context, WidgetRef ref) async {
     final repo = ref.read(expensesRepositoryProvider);
     final messenger = ScaffoldMessenger.of(context);
+    // Undo runs after this screen is gone, when its ref can no longer be
+    // used; the container outlives it.
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
       await repo.delete(expenseId);
       unawaited(HapticFeedback.mediumImpact());
-      ref.refreshLedger();
+      refreshLedgerIn(container);
       if (context.mounted) context.pop();
       messenger.showSnackBar(
         SnackBar(
@@ -48,10 +52,10 @@ class ExpenseDetailScreen extends ConsumerWidget {
             onPressed: () async {
               try {
                 await repo.restore(expenseId);
-                ref.refreshLedger();
-              } catch (_) {
+                refreshLedgerIn(container);
+              } catch (error) {
                 messenger.showSnackBar(
-                  const SnackBar(content: Text('Could not restore')),
+                  SnackBar(content: Text(describeError(error))),
                 );
               }
             },
@@ -64,9 +68,10 @@ class ExpenseDetailScreen extends ConsumerWidget {
   }
 
   Future<void> _restore(BuildContext context, WidgetRef ref) async {
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
       await ref.read(expensesRepositoryProvider).restore(expenseId);
-      ref.refreshLedger();
+      refreshLedgerIn(container);
     } catch (error) {
       if (context.mounted) showError(context, error);
     }
