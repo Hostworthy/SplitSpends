@@ -158,13 +158,20 @@ func (s *Service) decide(ctx context.Context, email, link string) (decision, err
 		}
 		return approval, nil
 	}
-	// Invite mode: the allowed list, people someone added by email, and
-	// holders of a group invite link.
+	// Invite mode: the allowed list, people someone added by email, holders
+	// of a group invite link, and people an administrator or manager
+	// approved, also when they asked to join in approval mode.
 	if cfg.Allows(email) || existing != nil {
 		return allow, nil
 	}
 	if link != "" && s.invites != nil {
 		ok, err := s.invites.Live(ctx, link)
+		if err != nil || ok {
+			return allow, err
+		}
+	}
+	if s.gate != nil {
+		ok, err := s.gate.Approved(ctx, email)
 		if err != nil || ok {
 			return allow, err
 		}

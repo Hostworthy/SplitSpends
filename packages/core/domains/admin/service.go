@@ -158,7 +158,9 @@ func (s *Service) Requests(ctx context.Context, actor uuid.UUID, status string) 
 	return s.d.Requests.List(ctx, st)
 }
 
-// Approve lets the person sign in and emails them.
+// Approve lets the person sign in and emails them. Approvals count in
+// approval, invite and open modes; while sign-up is closed nobody new can
+// sign in, so approving is refused rather than sending a misleading email.
 func (s *Service) Approve(ctx context.Context, actor, id uuid.UUID) (*Request, error) {
 	r, err := s.decide(ctx, actor, id, StatusApproved)
 	if err != nil || ports.IsQuiet(ctx) {
@@ -183,6 +185,15 @@ func (s *Service) decide(ctx context.Context, actor, id uuid.UUID, to Status) (*
 	r, err := s.d.Requests.Get(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if to == StatusApproved {
+		signup, err := s.Signup(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if signup.Mode == auth.SignupClosed {
+			return nil, errs.Conflict("Sign-up is closed, so " + r.Email + " could not sign in yet. Choose another sign-up mode in Administration, then approve the request.")
+		}
 	}
 	if r.Status == to {
 		return r, nil
