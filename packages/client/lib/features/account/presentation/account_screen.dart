@@ -8,6 +8,7 @@ import 'package:splitspends/app/theme_settings.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
+import 'package:splitspends/core/widgets/swatches.dart';
 import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/account/presentation/local_mode_card.dart';
@@ -131,23 +132,10 @@ class _ProfileHeader extends ConsumerWidget {
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final c in palette)
-                InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: () => _save(context, ref, avatarColor: toHexColor(c)),
-                  child: CircleAvatar(
-                    radius: 15,
-                    backgroundColor: c,
-                    child: me.avatarColor?.toUpperCase() == toHexColor(c)
-                        ? const Icon(Icons.check, size: 16, color: Colors.white)
-                        : null,
-                  ),
-                ),
-            ],
+          child: Swatches(
+            selected: me.avatarColor,
+            radius: 15,
+            onSelected: (hex) => _save(context, ref, avatarColor: hex),
           ),
         ),
         if (!local &&

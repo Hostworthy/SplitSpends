@@ -10,31 +10,47 @@ class Paged<T> {
     this.total = 0,
     this.loadingMore = false,
     this.error,
+    this._fetched,
   });
 
   final List<T> items;
   final int total;
   final bool loadingMore;
 
+  /// Rows the server has returned so far, repeats included; the next page
+  /// starts here. Rows added on the server while scrolling push older ones
+  /// down, so a page can repeat items already shown, which are dropped.
+  int get fetched => _fetched ?? items.length;
+  final int? _fetched;
+
   /// Why the last [PagedNotifier.loadMore] failed; scrolling does not load
   /// more until [PagedNotifier.retry].
   final Object? error;
 
-  bool get hasMore => items.length < total;
+  bool get hasMore => fetched < total;
 
-  Paged<T> copyWith({List<T>? items, int? total, bool? loadingMore}) => Paged(
+  Paged<T> copyWith({
+    List<T>? items,
+    int? total,
+    bool? loadingMore,
+    int? fetched,
+  }) => Paged(
     items: items ?? this.items,
     total: total ?? this.total,
     loadingMore: loadingMore ?? this.loadingMore,
     error: error,
+    fetched: fetched ?? this.fetched,
   );
 }
 
-/// Base for infinite-scroll feeds: implement [fetch].
+/// Base for infinite-scroll feeds: implement [fetch] and [key].
 abstract class PagedNotifier<T> extends AsyncNotifier<Paged<T>> {
   int get pageSize => 30;
 
   Future<PageResult<T>> fetch(int offset, int limit);
+
+  /// What makes an item unique, so a page that repeats one is shown once.
+  Object key(T item);
 
   @override
   Future<Paged<T>> build() async {
@@ -50,20 +66,32 @@ abstract class PagedNotifier<T> extends AsyncNotifier<Paged<T>> {
         current.error != null) {
       return;
     }
-    state = AsyncData(
-      Paged(items: current.items, total: current.total, loadingMore: true),
-    );
+    state = AsyncData(current.copyWith(loadingMore: true));
     try {
-      final page = await fetch(current.items.length, pageSize);
+      final page = await fetch(current.fetched, pageSize);
       if (!ref.mounted) return;
+      final seen = {for (final item in current.items) key(item)};
       state = AsyncData(
-        Paged(items: [...current.items, ...page.items], total: page.total),
+        Paged(
+          items: [
+            ...current.items,
+            for (final item in page.items)
+              if (seen.add(key(item))) item,
+          ],
+          total: page.total,
+          fetched: current.fetched + page.items.length,
+        ),
       );
     } catch (error, stack) {
       log('paging.load.failed', error: error, stack: stack);
       if (!ref.mounted) return;
       state = AsyncData(
-        Paged(items: current.items, total: current.total, error: error),
+        Paged(
+          items: current.items,
+          total: current.total,
+          error: error,
+          fetched: current.fetched,
+        ),
       );
     }
   }
@@ -72,7 +100,13 @@ abstract class PagedNotifier<T> extends AsyncNotifier<Paged<T>> {
   Future<void> retry() {
     final current = state.value;
     if (current == null || current.error == null) return Future.value();
-    state = AsyncData(Paged(items: current.items, total: current.total));
+    state = AsyncData(
+      Paged(
+        items: current.items,
+        total: current.total,
+        fetched: current.fetched,
+      ),
+    );
     return loadMore();
   }
 
@@ -94,7 +128,11 @@ abstract class PagedNotifier<T> extends AsyncNotifier<Paged<T>> {
       }
     }
     state = AsyncData(
-      current.copyWith(items: items, total: current.total - removed),
+      current.copyWith(
+        items: items,
+        total: current.total - removed,
+        fetched: current.fetched - removed,
+      ),
     );
   }
 }

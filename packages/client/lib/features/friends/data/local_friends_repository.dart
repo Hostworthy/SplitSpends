@@ -15,8 +15,7 @@ class LocalFriendsRepository implements FriendsRepository {
 
   final LocalLedger _ledger;
 
-  Future<Friend> _friend(DatabaseClient c, String id, Sheet sheet) async {
-    final people = await _ledger.directory(c);
+  static Friend _friend(Map<String, JsonMap> people, String id, Sheet sheet) {
     final user = people[id];
     if (user == null) throw ApiError.notFound('Person');
     return Friend.fromJson({
@@ -35,8 +34,9 @@ class LocalFriendsRepository implements FriendsRepository {
           (b['name'] as String).toLowerCase(),
         ),
       );
+    final directory = await _ledger.directory(db);
     return [
-      for (final p in people) await _friend(db, p['id'] as String, sheet),
+      for (final p in people) _friend(directory, p['id'] as String, sheet),
     ];
   }
 
@@ -58,7 +58,7 @@ class LocalFriendsRepository implements FriendsRepository {
       );
       return pid;
     });
-    return _friend(db, id, await _ledger.sheet(db));
+    return _friend(await _ledger.directory(db), id, await _ledger.sheet(db));
   }
 
   @override
@@ -77,7 +77,11 @@ class LocalFriendsRepository implements FriendsRepository {
       }
       await Stores.people.record(userId).put(txn, {...p, 'email': mail});
     });
-    return _friend(db, userId, await _ledger.sheet(db));
+    return _friend(
+      await _ledger.directory(db),
+      userId,
+      await _ledger.sheet(db),
+    );
   }
 
   @override

@@ -12,6 +12,7 @@ import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/paging/page_result.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
+import 'package:splitspends/features/expenses/presentation/expense_feed_list.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/presentation/detail/expenses_tab.dart';
 

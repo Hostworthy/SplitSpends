@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderOrFamily;
+import 'package:material_ui/material_ui.dart';
+
+import 'package:splitspends/core/widgets/states.dart';
 
 import 'package:splitspends/features/activity/presentation/providers.dart';
 import 'package:splitspends/features/categories/presentation/providers.dart';
@@ -17,6 +20,17 @@ extension LedgerRefresh on WidgetRef {
 /// Same as [LedgerRefresh.refreshLedger] from outside a widget.
 void refreshLedgerIn(ProviderContainer container) =>
     _refresh(container.invalidate);
+
+/// Saves a change to the ledger with [runChange] and refreshes everything
+/// that shows it, even when the person left the screen meanwhile.
+Future<bool> changeLedger(
+  BuildContext context,
+  Future<void> Function(ProviderContainer container) change, {
+  String? done,
+}) => runChange(context, (container) async {
+  await change(container);
+  refreshLedgerIn(container);
+}, done: done);
 
 void _refresh(void Function(ProviderOrFamily) invalidate) {
   invalidate(myBalancesProvider);

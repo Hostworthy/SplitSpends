@@ -26,6 +26,7 @@ final _group = Group.fromJson({
     {'id': 'sam', 'name': 'Sam'},
   ],
   'balances': <Object>[],
+  'color': '#5E35B1',
 });
 
 Future<void> _pump(WidgetTester tester, AppMode mode) async {
@@ -158,5 +159,21 @@ void main() {
   testWidgets('connected members can leave a group', (tester) async {
     await _pump(tester, AppMode.connected);
     expect(find.text('Leave group'), findsOneWidget);
+  });
+
+  testWidgets('the group color swatches are named and show the chosen one', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester, AppMode.local);
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Deep purple color')),
+      isSemantics(isButton: true, isSelected: true),
+    );
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Teal color')),
+      isSemantics(isButton: true, isSelected: false),
+    );
+    handle.dispose();
   });
 }

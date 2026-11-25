@@ -10,11 +10,11 @@ import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/balance_text.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
+import 'package:splitspends/features/expenses/presentation/expense_feed_list.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/features/friends/domain/friend.dart';
 import 'package:splitspends/features/friends/presentation/add_friend_dialog.dart';
 import 'package:splitspends/features/friends/presentation/providers.dart';
-import 'package:splitspends/features/groups/presentation/detail/expenses_tab.dart';
 import 'package:splitspends/features/reminders/presentation/remind_button.dart';
 
 class FriendDetailScreen extends ConsumerWidget {
@@ -28,34 +28,18 @@ class FriendDetailScreen extends ConsumerWidget {
   final bool embedded;
 
   Future<void> _remove(BuildContext context) async {
-    // The removal outlives this screen when the person leaves it meanwhile;
-    // the lists must refresh either way.
-    final container = ProviderScope.containerOf(context, listen: false);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove friend?'),
-        content: const Text('Only possible when you are settled up.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
+    final ok = await confirm(
+      context,
+      title: 'Remove friend?',
+      message: 'Only possible when you are settled up.',
+      action: 'Remove',
     );
-    if (ok != true) return;
-    try {
-      await container.read(friendsRepositoryProvider).remove(userId);
-      refreshLedgerIn(container);
-      if (context.mounted) context.go(Routes.friends);
-    } catch (error) {
-      if (context.mounted) showError(context, error);
-    }
+    if (!ok || !context.mounted) return;
+    final removed = await changeLedger(
+      context,
+      (container) => container.read(friendsRepositoryProvider).remove(userId),
+    );
+    if (removed && context.mounted) context.go(Routes.friends);
   }
 
   @override

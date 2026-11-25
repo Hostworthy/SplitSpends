@@ -23,6 +23,9 @@ class ExpensesFeed extends PagedNotifier<Expense> {
       .list(query, limit: limit, offset: offset);
 
   @override
+  Object key(Expense item) => item.id;
+
+  @override
   Future<Paged<Expense>> build() {
     ref.watch(expensesRepositoryProvider);
     return super.build();

@@ -26,6 +26,9 @@ class ActivityFeed extends PagedNotifier<Activity> {
       );
 
   @override
+  Object key(Activity item) => item.id;
+
+  @override
   Future<Paged<Activity>> build() {
     ref.watch(activityRepositoryProvider);
     return super.build();

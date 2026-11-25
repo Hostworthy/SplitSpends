@@ -62,6 +62,10 @@ flowchart TB
 | `assist` | Natural-language expense drafts |
 | `stats` | Spending summaries |
 | `push` | Push subscriptions (devices) and delivery rules |
+| `invite` | Shareable group invite links |
+| `reminder` | Settle-up reminders |
+| `rates` | Exchange-rate tables and exact currency conversion |
+| `transfer` | Importing what someone recorded on their device into their account |
 | `admin` | Sign-up modes and the allowed list, requests to join, roles and disabled accounts |
 
 ### Layout Inside a Context
@@ -77,12 +81,21 @@ flowchart TB
 
 ### Rules
 
-- Core never imports `internal/*` outside core, `net/http`, database drivers or vendor SDKs.
+- Core imports only itself, `github.com/google/uuid` and the standard library, and of the standard library no network, process or database packages (`net/mail`, `net/url` and `net/netip` are allowed).
 - Repositories hold no business rules.
 - `packages/platform` is the wire contract and depends only on the standard library.
 - Wiring happens only in `packages/bootstrap`.
 - The MCP server goes through the HTTP API (ADR-004).
-- `packages/archtest` enforces these rules in `go test`.
+
+`packages/archtest` checks in `go test`, for code and test files alike:
+
+- the import rules above for core and `packages/platform`, and that `packages/logger` and `packages/spa` use only the standard library;
+- that only `packages/bootstrap` (and `packages/database` itself) imports `packages/database/repositories`, and that `apps/api` reaches adapters only through bootstrap;
+- that adapters do not import each other, the transports or bootstrap, and that packages never import apps;
+- that every log message written as a literal is a dotted key;
+- that every rule still matches at least one package, so a rename cannot switch one off.
+
+Left to review: that repositories hold no business rules, that `packages/platform` changes together with `docs/API.md` and the Flutter models, and that infrastructure errors start with a dotted key.
 
 ### Naming and Logging
 
