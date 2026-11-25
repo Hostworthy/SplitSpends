@@ -311,7 +311,8 @@ class _SettingsState extends ConsumerState<_Settings> {
             done: group.archived ? 'Group restored' : 'Group archived',
           ),
         ),
-        if (meId != null)
+        // On-device groups have nobody else who could open them.
+        if (meId != null && ref.watch(appModeProvider) != AppMode.local)
           ListTile(
             leading: const Icon(Icons.logout_rounded),
             title: const Text('Leave group'),

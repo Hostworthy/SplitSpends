@@ -25,7 +25,8 @@ abstract interface class GroupsRepository {
 
   Future<GroupBalances> balances(String id);
 
-  /// CSV of all expenses and payments.
+  /// CSV of all expenses and payments, in the format docs/API.md gives for
+  /// GET /groups/{id}/export.
   Future<Uint8List> export(String id);
 
   /// Spending stats for a group, or for yourself when [groupId] is null.

@@ -122,6 +122,58 @@ void main() {
     ),
   );
 
+  test('adding someone twice is a conflict, like on the server', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final group = await groups.create(
+      const GroupInput(
+        name: 'Trip',
+        members: [MemberInput(email: 'sam@example.com', name: 'Sam')],
+      ),
+    );
+    await expectLater(
+      groups.addMember(group.id, email: 'sam@example.com'),
+      throwsA(
+        isA<ApiError>()
+            .having((e) => e.status, 'status', 409)
+            .having(
+              (e) => e.message,
+              'message',
+              'Sam is already in this group.',
+            ),
+      ),
+    );
+    expect((await groups.get(group.id)).members, hasLength(2));
+  });
+
+  test('removing someone who is not a member is not found', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final group = await trip(groups);
+    final activity = LocalActivityRepository(ledger);
+    final before = (await activity.list()).total;
+    await expectLater(
+      groups.removeMember(group.id, '00000000-0000-4000-8000-0000000000ff'),
+      throwsA(
+        isA<ApiError>().having(
+          (e) => e.message,
+          'message',
+          'Member not found.',
+        ),
+      ),
+    );
+    expect((await activity.list()).total, before);
+    expect((await groups.get(group.id)).members, hasLength(3));
+  });
+
+  test('the device owner cannot leave a group', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final group = await trip(groups);
+    await expectLater(
+      groups.removeMember(group.id, meId),
+      throwsA(isA<ApiError>().having((e) => e.status, 'status', 409)),
+    );
+    expect((await groups.list()).map((g) => g.id), [group.id]);
+  });
+
   test('a group member can record a payment between two others', () async {
     final groups = LocalGroupsRepository(ledger);
     final expenses = LocalExpensesRepository(ledger);
@@ -529,7 +581,14 @@ void main() {
         ],
       ),
     );
-    await groups.removeMember(group.id, meId);
+    // The app no longer lets the owner leave; a stored group without them
+    // still keeps its expenses out of reach.
+    final db = await ledger.db;
+    final stored = await ledger.group(group.id, db);
+    await Stores.groups.record(group.id).put(db, {
+      ...stored,
+      'memberIds': [sam, alex],
+    });
     final notFound = isA<ApiError>().having((e) => e.code, 'code', 'NOT_FOUND');
     await expectLater(expenses.delete(e.id), throwsA(notFound));
     await expectLater(
@@ -695,6 +754,53 @@ void main() {
     );
   });
 
+  test('export matches the server: decimals and former members', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final group = await trip(groups);
+    final sam = group.members[1].id, alex = group.members[2].id;
+    await expenses.create(
+      ExpenseInput(
+        groupId: group.id,
+        description: 'Dinner',
+        category: 'food.dining',
+        currency: 'EUR',
+        total: 9000,
+        date: '2026-11-20',
+        payers: const [Payer(userId: meId, amount: 9000)],
+        splits: [
+          const SplitEntry(userId: meId),
+          SplitEntry(userId: sam),
+          SplitEntry(userId: alex),
+        ],
+      ),
+    );
+    now = now.add(const Duration(minutes: 1));
+    await expenses.recordPayment(
+      groupId: group.id,
+      fromUserId: sam,
+      toUserId: meId,
+      amount: 3000,
+      currency: 'EUR',
+      date: '2026-11-20',
+    );
+    await groups.removeMember(group.id, sam);
+
+    final lines = const LineSplitter().convert(
+      utf8.decode(await groups.export(group.id)),
+    );
+    expect(lines, hasLength(3));
+    expect(
+      lines[0],
+      'Date,Description,Category,Kind,Currency,Cost,Ada,Alex,Sam',
+    );
+    expect(
+      lines[1],
+      '2026-11-20,Dinner,food.dining,expense,EUR,90.00,60.00,-30.00,-30.00',
+    );
+    expect(lines[2], endsWith(',payment,EUR,30.00,-30.00,0.00,30.00'));
+  });
+
   test('export neutralises formulas in names and descriptions', () async {
     final groups = LocalGroupsRepository(ledger);
     final group = await groups.create(
@@ -726,6 +832,6 @@ void main() {
     ];
     expect(rows[0].sublist(6), ['Ada', "'=1+1"]);
     expect(rows[1][1], "'@SUM(A1)");
-    expect(rows[1].sublist(6), ['100', '-100']);
+    expect(rows[1].sublist(6), ['1.00', '-1.00']);
   });
 }

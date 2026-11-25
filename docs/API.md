@@ -209,7 +209,7 @@ Each account may have up to 1000 people it added by name only (placeholders, fro
 | POST | `/groups/{groupId}/members` | `{ email?, name? }` | 201 `{ data: Group }` (name only adds a placeholder); 409 when that person is already in 1000 groups |
 | DELETE | `/groups/{groupId}/members/{userId}` | | 204; 409 when that member is not settled. A member may remove themselves (leave). 409 when nobody who can sign in would be left (only people added by name remain): delete the group instead |
 | GET | `/groups/{groupId}/balances` | | `{ data: { members: [{ userId, balances: [Balance] }], debts: [Debt] } }` (debts are simplified when `simplifyDebts` is on) |
-| GET | `/groups/{groupId}/export` | | `text/csv` of all expenses and payments, oldest first |
+| GET | `/groups/{groupId}/export` | | `text/csv` of all expenses and payments, oldest first. Columns: `Date,Description,Category,Kind,Currency,Cost`, then one per member and one per former member still in an expense, holding that person's net (paid minus owed). Amounts are decimals such as `90.00`; text that starts with `= + - @`, a tab or CR is prefixed with `'`. On-device mode writes the same file |
 | POST | `/groups/{groupId}/invites` | | 201 `{ data: Invite }` with `token` and `url` (shown once). 409 for archived groups, and when the group already has 20 usable links (revoke one first) |
 | GET | `/groups/{groupId}/invites` | | List of usable `Invite` (unexpired, created by a current member), without `token` and `url` |
 | DELETE | `/groups/{groupId}/invites/{inviteId}` | | 204; the link stops working |
