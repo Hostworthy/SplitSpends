@@ -27,7 +27,19 @@ class ImportService {
       expenses: expenses.where((e) => e['deleted'] != true).length,
       people: (await _ledger.people(db)).length,
       categories: categories.where((c) => c['deleted'] != true).length,
+      uploaded: _uploaded(await Stores.meta.record(_uploadedKey).get(db)),
     );
+  }
+
+  /// Where the data went on its last upload; cleared with the local copy.
+  static const _uploadedKey = 'importedTo';
+
+  static ({String server, DateTime at})? _uploaded(Object? raw) {
+    if (raw is! Map) return null;
+    final server = raw['serverUrl'];
+    final at = DateTime.tryParse('${raw['at']}');
+    if (server is! String || at == null) return null;
+    return (server: server, at: at);
   }
 
   Future<JsonMap> payload() async {
@@ -94,7 +106,7 @@ class ImportService {
           'id': map[id] ?? id,
         });
       }
-      await Stores.meta.record('importedTo').put(txn, {
+      await Stores.meta.record(_uploadedKey).put(txn, {
         'serverUrl': serverUrl,
         'at': _ledger.stamp(),
       });
@@ -109,7 +121,7 @@ class ImportService {
         await store.delete(txn);
       }
       await Stores.meta.record('profile').delete(txn);
-      await Stores.meta.record('importedTo').delete(txn);
+      await Stores.meta.record(_uploadedKey).delete(txn);
     });
   }
 }

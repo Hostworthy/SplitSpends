@@ -27,7 +27,7 @@ class FakeAdmin implements AdminRepository {
 
   @override
   Future<SignupSettings> saveSignup(SignupSettings s) async {
-    calls.add('save ${s.mode.name} ${s.allowed.join(',')}');
+    calls.add('save ${s.toJson()['mode']} ${s.allowed.join(',')}');
     return settings = s;
   }
 
@@ -82,11 +82,15 @@ class FakeAdmin implements AdminRepository {
   Future<Account> enable(String userId) async => throw UnimplementedError();
 }
 
-Future<FakeAdmin> pump(WidgetTester tester, String role) async {
+Future<FakeAdmin> pump(
+  WidgetTester tester,
+  String role, {
+  FakeAdmin? admin,
+}) async {
   tester.view.physicalSize = const Size(420, 1000);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final fake = FakeAdmin();
+  final fake = admin ?? FakeAdmin();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -133,6 +137,40 @@ void main() {
     await tester.tap(find.byKey(const Key('save-signup')));
     await tester.pumpAndSettle();
     expect(fake.calls, ['save approval @family.com']);
+  });
+
+  testWidgets('a sign-up mode this app does not know is kept', (tester) async {
+    final admin = FakeAdmin()
+      ..settings = SignupSettings.fromJson({
+        'mode': 'future',
+        'allowed': <String>[],
+      });
+    final fake = await pump(tester, 'admin', admin: admin);
+    // Room for the notice above the modes and the Save button below.
+    tester.view.physicalSize = const Size(420, 1400);
+    await tester.tap(find.text('Sign-up'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('does not know'), findsOneWidget);
+    for (final m in SignupMode.values) {
+      final tile = tester.widget<RadioListTile<SignupMode>>(
+        find.byKey(Key('mode-${m.name}')),
+      );
+      // ignore: deprecated_member_use
+      expect(tile.groupValue, isNull, reason: m.name);
+    }
+
+    await tester.enterText(
+      find.byKey(const Key('allowed-entry')),
+      'ben@example.com',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('ben@example.com'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('save-signup')));
+    await tester.tap(find.byKey(const Key('save-signup')));
+    await tester.pumpAndSettle();
+    expect(fake.calls, ['save future ben@example.com']);
   });
 
   testWidgets('administrators change roles', (tester) async {
