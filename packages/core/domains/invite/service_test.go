@@ -73,6 +73,7 @@ func (f *groups) Get(_ context.Context, id uuid.UUID) (*group.Group, error) {
 	return f.g, nil
 }
 func (f *groups) Lock(ctx context.Context, id uuid.UUID) (*group.Group, error)        { return f.Get(ctx, id) }
+func (f *groups) Hold(ctx context.Context, id uuid.UUID) error                        { _, err := f.Get(ctx, id); return err }
 func (f *groups) Update(context.Context, *group.Group) error                          { return nil }
 func (f *groups) Delete(context.Context, uuid.UUID) error                             { return nil }
 func (f *groups) ForUser(context.Context, uuid.UUID, bool) ([]*group.Group, error)    { return nil, nil }

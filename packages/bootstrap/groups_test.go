@@ -3,6 +3,7 @@ package bootstrap_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
@@ -190,5 +191,71 @@ func TestArchivedGroupTakesNoMembers(t *testing.T) {
 	}
 	if _, err := env.Services.Groups.View(ctx, cleo, g.ID); !errs.Is(err, errs.KindNotFound) {
 		t.Fatalf("Cleo must not be a member: %v", err)
+	}
+}
+
+// leaving is the group repository with a hook that runs right before a
+// member is removed.
+type leaving struct {
+	*repositories.Groups
+	before func()
+}
+
+func (l leaving) RemoveMember(ctx context.Context, groupID, userID uuid.UUID, at time.Time) error {
+	l.before()
+	return l.Groups.RemoveMember(ctx, groupID, userID, at)
+}
+
+// meanwhile runs fn in the background and returns once it has finished or
+// some session waits for a lock, so the caller goes on while fn is either
+// done or stuck behind it.
+func meanwhile(t *testing.T, env *bootstraptest.Env, fn func()) {
+	t.Helper()
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		fn()
+	}()
+	for {
+		select {
+		case <-finished:
+			return
+		default:
+		}
+		if blocked(t, env) {
+			return
+		}
+	}
+}
+
+func TestRemoveMemberKeepsConcurrentExpense(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	created := make(chan error, 1)
+	var e *expense.Expense
+	// Right before Ben is removed, Ada books an expense Ben shares.
+	repo := leaving{repositories.NewGroups(env.DB), func() {
+		meanwhile(t, env, func() {
+			var err error
+			e, err = env.Services.Expenses.Create(ctx, ada, expense.Input{GroupID: &g.ID, Description: "Pizza", Currency: "EUR",
+				Total: 3000, Method: expense.MethodEqual, Payers: []expense.Payer{{UserID: ada, Amount: 3000}},
+				Splits: []expense.SplitInput{{UserID: ada}, {UserID: ben}}})
+			created <- err
+		})
+	}}
+	svc := group.NewService(repo, env.Services.Users, env.Services.Balances, env.Services.Activity, env.Notifier,
+		repositories.NewQuotas(env.DB), database.NewTx(env.DB), env.Clock, "http://test")
+	removed := svc.RemoveMember(ctx, ada, g.ID, ben)
+	if err := <-created; err == nil {
+		if !errs.Is(removed, errs.KindConflict) {
+			t.Fatalf("Ben was removed while owing for an expense booked after the settled check: %v", removed)
+		}
+		if _, err := env.Services.Expenses.Get(ctx, ben, e.ID); err != nil {
+			t.Fatalf("the booked expense is gone: %v", err)
+		}
+	} else if removed != nil {
+		t.Fatalf("neither the expense nor the removal went through: %v, %v", err, removed)
+	} else if !errs.Is(err, errs.KindValidation) {
+		t.Fatalf("an expense for someone just removed should be refused as invalid, got %v", err)
 	}
 }
