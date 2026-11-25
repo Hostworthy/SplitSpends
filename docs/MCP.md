@@ -72,7 +72,9 @@ Set `SPLITSPENDS_URL` to the exact address the server answers on, usually its `h
 | `admin_list_accounts`, `admin_set_role` | Administrators: accounts, and making someone a user, manager or admin |
 | `admin_disable_account`, `admin_enable_account` | Administrators: disable (signs out everywhere, removes the email) or enable an account |
 
-The admin tools are listed for everyone; the API refuses them unless your role allows it, and `get_overview` shows your role.
+The admin tools are off by default. The tools read text that other people wrote, such as expense descriptions, notes and names, and an assistant can mistake such text for instructions; keeping the admin tools away from everyday sessions means an administrator's token cannot be talked into changing the instance. Turn them on only for a session you use to administer: set `MCP_ADMIN_TOOLS=true` on the server for `/mcp`, or `SPLITSPENDS_ADMIN_TOOLS=true` for the stdio server. Even then the API refuses them unless your role allows it, and `get_overview` shows your role.
+
+Text that people wrote is shown in double quotes, and the server tells the assistant to treat it as data, not instructions. That lowers the risk but does not remove it, so keep tool confirmation on in your assistant for anything that changes data.
 
 Example prompts: "How much do I owe in the Lisbon trip?", "Add 84.20 for groceries in Flat, split with everyone", "Ben paid me back 25 euros", "Remind Sam about the Lisbon trip".
 

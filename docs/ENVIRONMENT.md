@@ -19,6 +19,7 @@ The server reads everything from the environment. Invalid or missing required va
 | `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API from elsewhere, or `*` |
 | `TRUST_PROXY` | `false` | How many reverse proxies sit in front of the server, each appending the address it was connected from to `X-Forwarded-For`. Rate limits use the entry that many places from the right; entries further left are written by the client and ignored. `true` means `1`, `false` means `0` (use the connecting address). See [Client Addresses](#client-addresses) |
 | `MCP_ENABLED` | `true` | Serve the MCP endpoint at `/mcp` |
+| `MCP_ADMIN_TOOLS` | `false` | Offer the `admin_` tools on `/mcp`. Leave off unless you administer the instance through an assistant; see [MCP](MCP.md#tools) |
 | `GRAVATAR` | `on` | `off` hides the "Use my Gravatar picture" option and stops sending picture links. People opt in one by one; their app then loads the picture from gravatar.com, which sees a hash of their email and who views it |
 
 ### Client Addresses

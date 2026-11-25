@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/Hostworthy/SplitSpends/packages/platform"
@@ -83,9 +84,9 @@ func (t *tools) listRequests(ctx context.Context, _ *sdk.CallToolRequest, in req
 	}
 	var b strings.Builder
 	for _, r := range list.Items {
-		name := r.Name
-		if name == "" {
-			name = "(no name)"
+		name := "(no name)"
+		if r.Name != "" {
+			name = strconv.Quote(r.Name)
 		}
 		fmt.Fprintf(&b, "- %s <%s>, %s since %s (id %s)\n", name, r.Email, r.Status, day(r.RequestedAt), r.ID)
 	}
@@ -109,7 +110,7 @@ func (t *tools) decideRequest(ctx context.Context, _ *sdk.CallToolRequest, in de
 	if err != nil {
 		return fail(err)
 	}
-	return text(fmt.Sprintf("%s <%s> is now %s.", r.Name, r.Email, r.Status)), nil, nil
+	return text(fmt.Sprintf("%q <%s> is now %s.", r.Name, r.Email, r.Status)), nil, nil
 }
 
 type accountsArgs struct {
@@ -132,7 +133,7 @@ func (t *tools) listAccounts(ctx context.Context, _ *sdk.CallToolRequest, in acc
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d accounts\n", list.Total)
 	for _, a := range list.Items {
-		fmt.Fprintf(&b, "- %s <%s>: %s, %s (id %s)\n", a.Name, email(a.Email), a.Role, a.Status, a.ID)
+		fmt.Fprintf(&b, "- %q <%s>: %s, %s (id %s)\n", a.Name, email(a.Email), a.Role, a.Status, a.ID)
 	}
 	return text(b.String()), nil, nil
 }
@@ -147,7 +148,7 @@ func (t *tools) setRole(ctx context.Context, _ *sdk.CallToolRequest, in roleArgs
 	if err != nil {
 		return fail(err)
 	}
-	return text(fmt.Sprintf("%s is now %s.", a.Name, a.Role)), nil, nil
+	return text(fmt.Sprintf("%q is now %s.", a.Name, a.Role)), nil, nil
 }
 
 type accountArgs struct {
@@ -159,7 +160,7 @@ func (t *tools) disableAccount(ctx context.Context, _ *sdk.CallToolRequest, in a
 	if err != nil {
 		return fail(err)
 	}
-	return text(a.Name + " is disabled and signed out everywhere."), nil, nil
+	return text(strconv.Quote(a.Name) + " is disabled and signed out everywhere."), nil, nil
 }
 
 func (t *tools) enableAccount(ctx context.Context, _ *sdk.CallToolRequest, in accountArgs) (*sdk.CallToolResult, any, error) {
@@ -167,5 +168,5 @@ func (t *tools) enableAccount(ctx context.Context, _ *sdk.CallToolRequest, in ac
 	if err != nil {
 		return fail(err)
 	}
-	return text(a.Name + " can sign in again with their old email."), nil, nil
+	return text(strconv.Quote(a.Name) + " can sign in again with their old email."), nil, nil
 }
