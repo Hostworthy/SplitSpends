@@ -85,11 +85,12 @@ jobs:
           terraform_wrapper: false
       - name: Terraform format
         run: terraform fmt -check -recursive -diff deploy
-      - name: Terraform validate
+      - name: Terraform validate and test
         run: |
           for d in deploy/aws deploy/gcp; do
             terraform -chdir="$d" init -backend=false -input=false || exit 1
             terraform -chdir="$d" validate || exit 1
+            terraform -chdir="$d" test || exit 1
           done
       - name: Compose files
         env:

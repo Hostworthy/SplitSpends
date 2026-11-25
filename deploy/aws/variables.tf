@@ -72,6 +72,16 @@ variable "web_dir" {
   default     = "../../apps/web/build/web"
 }
 
+variable "max_concurrency" {
+  description = "Most requests the function serves at once, or null to leave it unreserved. Each execution environment opens up to DATABASE_MAX_CONNS (3) database connections, so keep max_concurrency x 3 below your database's connection limit. AWS keeps at least 10 executions unreserved per account, so an account whose concurrency quota is 10 (common on new accounts) cannot reserve any."
+  type        = number
+  default     = null
+  validation {
+    condition     = var.max_concurrency == null || try(var.max_concurrency >= 1 && floor(var.max_concurrency) == var.max_concurrency, false)
+    error_message = "max_concurrency must be a whole number of at least 1, or null."
+  }
+}
+
 variable "lambda_web_adapter_layer" {
   description = "ARN of the AWS Lambda Web Adapter layer for arm64 in your region. See https://github.com/awslabs/aws-lambda-web-adapter."
   type        = string
