@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/router.dart';
 import 'package:splitspends/app/theme.dart';
-import 'package:splitspends/features/account/presentation/providers.dart';
+import 'package:splitspends/app/theme_settings.dart';
 import 'package:splitspends/features/push/presentation/providers.dart';
 
 class SplitSpendsApp extends ConsumerWidget {

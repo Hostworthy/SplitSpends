@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:splitspends/app/theme.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';
-import 'package:splitspends/features/account/presentation/providers.dart';
+import 'package:splitspends/app/theme_settings.dart';
 
 void main() {
   test(
