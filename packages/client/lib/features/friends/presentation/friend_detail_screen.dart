@@ -3,7 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/core/ledger.dart';
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/routes.dart';
+import 'package:splitspends/features/expenses/presentation/route_args.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/balance.dart';
 import 'package:splitspends/core/widgets/avatar.dart';

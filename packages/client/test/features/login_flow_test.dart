@@ -10,7 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:sembast/sembast.dart';
 
 import 'package:splitspends/app/app.dart';
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/routes.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';

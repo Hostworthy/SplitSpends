@@ -1,7 +1,8 @@
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/routes.dart';
+import 'package:splitspends/features/expenses/presentation/route_args.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
 import 'package:splitspends/features/expenses/presentation/expense_feed_list.dart';

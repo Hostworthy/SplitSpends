@@ -7,7 +7,8 @@ import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/core/ledger.dart';
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/routes.dart';
+import 'package:splitspends/features/expenses/presentation/route_args.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/widgets/back_home_button.dart';
 import 'package:splitspends/core/auth/session.dart';

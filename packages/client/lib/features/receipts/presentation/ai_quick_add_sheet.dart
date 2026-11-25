@@ -4,7 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/routes.dart';
+import 'package:splitspends/features/expenses/presentation/route_args.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/groups/presentation/providers.dart';

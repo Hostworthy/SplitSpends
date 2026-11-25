@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:splitspends/core/ledger.dart';
 import 'package:splitspends/features/invites/data/providers.dart';
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/routes.dart';
 import 'package:splitspends/core/theme/theme.dart';
 import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/api/api_error.dart';

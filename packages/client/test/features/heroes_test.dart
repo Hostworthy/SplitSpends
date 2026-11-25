@@ -7,7 +7,7 @@ import 'package:splitspends/core/ledger.dart';
 import 'package:splitspends/features/friends/data/providers.dart';
 import 'package:splitspends/features/groups/data/providers.dart';
 import 'package:splitspends/app/router.dart';
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/routes.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/features/groups/domain/group.dart';

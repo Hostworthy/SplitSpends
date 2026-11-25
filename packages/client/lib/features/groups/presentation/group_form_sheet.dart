@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/features/groups/presentation/emoji_picker.dart';
 import 'package:splitspends/core/ledger.dart';
-import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/routes.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/core/widgets/states.dart';
