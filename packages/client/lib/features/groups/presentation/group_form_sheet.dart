@@ -71,9 +71,12 @@ class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
     _addPerson();
     final name = _name.text.trim();
     if (name.isEmpty) return;
+    // The group is created even when the sheet closes meanwhile; the lists
+    // must show it either way.
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _busy = true);
     try {
-      final group = await ref
+      final group = await container
           .read(groupsRepositoryProvider)
           .create(
             GroupInput(
@@ -85,7 +88,7 @@ class _NewGroupSheetState extends ConsumerState<_NewGroupSheet> {
               members: _members,
             ),
           );
-      ref.refreshLedger();
+      refreshLedgerIn(container);
       if (!mounted) return;
       Navigator.pop(context);
       GoRouter.of(context).go(Routes.group(group.id));

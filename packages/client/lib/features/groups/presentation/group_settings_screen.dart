@@ -63,10 +63,16 @@ class _SettingsState extends ConsumerState<_Settings> {
     super.dispose();
   }
 
+  /// The container outlives this screen, so a change saved after the person
+  /// left still refreshes the lists.
+  ProviderContainer get _container =>
+      ProviderScope.containerOf(context, listen: false);
+
   Future<void> _patch(GroupInput input, {String? done}) async {
+    final container = _container;
     try {
       await _repo.update(group.id, input);
-      ref.refreshLedger();
+      refreshLedgerIn(container);
       if (mounted && done != null) showMessage(context, done);
     } catch (error) {
       if (mounted) showError(context, error);
@@ -75,10 +81,11 @@ class _SettingsState extends ConsumerState<_Settings> {
 
   Future<void> _addMember() async {
     final entry = await showPersonDialog(context, title: 'Add member');
-    if (entry == null) return;
+    if (entry == null || !mounted) return;
+    final container = _container;
     try {
       await _repo.addMember(group.id, email: entry.email, name: entry.name);
-      ref.refreshLedger();
+      refreshLedgerIn(container);
     } catch (error) {
       if (mounted) showError(context, error);
     }
@@ -110,10 +117,11 @@ class _SettingsState extends ConsumerState<_Settings> {
       'Only possible when their balance in this group is settled.',
       self ? 'Leave' : 'Remove',
     );
-    if (!ok) return;
+    if (!ok || !mounted) return;
+    final container = _container;
     try {
       await _repo.removeMember(group.id, userId);
-      ref.refreshLedger();
+      refreshLedgerIn(container);
       if (self && mounted) context.go(Routes.groups);
     } catch (error) {
       if (mounted) showError(context, error);
@@ -126,10 +134,11 @@ class _SettingsState extends ConsumerState<_Settings> {
       'This removes ${group.name} and its expenses for everyone. Only possible when everyone is settled up.',
       'Delete',
     );
-    if (!ok) return;
+    if (!ok || !mounted) return;
+    final container = _container;
     try {
       await _repo.delete(group.id);
-      ref.refreshLedger();
+      refreshLedgerIn(container);
       if (mounted) context.go(Routes.groups);
     } catch (error) {
       if (mounted) showError(context, error);

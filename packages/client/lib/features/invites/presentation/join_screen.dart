@@ -73,19 +73,22 @@ class _JoinScreenState extends ConsumerState<JoinScreen> {
       JoinLink.origin(widget.server!) == null;
 
   Future<void> _join() async {
+    // Joining completes even when the person leaves this screen meanwhile;
+    // the pending invite must clear and the lists refresh either way.
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final group = await ref
+      final group = await container
           .read(invitesRepositoryProvider)
           .accept(widget.token);
-      ref.read(pendingInviteProvider.notifier).set(null);
-      ref.refreshLedger();
+      container.read(pendingInviteProvider.notifier).set(null);
+      refreshLedgerIn(container);
       if (mounted) context.go(Routes.group(group.id));
-    } on ApiError catch (error) {
-      setState(() => _error = describeError(error));
+    } catch (error) {
+      if (mounted) setState(() => _error = describeError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

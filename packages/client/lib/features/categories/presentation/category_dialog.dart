@@ -52,9 +52,10 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
   Future<void> _save(List<String> groups) async {
     setState(() => _touched = true);
     if (_draft.problem(groups) != null) return;
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _saving = true);
     try {
-      final repo = ref.read(categoriesRepositoryProvider);
+      final repo = container.read(categoriesRepositoryProvider);
       final input = CategoryInput(
         id: widget.existing == null ? _id : null,
         name: _draft.cleanName,
@@ -64,7 +65,7 @@ class _CategoryDialogState extends ConsumerState<_CategoryDialog> {
       final saved = widget.existing == null
           ? await repo.create(input)
           : await repo.update(widget.existing!.id, input);
-      ref.invalidate(categoriesProvider);
+      container.invalidate(categoriesProvider);
       if (mounted) Navigator.pop(context, saved);
     } catch (error) {
       if (mounted) showError(context, error);

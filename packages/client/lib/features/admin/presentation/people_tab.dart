@@ -58,10 +58,12 @@ class _PeopleTabState extends ConsumerState<PeopleTab> {
   /// error is shown).
   Future<T?> _run<T>(Future<T> Function() action, String done) async {
     if (_busy) return null;
+    // Switching tabs disposes this one while the change is on its way.
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _busy = true);
     try {
       final result = await action();
-      ref.invalidate(accountsProvider);
+      container.invalidate(accountsProvider);
       if (mounted) showMessage(context, done);
       return result;
     } catch (error) {

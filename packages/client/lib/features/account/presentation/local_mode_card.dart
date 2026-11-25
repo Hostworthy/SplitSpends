@@ -19,7 +19,7 @@ final _localSummaryProvider = FutureProvider.autoDispose<ImportSummary>(
 class LocalModeCard extends ConsumerWidget {
   const LocalModeCard({super.key});
 
-  Future<void> _restore(BuildContext context, WidgetRef ref) async {
+  Future<void> _restore(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -39,18 +39,21 @@ class LocalModeCard extends ConsumerWidget {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true || !context.mounted) return;
+    // The restore outlives this card when the person leaves meanwhile; the
+    // session and lists must reload either way.
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
       final file = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: const ['json'],
       );
       if (file == null) return;
-      await ref
+      await container
           .read(backupServiceProvider)
           .restore(await file.xFile.readAsBytes());
-      ref.invalidate(sessionProvider);
-      ref.refreshLedger();
+      container.invalidate(sessionProvider);
+      refreshLedgerIn(container);
       if (context.mounted) showMessage(context, 'Backup restored');
     } catch (error) {
       if (context.mounted) showError(context, error);
@@ -101,7 +104,7 @@ class LocalModeCard extends ConsumerWidget {
                   label: const Text('Export backup'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () => _restore(context, ref),
+                  onPressed: () => _restore(context),
                   icon: const Icon(Icons.restore_rounded),
                   label: const Text('Restore backup'),
                 ),
@@ -131,7 +134,7 @@ class LocalModeCard extends ConsumerWidget {
 class LocalCopyCard extends ConsumerWidget {
   const LocalCopyCard({super.key});
 
-  Future<void> _remove(BuildContext context, WidgetRef ref) async {
+  Future<void> _remove(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -152,10 +155,15 @@ class LocalCopyCard extends ConsumerWidget {
         ],
       ),
     );
-    if (ok != true) return;
-    await ref.read(importServiceProvider).removeLocalCopy();
-    ref.invalidate(_localSummaryProvider);
-    if (context.mounted) showMessage(context, 'On-device copy removed');
+    if (ok != true || !context.mounted) return;
+    final container = ProviderScope.containerOf(context, listen: false);
+    try {
+      await container.read(importServiceProvider).removeLocalCopy();
+      container.invalidate(_localSummaryProvider);
+      if (context.mounted) showMessage(context, 'On-device copy removed');
+    } catch (error) {
+      if (context.mounted) showError(context, error);
+    }
   }
 
   @override
@@ -172,7 +180,7 @@ class LocalCopyCard extends ConsumerWidget {
           '${summary.people} people from before you connected.',
         ),
         trailing: TextButton(
-          onPressed: () => _remove(context, ref),
+          onPressed: () => _remove(context),
           child: const Text('Remove'),
         ),
       ),
