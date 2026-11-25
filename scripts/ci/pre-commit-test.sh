@@ -18,6 +18,8 @@ fresh() {
   git init -q
   git config user.email hook@example.com
   git config user.name Hook
+  # A signing setup in the developer's own config would stop the commits.
+  git config commit.gpgsign false
 }
 
 # expect runs the hook and checks its exit status (pass or fail) and that
