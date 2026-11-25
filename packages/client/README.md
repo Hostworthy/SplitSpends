@@ -72,9 +72,11 @@ Feature-first with clean layering, mirroring the backend's domain design. The mo
 lib/
   main.dart                 ProviderScope + app
   app/                      app.dart, router.dart (redirects, deep links), shell.dart
-                            (bottom bar on phones, rail + two panes ≥ 700px), theme.dart,
-                            routes.dart, refresh.dart, repositories.dart (composition root)
+                            (bottom bar on phones, rail + two panes ≥ 700px)
   core/
+    mode.dart               byMode (picks a repository per mode), the on-device ledger
+    ledger.dart             ledgerVersionProvider, refreshLedger, changeLedger
+    routes.dart             route paths
     api/                    ApiClient (bearer token, envelopes, error envelope), ApiError
     auth/                   Session + AppMode (unset / local / connected), LocalStore
     config/                 AppConfig, server config provider, bundled local catalog
@@ -84,10 +86,14 @@ lib/
     storage/                sembast database, LocalLedger (on-device records), response cache
     sync/                   Outbox (offline writes), OutboxSync, reachability
     utils/                  dates, web download helper
-    widgets/                avatars, balance text, amount field, pickers, skeletons, states
+    theme/                  theme, accent colours, balance colours, theme settings
+    widgets/                avatars, balance text, amount field, pickers, skeletons, states,
+                            logo, wide-layout breakpoint
   features/<feature>/
-    domain/                 models + abstract repository interfaces (no HTTP, no storage)
-    data/                   local_* (on-device), remote_* (HTTP), offline_* (outbox wrapper)
+    domain/                 models + abstract repository interfaces (plain Dart: no Flutter,
+                            no HTTP, no storage)
+    data/                   local_* (on-device), remote_* (HTTP), offline_* (outbox wrapper),
+                            providers.dart (the feature's repository providers)
     presentation/           screens, widgets, Riverpod providers
 ```
 
@@ -101,7 +107,9 @@ Features: `auth` (welcome, on-device setup, server sign-in), `sync` (import to a
 
 ### Rules
 
-- Screens and providers depend on the **domain interfaces** only. `app/repositories.dart` is the single place that picks the implementation for the current mode.
+- Layers point one way: `core` <- `features` <- `app`. `core` imports no feature and not the app; features never import `app/`; only `app/` imports the router. A feature's `domain/` is plain Dart and imports no `data/`, `presentation/` or `platform/` code, not even through what it imports. A feature uses another feature only through its `domain/`, its `data/providers.dart` and its `presentation/` providers and widgets, never its data implementations. `test/architecture_test.dart` enforces these rules.
+- Screens and providers depend on the **domain interfaces** only. Each feature's `data/providers.dart` is the one place that picks its implementation for the current mode, with `byMode` from `core/mode.dart`.
+- A provider that shows ledger data (balances, expenses, groups, friends, activity, categories) watches `ledgerVersionProvider` where it is defined; `refreshLedger` and `changeLedger` bump it after a change, so every such provider refetches.
 - Money is always an `int` in minor units plus a currency code. Doubles are used only to draw charts; formatting uses integer arithmetic.
 - `domain/split_calculator.dart` mirrors the server's split rules for live previews; the server stays authoritative.
 - State: `flutter_riverpod` (no code generation). Forms use a `ChangeNotifier` (`ExpenseForm`) so their rules are unit tested without widgets.

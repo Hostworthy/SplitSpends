@@ -20,6 +20,11 @@ Dependencies point inward to `packages/core`. See [ADR-001](../../../docs/adr/00
 | `apps/api`, `apps/mcp` | Process entry points (`main.go`) | anything in `packages/` |
 | `packages/ledger` (Dart) | Split and balance rules, mirrors `packages/core` | Dart SDK only |
 | `packages/client` (Flutter) | Screens, local store, sync, assets | `packages/ledger`, Flutter plugins |
+| `packages/client/lib/core` | API client, session, mode switch, ledger refresh, routes, theme, shared widgets | `packages/ledger`, Flutter plugins; never `app/` or `features/` |
+| `packages/client/lib/features/<f>/domain` | Models, repository interfaces | Dart SDK, `packages/ledger`, plain-Dart parts of core, other features' domains |
+| `packages/client/lib/features/<f>/data` | Local, remote and offline repositories; `providers.dart` picks one per mode | its domain, other features' domains, core |
+| `packages/client/lib/features/<f>/presentation` | Screens, widgets, Riverpod providers | core; other features' domain, `data/providers.dart` and presentation; never `app/` |
+| `packages/client/lib/app` | Router, shell, `MaterialApp` | anything in the client |
 | `apps/apk`, `apps/ios`, `apps/web` | Platform runners calling `packages/client` | `packages/client` only |
 
 Questions to ask:
@@ -31,4 +36,6 @@ Questions to ask:
 
 Packages never import apps; `apps/` only holds runnable apps.
 
-Verify with `go test -count=1 ./packages/archtest/`.
+In the client, layers point one way: `core` <- `features` <- `app`. Only `app/` imports the router. A provider that shows ledger data watches `ledgerVersionProvider` (`core/ledger.dart`) where it is defined.
+
+Verify with `go test -count=1 ./packages/archtest/` and, for the client, `flutter test test/architecture_test.dart` in `packages/client`.

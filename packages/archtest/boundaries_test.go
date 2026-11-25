@@ -1,5 +1,7 @@
 // Package archtest enforces the dependency rules from docs/adr/001: the
 // domain sits at the centre and adapters depend on it, never the reverse.
+// The Flutter client's layers are checked the same way by
+// packages/client/test/architecture_test.dart.
 package archtest
 
 import (

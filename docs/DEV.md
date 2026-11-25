@@ -97,7 +97,7 @@ Follow [ADR-001](adr/001-domain-driven-design.md):
 4. Wire it in `packages/bootstrap/runtime.go`.
 5. Request and response shapes in `packages/platform/contract.go`; document them in [API.md](API.md).
 6. Handler and serializer in `apps/api/routes/`, route in `router.go`.
-7. Client models and screens in `packages/client/lib/features/<feature>/`.
+7. Client models and screens in `packages/client/lib/features/<feature>/`: models and repository interfaces in `domain/` (plain Dart), implementations and the repository providers in `data/`, screens and providers in `presentation/`. Layers point one way, `core` <- `features` <- `app`: `core` imports no feature, features never import `app/`, and a feature uses another only through its domain, its `data/providers.dart` and its presentation providers and widgets. A provider that shows ledger data watches `ledgerVersionProvider`. `packages/client/test/architecture_test.dart` enforces the layers; the rules are in the client's [README](../packages/client/README.md#rules).
 8. MCP tool in `packages/mcp/server.go` (admin tools in `admin.go`), registered in `tools.go`, if assistants should use it.
 9. `make check`.
 
@@ -106,7 +106,7 @@ A check and the write it guards run in one `tx.Do`, after taking the lock that t
 ## Testing
 
 - Pure domain logic (splits, balances, receipt reconciliation) has table-style unit tests in `packages/core`.
-- `packages/archtest` fails when a package imports across a forbidden boundary.
+- `packages/archtest` fails when a Go package imports across a forbidden boundary; `packages/client/test/architecture_test.dart` does the same for the client's layers.
 - Database tests skip unless `TEST_DATABASE_URL` is set. Each one calls `bootstraptest.Open(t, bootstraptest.Options{})` (`packages/bootstrap/bootstraptest`), which wipes and migrates the schema, wires every service with a recorded notifier (`env.Notifier.Code(email)`, `Sent()`) and a clock that moves only on `env.Clock.Add`, and holds a database lock so packages never run database tests at the same time. `env.SignIn(t, email, name)` returns a session. `packages/bootstrap` tests services this way.
 - `apps/api/routes` tests the HTTP API: `s := newServer(t, bootstraptest.Options{})` serves the wired routes behind the middleware chain of `apps/api/main.go`; `s.signIn(t, email, name).Token` signs in over HTTP, and `s.call(t, method, path, token, body).want(t, status)` sends JSON, with `data[T]`, `items[T]` and `failure` decoding the envelopes. The test server trusts one proxy hop and `signIn` gives each person a client address of their own, so a test can sign in as many people as it needs; calls without `X-Forwarded-For` share one address, as the rate limits expect. For who-may-not tests, `s.group(t, token, name, emails...)` and `s.expense(t, token, groupID, total, payer, split...)` set up the data and `s.refused(t, token, status, code, []request{...})` checks that every call in the table is refused with that status and error code. `TestRoutesRequireAuth` reads `router.go` and expects 401 without a token from every route that is not in its `anonymous` list; add a route there only when it must work signed out.
 - `packages/middleware` has plain `httptest` unit tests.
