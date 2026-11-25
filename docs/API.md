@@ -110,7 +110,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 | `adjustment` | minor units (may be negative) | Each user owes the adjustment, the rest is split evenly |
 | `itemized` | omitted | `items[].userIds` share each item evenly; `tax` and `tip` are spread proportionally to each user's item subtotal; `total` must equal items + tax + tip |
 
-`payers` is a list of `{ "userId", "amount" }` whose amounts sum to `total`. Every user in `payers`, `splits` or `items` must be a group member (group expense) or the caller's friend (non-group expense), and the caller must be involved.
+`payers` is a list of `{ "userId", "amount" }` whose amounts sum to `total`. Every user in `payers`, `splits` or `items` must be a group member (group expense) or the caller's friend (non-group expense), and the caller must be involved. Outside groups, everyone who ends up owing money must also be connected (friends, or members of a common group) with everyone who ends up getting money back, since the expense leaves those pairs owing each other; otherwise 422 on `splits`. A recurring expense outside groups stops repeating once that no longer holds.
 
 `date` runs from `2000-01-01` up to one year after today (422 on `date` otherwise); an update that leaves it out keeps the expense's date.
 
