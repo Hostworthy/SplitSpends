@@ -14,7 +14,7 @@ Self-hosters range from homelabs to people who want a free cloud setup. One bina
 - `SERVERLESS=true` turns off in-process background work (jobs, queued emails); a scheduler calls `POST /internal/jobs` with `JOBS_SECRET`.
 - Migrations take a PostgreSQL advisory lock so concurrent cold starts are safe.
 - Receipt storage is a port with three adapters: local disk, S3-compatible buckets (AWS S3, R2, MinIO, GCS interop) and PostgreSQL (no extra service on free tiers).
-- Terraform for AWS and GCP, a Render blueprint, and Docker Compose files for homelabs ship in `deploy/`. Each keeps buckets private, uses HTTPS, scopes IAM to what the app needs and keeps secrets out of the repository.
+- Terraform for AWS and GCP, a Render blueprint, and Docker Compose files for homelabs ship in `deploy/`. Each keeps buckets private, uses HTTPS, scopes IAM to what the app needs and keeps secrets out of the repository. Secrets reach the server through the platform's secret store (Secret Manager on GCP; Secrets Manager on AWS, read at start through `SECRETS_ARN`) rather than plain service configuration.
 - PostgreSQL is the only database (see ADR-005 for why money stays relational).
 
 ## Consequences
