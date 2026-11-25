@@ -182,7 +182,9 @@ type Repository interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	// ForUser lists the user's groups with Members filled.
 	ForUser(ctx context.Context, userID uuid.UUID, archived bool) ([]*Group, error)
-	// Joined counts the groups the user is an active member of.
+	// Joined counts the groups the user is an active member of. Inside a
+	// transaction it holds the user's count until the transaction ends, so
+	// groups the user joins at the same time count each other.
 	Joined(ctx context.Context, userID uuid.UUID) (int, error)
 	AddMember(ctx context.Context, groupID, userID uuid.UUID, at time.Time) error
 	RemoveMember(ctx context.Context, groupID, userID uuid.UUID, at time.Time) error

@@ -1,8 +1,10 @@
 package group
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
@@ -164,9 +166,6 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	if err != nil {
 		return nil, err
 	}
-	if err := s.room(ctx, actor, me); err != nil {
-		return nil, err
-	}
 	now := s.clock.Now()
 	g, split, err := start(in, me, now)
 	if err != nil {
@@ -177,12 +176,19 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		if err := s.repo.Create(ctx, g); err != nil {
 			return err
 		}
-		if err := s.repo.AddMember(ctx, g.ID, actor, now); err != nil {
+		var people []*user.User
+		if people, added, invited, err = s.resolve(ctx, me, in); err != nil {
 			return err
 		}
-		g.Members = []uuid.UUID{actor}
-		if added, invited, err = s.populate(ctx, g, me, in, now); err != nil {
+		people = append([]*user.User{me}, people...)
+		if err := s.rooms(ctx, actor, people); err != nil {
 			return err
+		}
+		for _, u := range people {
+			if err := s.repo.AddMember(ctx, g.ID, u.ID, now); err != nil {
+				return err
+			}
+			g.Members = append(g.Members, u.ID)
 		}
 		if split != nil {
 			if err := g.Apply(Patch{DefaultSplit: split}, now); err != nil {
@@ -236,38 +242,53 @@ func start(in CreateInput, me *user.User, now time.Time) (*Group, *DefaultSplit,
 	return g, split, nil
 }
 
-// populate adds the invitees and people of a new group, returning the
-// invitees who were added and those who got an account just now.
-func (s *Service) populate(ctx context.Context, g *Group, me *user.User, in CreateInput, now time.Time) (added, invited []*user.User, err error) {
+// resolve finds the invitees and people a new group made by me starts
+// with, each once and without me. It also returns the invitees among them
+// and those who got an account just now.
+func (s *Service) resolve(ctx context.Context, me *user.User, in CreateInput) (people, added, invited []*user.User, err error) {
+	seen := map[uuid.UUID]bool{me.ID: true}
 	for _, inv := range in.Members {
 		u, created, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if created {
 			invited = append(invited, u)
 		}
-		if g.HasMember(u.ID) {
+		if seen[u.ID] {
 			continue
 		}
-		if err := s.enroll(ctx, me.ID, g, u, now); err != nil {
-			return nil, nil, err
-		}
+		seen[u.ID] = true
+		people = append(people, u)
 		added = append(added, u)
 	}
 	for _, id := range in.People {
-		if g.HasMember(id) {
+		if seen[id] {
 			continue
 		}
 		u, err := s.users.Get(ctx, id)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		if err := s.enroll(ctx, me.ID, g, u, now); err != nil {
-			return nil, nil, err
+		seen[id] = true
+		people = append(people, u)
+	}
+	return people, added, invited, nil
+}
+
+// rooms runs room for each of people in order of id, so that requests at
+// the same time adding some of the same people wait for each other instead
+// of deadlocking.
+func (s *Service) rooms(ctx context.Context, actor uuid.UUID, people []*user.User) error {
+	sorted := slices.SortedFunc(slices.Values(people), func(a, b *user.User) int {
+		return bytes.Compare(a.ID[:], b.ID[:])
+	})
+	for _, u := range sorted {
+		if err := s.room(ctx, actor, u); err != nil {
+			return err
 		}
 	}
-	return added, invited, nil
+	return nil
 }
 
 // enroll adds u to g, unless they are in as many groups as one person may be.
@@ -283,6 +304,8 @@ func (s *Service) enroll(ctx context.Context, actor uuid.UUID, g *Group, u *user
 }
 
 // room refuses to add u to another group once they belong to MaxPerUser.
+// Inside a transaction the count holds until the transaction ends, so u
+// joining groups at the same time counts each one.
 func (s *Service) room(ctx context.Context, actor uuid.UUID, u *user.User) error {
 	n, err := s.repo.Joined(ctx, u.ID)
 	if err != nil || n < MaxPerUser {

@@ -203,9 +203,17 @@ func (r *Groups) ForUser(ctx context.Context, userID uuid.UUID, archived bool) (
 	return collect(rows, scanGroup)
 }
 
+// joinedLocks is the first key of the transaction advisory locks taken per
+// person while they are added to a group.
+const joinedLocks = 1_384_206
+
 func (r *Groups) Joined(ctx context.Context, userID uuid.UUID) (int, error) {
+	q := r.db.Q(ctx)
+	if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, joinedLocks, userID.String()); err != nil {
+		return 0, err
+	}
 	var n int
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM group_members WHERE user_id = $1 AND left_at IS NULL`, userID).Scan(&n)
+	err := q.QueryRow(ctx, `SELECT count(*) FROM group_members WHERE user_id = $1 AND left_at IS NULL`, userID).Scan(&n)
 	return n, err
 }
 
