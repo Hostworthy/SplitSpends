@@ -87,8 +87,23 @@ const (
 
 // decide applies the sign-up rules to email, which may hold the invite link
 // stored under link. Active accounts always sign in and disabled ones never
-// do; the very first account bootstraps the server whatever the mode.
+// do; the very first account bootstraps the server whatever the mode. It
+// must run inside Tx.Do: while no account is active it holds the users lock
+// until the transaction ends, so the account it lets in is created before
+// anyone else is decided, and only one becomes the administrator.
 func (s *Service) decide(ctx context.Context, email, link string) (decision, error) {
+	count, err := s.users.Count(ctx)
+	if err != nil {
+		return deny, err
+	}
+	if count == 0 {
+		if err := s.users.Lock(ctx); err != nil {
+			return deny, err
+		}
+		if count, err = s.users.Count(ctx); err != nil {
+			return deny, err
+		}
+	}
 	existing, err := s.users.FindByEmail(ctx, email)
 	if err != nil {
 		return deny, err
@@ -103,10 +118,6 @@ func (s *Service) decide(ctx context.Context, email, link string) (decision, err
 			// Re-enabled by an administrator: known by the hash of this email.
 			return allow, nil
 		}
-	}
-	count, err := s.users.Count(ctx)
-	if err != nil {
-		return deny, err
 	}
 	if count == 0 {
 		return allow, nil

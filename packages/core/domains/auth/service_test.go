@@ -106,6 +106,7 @@ func (m *memUsers) Count(context.Context) (int, error) {
 	return n, nil
 }
 func (m *memUsers) Placeholders(context.Context, uuid.UUID) (int, error) { return 0, nil }
+func (m *memUsers) Lock(context.Context) error                           { return nil }
 
 type codes map[string]string
 
