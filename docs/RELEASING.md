@@ -18,7 +18,7 @@ To stop anyone tagging by mistake, add a tag ruleset for `v*` (Settings, Rules, 
 | Web app (`splitspends-web-<tag>.tar.gz`) | Ubuntu | Serve with `WEB_DIR` |
 | Android APK | Ubuntu | Signed with your upload key when the secrets below exist; otherwise named `-debug-signed.apk` and signed with a key the runner generates for that run |
 | iOS app (`-unsigned.ipa`) | macOS | Unsigned until an Apple Developer account is set up; install with Xcode, AltStore or Sideloadly |
-| Container image `ghcr.io/hostworthy/splitspends:<tag>` | Ubuntu | linux/amd64; includes the server and the web app, with the third-party notices in `/usr/share/doc/splitspends` |
+| Container image `ghcr.io/hostworthy/splitspends:<tag>` | Ubuntu | linux/amd64; includes the server and the web app, with the third-party notices in `/usr/share/doc/splitspends`; its `HEALTHCHECK` runs `splitspends health`, which exits 1 unless `/health` answers 200 |
 | `SHA256SUMS` | | Checksums of every file |
 
 Every file and the image also get a signed build provenance attestation, and the image carries a software bill of materials. The release notes print the image digest and the commands to check them; checksums alone only catch a damaged download, because they are published next to the files.

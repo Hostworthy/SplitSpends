@@ -46,7 +46,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy:/data
     depends_on:
-      - app
+      app:
+        condition: service_healthy
 
   backup:
     image: postgres:16-alpine
