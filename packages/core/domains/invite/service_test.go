@@ -99,15 +99,21 @@ type clockAt struct{ at time.Time }
 
 func (c *clockAt) Now() time.Time { return c.at }
 
-func setup(t *testing.T) (*Service, *groups, *user.User, *clockAt) {
+// setup builds a service with Ada alone in her flat; others are further
+// accounts that exist but are not members.
+func setup(t *testing.T, others ...*user.User) (*Service, *groups, *user.User, *clockAt) {
 	t.Helper()
 	ada, err := user.New("ada@example.com", "Ada", user.StatusActive, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
+	accounts := users{ada.ID: ada}
+	for _, u := range others {
+		accounts[u.ID] = u
+	}
 	g := &groups{g: &group.Group{ID: uuid.New(), Name: "Flat", Emoji: "🏠", Members: []uuid.UUID{ada.ID}}}
 	c := &clockAt{at: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)}
-	svc := NewService(&memInvites{}, g, g, user.NewService(users{ada.ID: ada}, nil, nil, c), c, "https://split.test")
+	svc := NewService(&memInvites{}, g, g, user.NewService(accounts, nil, nil, c), c, "https://split.test")
 	return svc, g, ada, c
 }
 
@@ -227,8 +233,12 @@ func TestExpiredUnknownAndRevokedLookTheSame(t *testing.T) {
 
 func TestLinksEndWhenTheirCreatorLeaves(t *testing.T) {
 	ctx := context.Background()
-	svc, g, ada, _ := setup(t)
-	mal := uuid.New()
+	account, err := user.New("mal@example.com", "Mal", user.StatusActive, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, g, ada, _ := setup(t, account)
+	mal := account.ID
 	g.g.Members = append(g.g.Members, mal)
 	issued, err := svc.Create(ctx, mal, g.g.ID)
 	if err != nil {

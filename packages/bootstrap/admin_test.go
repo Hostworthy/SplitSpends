@@ -10,6 +10,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap"
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/admin"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/google/uuid"
@@ -195,7 +196,6 @@ func TestAdministration(t *testing.T) {
 	if total != 4 || list[0].ID != ben.ID {
 		t.Fatalf("accounts = %d, first %s", total, list[0].Name)
 	}
-	_ = admin.StatusPending
 }
 
 func TestDisabledAccountCannotUseEarlierCode(t *testing.T) {
@@ -439,5 +439,75 @@ func TestJoinRequestsBounded(t *testing.T) {
 		if _, total, err := env.Services.Admin.Requests(ctx, ada.ID, status, 50, 0); err != nil || total != want {
 			t.Fatalf("%s requests after cleanup = %d, %v; want %d", status, total, err, want)
 		}
+	}
+}
+
+// TestDisableRevokesTokensAndPush checks that disabling an account removes
+// every way back in: interactive sessions, API tokens and push devices.
+func TestDisableRevokesTokensAndPush(t *testing.T) {
+	ctx := context.Background()
+	env, _ := pushSetup(t, time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC))
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User
+	login := env.SignIn(t, "ben@example.com", "Ben")
+	ben := login.User
+	p, err := svc.Auth.Authenticate(ctx, login.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := svc.Auth.CreateToken(ctx, p, "Script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p256dh, keys := deviceKeys(t)
+	if _, _, err := svc.Push.Register(ctx, ben.ID, push.Input{Endpoint: "https://push.example.com/ben", P256dh: p256dh, Auth: keys}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.Admin.Disable(ctx, ada.ID, ben.ID); err != nil {
+		t.Fatal(err)
+	}
+	for name, secret := range map[string]string{"session": login.Token, "API token": token.Token} {
+		if _, err := svc.Auth.Authenticate(ctx, secret); !errs.Is(err, errs.KindUnauthorized) {
+			t.Errorf("the %s of a disabled account must stop working: %v", name, err)
+		}
+	}
+	var devices int
+	if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM push_subscriptions WHERE user_id = $1`, ben.ID).Scan(&devices); err != nil {
+		t.Fatal(err)
+	}
+	if devices != 0 {
+		t.Fatalf("a disabled account keeps %d push devices", devices)
+	}
+}
+
+// TestInviteLinksOfDisabledAccount checks that links someone shared stop
+// working when their account is disabled, as they do when they leave.
+func TestInviteLinksOfDisabledAccount(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	svc := env.Services
+	if _, err := svc.Admin.UpdateSettings(ctx, ada, "invite", nil); err != nil {
+		t.Fatal(err)
+	}
+	env.SignIn(t, "ben@example.com", "Ben")
+	issued, err := svc.Invites.Create(ctx, ben, g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Admin.Disable(ctx, ada, ben); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Invites.Preview(ctx, issued.Token); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("preview: %v", err)
+	}
+	if ok, err := svc.Invites.Valid(ctx, issued.Token); ok || err != nil {
+		t.Fatalf("the link of a disabled account must not let anyone sign up: %v", err)
+	}
+	if err := svc.Auth.RequestCode(ctx, "cleo@example.com", issued.Token, ""); err != nil {
+		t.Fatal(err)
+	}
+	if code := env.Notifier.Code("cleo@example.com"); code != "" {
+		t.Fatal("a code was sent to a stranger holding the link of a disabled account")
 	}
 }
