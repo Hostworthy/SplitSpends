@@ -8,6 +8,7 @@ import 'package:splitspends/core/config/local_config.dart';
 import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends_ledger/ledger.dart';
 import 'package:splitspends/core/models/json.dart';
+import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/core/storage/local_ledger.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
@@ -52,13 +53,15 @@ class LocalGroupsRepository implements GroupsRepository {
     }
   }
 
-  Future<Group> _view(DatabaseClient c, JsonMap g) async {
-    final me = await _ledger.me(c);
-    final people = await _ledger.directory(c);
-    final entries = LocalLedger.groupEntries(
-      await _ledger.expenses(c),
-      g['id'] as String,
-    );
+  /// The API view of group record [g]; [expenses] may hold other groups'
+  /// expenses too.
+  static Group _view(
+    JsonMap g, {
+    required Me me,
+    required Map<String, JsonMap> people,
+    required List<JsonMap> expenses,
+  }) {
+    final entries = LocalLedger.groupEntries(expenses, g['id'] as String);
     return Group.fromJson({
       ...g,
       'defaultSplit': effectiveSplit(g),
@@ -84,13 +87,33 @@ class LocalGroupsRepository implements GroupsRepository {
           (a, b) =>
               (b['updatedAt'] as String).compareTo(a['updatedAt'] as String),
         );
-    return [for (final g in groups) await _view(db, g)];
+    // One read of each store for the whole list: refreshes run this after
+    // every change, and the expenses store grows without bound.
+    final people = await _ledger.directory(db);
+    final byGroup = <Object?, List<JsonMap>>{};
+    for (final e in await _ledger.expenses(db)) {
+      (byGroup[e['groupId']] ??= []).add(e);
+    }
+    return [
+      for (final g in groups)
+        _view(
+          g,
+          me: me,
+          people: people,
+          expenses: byGroup[g['id']] ?? const [],
+        ),
+    ];
   }
 
   @override
   Future<Group> get(String id) async {
     final db = await _ledger.db;
-    return _view(db, await _ledger.group(id, db));
+    return _view(
+      await _ledger.group(id, db),
+      me: await _ledger.me(db),
+      people: await _ledger.directory(db),
+      expenses: await _ledger.expenses(db),
+    );
   }
 
   @override
