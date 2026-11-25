@@ -96,7 +96,9 @@ func Observe(log *slog.Logger, next http.Handler) http.Handler {
 		start := time.Now()
 		defer func() {
 			v := recover()
-			if v != nil && v != http.ErrAbortHandler {
+			err, _ := v.(error)
+			abort := errors.Is(err, http.ErrAbortHandler)
+			if v != nil && !abort {
 				log.Error("middleware.panic.recovered", "requestId", id, "panic", v, "path", redact(r.URL.Path),
 					"stack", string(debug.Stack()))
 				if rec.status == 0 {
@@ -107,7 +109,7 @@ func Observe(log *slog.Logger, next http.Handler) http.Handler {
 				log.Info("http.request.completed", "requestId", id, "method", r.Method, "path", redact(r.URL.Path),
 					"status", rec.status, "bytes", rec.bytes, "durationMs", time.Since(start).Milliseconds())
 			}
-			if v == http.ErrAbortHandler {
+			if abort {
 				panic(v)
 			}
 		}()
@@ -231,7 +233,7 @@ func CORS(origins []string, next http.Handler) http.Handler {
 			h.Add("Vary", "Origin")
 		}
 		origin := r.Header.Get("Origin")
-		if origin == "" || !(allowAll || allowed[origin]) {
+		if origin == "" || (!allowAll && !allowed[origin]) {
 			next.ServeHTTP(w, r)
 			return
 		}
