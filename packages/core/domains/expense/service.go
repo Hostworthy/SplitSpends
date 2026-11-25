@@ -2,6 +2,7 @@ package expense
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -104,31 +105,48 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 		if !g.HasMember(actor) {
 			return nil, errs.Validation("groupId", "Group not found.")
 		}
-		for _, sh := range shares {
-			if !g.HasMember(sh.UserID) {
-				return nil, errs.Validation("splits", "Everyone in the expense must be a member of the group.")
-			}
+		if !members(g, shares) {
+			return nil, errs.Validation("splits", "Everyone in the expense must be a member of the group.")
 		}
 		return g, nil
 	}
-	involved := false
-	for _, sh := range shares {
-		if sh.UserID == actor {
-			involved = true
-			continue
-		}
-		ok, err := s.connections.Connected(ctx, actor, sh.UserID)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, errs.Validation("splits", "You can only split non-group expenses with friends.")
-		}
+	ok, err := s.connected(ctx, actor, shares)
+	if err != nil {
+		return nil, err
 	}
-	if !involved {
+	if !ok {
+		return nil, errs.Validation("splits", "You can only split non-group expenses with friends.")
+	}
+	if !slices.ContainsFunc(shares, func(sh Share) bool { return sh.UserID == actor }) {
 		return nil, errs.Validation("splits", "You must be part of an expense outside a group.")
 	}
 	return nil, nil
+}
+
+// members reports whether everyone in shares still belongs to g. Booking,
+// restoring and repeating an expense all require it.
+func members(g *group.Group, shares []Share) bool {
+	for _, sh := range shares {
+		if !g.HasMember(sh.UserID) {
+			return false
+		}
+	}
+	return true
+}
+
+// connected reports whether actor may share an expense outside groups with
+// everyone in shares.
+func (s *Service) connected(ctx context.Context, actor uuid.UUID, shares []Share) (bool, error) {
+	for _, sh := range shares {
+		if sh.UserID == actor {
+			continue
+		}
+		ok, err := s.connections.Connected(ctx, actor, sh.UserID)
+		if err != nil || !ok {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 // category checks that the actor may file an expense under a custom
@@ -333,12 +351,8 @@ func (s *Service) setDeleted(ctx context.Context, actor, id uuid.UUID, deleted b
 	if (e.DeletedAt != nil) == deleted {
 		return e, nil
 	}
-	if !deleted && g != nil {
-		for _, sh := range e.Shares {
-			if !g.HasMember(sh.UserID) {
-				return nil, errs.Conflict("Someone in this expense has left the group, so it cannot be restored.")
-			}
-		}
+	if !deleted && g != nil && !members(g, e.Shares) {
+		return nil, errs.Conflict("Someone in this expense has left the group, so it cannot be restored.")
 	}
 	now := s.clock.Now()
 	kind := activity.ExpenseRestored
@@ -534,38 +548,66 @@ func (s *Service) RunRecurring(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	created := 0
-	for _, src := range due {
+	for _, d := range due {
+		var n int
 		err := s.tx.Do(ctx, func(ctx context.Context) error {
-			now := s.clock.Now()
-			copyExp := *src
-			copyExp.ID = uuid.New()
-			copyExp.Date = *src.NextDate
-			next := src.Recurrence.Next(copyExp.Date)
-			copyExp.NextDate = &next
-			copyExp.CreatedAt, copyExp.UpdatedAt = now, now
-			copyExp.ReceiptID = nil
-			src.Recurrence, src.NextDate, src.UpdatedAt = RecurNone, nil, now
-			if err := s.repo.Update(ctx, src); err != nil {
-				return err
-			}
-			if err := s.repo.Create(ctx, &copyExp); err != nil {
-				return err
-			}
-			var g *group.Group
-			if copyExp.GroupID != nil {
-				var err error
-				if g, err = s.groups.Get(ctx, *copyExp.GroupID); err != nil {
-					return err
-				}
-			}
-			return s.record(ctx, copyExp.CreatedBy, activity.ExpenseCreated, &copyExp, g, map[string]any{"recurring": true})
+			var err error
+			n, err = s.repeat(ctx, d.ID, today)
+			return err
 		})
 		if err != nil {
 			return created, err
 		}
-		created++
+		created += n
 	}
 	return created, nil
+}
+
+// repeat books the missed occurrences of one series inside the caller's
+// transaction and returns how many it booked. The row is claimed first, so
+// runners working at the same time book each occurrence once, and the copies
+// come from the stored row, so an edit saved after Due read it is kept.
+func (s *Service) repeat(ctx context.Context, id uuid.UUID, today time.Time) (int, error) {
+	src, err := s.repo.Claim(ctx, id, today)
+	if err != nil || src == nil {
+		return 0, err
+	}
+	now := s.clock.Now()
+	if err := s.repo.EndSeries(ctx, src.ID, now); err != nil {
+		return 0, err
+	}
+	var g *group.Group
+	var ok bool
+	if src.GroupID != nil {
+		if g, err = s.groups.Get(ctx, *src.GroupID); err != nil {
+			return 0, err
+		}
+		ok = members(g, src.Shares)
+	} else if ok, err = s.connected(ctx, src.CreatedBy, src.Shares); err != nil {
+		return 0, err
+	}
+	// Copies never bill someone who has left the group or is no longer
+	// connected; the series ends and the activity feed says why.
+	if !ok {
+		return 0, s.record(ctx, src.CreatedBy, activity.ExpenseStopped, src, g, nil)
+	}
+	dates, next := src.Recurrence.Missed(*src.NextDate, today)
+	for i, date := range dates {
+		c := *src
+		c.ID, c.Date, c.ReceiptID = uuid.New(), date, nil
+		c.CreatedAt, c.UpdatedAt = now, now
+		c.Recurrence, c.NextDate = RecurNone, nil
+		if i == len(dates)-1 {
+			c.Recurrence, c.NextDate = src.Recurrence, &next
+		}
+		if err := s.repo.Create(ctx, &c); err != nil {
+			return 0, err
+		}
+		if err := s.record(ctx, c.CreatedBy, activity.ExpenseCreated, &c, g, map[string]any{"recurring": true}); err != nil {
+			return 0, err
+		}
+	}
+	return len(dates), nil
 }
 
 func truncate(s string, n int) string {
