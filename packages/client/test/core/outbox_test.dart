@@ -70,7 +70,6 @@ void main() {
       RemoteExpensesRepository(api()),
       outbox,
       meId: () => 'me',
-      onQueued: () {},
     );
     const input = ExpenseInput(
       description: 'Taxi',
@@ -115,12 +114,38 @@ void main() {
     expect(await outbox.pending(), isEmpty);
   });
 
+  test('a group created offline queues and replays like expenses', () async {
+    final groups = OfflineGroupsRepository(
+      RemoteGroupsRepository(api()),
+      outbox,
+      me: () => const User(id: 'me', name: 'Me', defaultCurrency: 'EUR'),
+    );
+    await expectLater(
+      groups.create(const GroupInput(name: ' ')),
+      throwsA(predicate((e) => e.toString().contains('Give the group a name'))),
+    );
+    expect(await outbox.pending(), isEmpty);
+
+    final trip = await groups.create(const GroupInput(name: 'Trip'));
+    expect(trip.defaultCurrency, 'EUR');
+    final op = (await outbox.pending()).single;
+    expect(
+      (op.method, op.path, op.label),
+      ('POST', '/groups', 'Create “Trip”'),
+    );
+    expect((op.body! as Map)['id'], trip.id);
+
+    online = true;
+    final result = await outbox.flush(api());
+    expect(result.sent, 1);
+    expect(seen, ['POST /api/v1/groups']);
+  });
+
   test('invalid input is rejected before it reaches the queue', () async {
     final repo = OfflineExpensesRepository(
       RemoteExpensesRepository(api()),
       outbox,
       meId: () => 'me',
-      onQueued: () {},
     );
     await expectLater(
       repo.create(
@@ -168,7 +193,6 @@ void main() {
       RemoteExpensesRepository(client),
       outbox,
       meId: () => 'me',
-      onQueued: () {},
     );
     online = true;
     await repo.get('e0');
@@ -266,13 +290,11 @@ void main() {
         RemoteExpensesRepository(client),
         outbox,
         meId: () => 'me',
-        onQueued: () {},
       );
       groups = OfflineGroupsRepository(
         RemoteGroupsRepository(client),
         outbox,
         me: () => const User(id: 'me', name: 'Me'),
-        onQueued: () {},
       );
       // Seen once while online, so the API client has cached copies.
       online = true;
