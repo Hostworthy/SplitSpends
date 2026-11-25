@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"math/big"
+	"slices"
 	"strings"
 	"time"
 
@@ -244,7 +245,10 @@ func toScan(ext ports.ReceiptExtract, fallback string) *Scan {
 		}
 	}
 	amount := func(s string) int64 {
-		v, _ := expense.ParseDecimal(s, cur.Exponent)
+		v, ok := expense.ParseDecimal(s, cur.Exponent)
+		if !ok || v < 0 {
+			return 0
+		}
 		return v
 	}
 	out := &Scan{Merchant: strings.TrimSpace(ext.Merchant), Currency: cur.Code, Category: ext.Category,
@@ -255,7 +259,9 @@ func toScan(ext ports.ReceiptExtract, fallback string) *Scan {
 	if !expense.KnownCategory(out.Category) || out.Category == expense.PaymentCategory {
 		out.Category = expense.DefaultCategory
 	}
+	// Each amount is at most expense.MaxTotal, so these sums cannot overflow.
 	var items int64
+	amounts := []int64{}
 	for _, it := range ext.Items {
 		a := amount(it.Amount)
 		if a == 0 {
@@ -266,6 +272,7 @@ func toScan(ext ports.ReceiptExtract, fallback string) *Scan {
 			q = 1
 		}
 		out.Items = append(out.Items, ScanItem{Name: strings.TrimSpace(it.Name), Quantity: q, Amount: a})
+		amounts = append(amounts, a)
 		items += a
 	}
 	if out.Subtotal == 0 {
@@ -274,32 +281,69 @@ func toScan(ext ports.ReceiptExtract, fallback string) *Scan {
 	if out.Total == 0 {
 		out.Total = out.Subtotal + out.Tax + out.Tip
 	}
-	// Discounts and rounding lines often go unlisted; fold the gap into tax so
-	// items + tax + tip always equals the total the user sees.
-	if gap := out.Total - items - out.Tax - out.Tip; gap != 0 && len(out.Items) > 0 {
-		out.Tax += gap
-		if out.Tax < 0 {
-			discount(out.Items, out.Tax)
-			out.Tax = 0
+	if len(out.Items) == 0 {
+		return out
+	}
+	// items + tax + tip always equals the total the user sees: the printed
+	// one when the lines can reach it, otherwise the sum of the lines.
+	if fixed, tax, ok := Reconcile(amounts, out.Tip, out.Total); ok {
+		for i := range out.Items {
+			out.Items[i].Amount = fixed[i]
 		}
+		out.Tax = tax
+	} else {
+		out.Total = items + out.Tax + out.Tip
 	}
 	return out
 }
 
-// discount spreads a negative amount over items in proportion to their price,
-// so a receipt-level discount still yields positive, assignable items.
-func discount(items []ScanItem, amount int64) {
+// Reconcile fits a receipt's positive item amounts and tip to its printed
+// total. Discounts and rounding lines often go unlisted, so what remains after
+// items and tip is tax, and a negative remainder (an order discount) lowers
+// the items in proportion to their price, each keeping at least one minor
+// unit so it can still be assigned. It returns the new amounts and tax, or ok
+// false when the items cannot reach total: no items, an item that is not
+// positive, items above expense.MaxTotal, or a tip and discount larger than
+// the items allow. Amounts must lie between 0 and expense.MaxTotal.
+//
+// Only the server reads receipts, so this rule has no Dart counterpart.
+func Reconcile(items []int64, tip, total int64) (amounts []int64, tax int64, ok bool) {
+	if len(items) == 0 || total <= 0 || tip < 0 {
+		return nil, 0, false
+	}
+	var sum int64
+	for _, a := range items {
+		if a <= 0 {
+			return nil, 0, false
+		}
+		if sum += a; sum > expense.MaxTotal {
+			return nil, 0, false
+		}
+	}
+	amounts = slices.Clone(items)
+	tax = total - sum - tip
+	if tax >= 0 {
+		return amounts, tax, true
+	}
+	// Weighting by the part of each price above one minor unit keeps every
+	// share within what its item can give, so the result stays exact.
 	weights := make([]*big.Rat, len(items))
-	for i, it := range items {
-		weights[i] = big.NewRat(max(it.Amount, 0), 1)
+	var room int64
+	for i, a := range items {
+		weights[i] = big.NewRat(a-1, 1)
+		room += a - 1
 	}
-	parts, err := money.Allocate(amount, weights)
+	if -tax > room {
+		return nil, 0, false
+	}
+	parts, err := money.Allocate(tax, weights)
 	if err != nil {
-		return
+		return nil, 0, false
 	}
-	for i := range items {
-		items[i].Amount = max(items[i].Amount+parts[i], 1)
+	for i := range amounts {
+		amounts[i] += parts[i]
 	}
+	return amounts, 0, true
 }
 
 func sniff(data []byte) string {

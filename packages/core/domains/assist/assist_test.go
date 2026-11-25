@@ -105,6 +105,24 @@ func TestReceiptTotalReconciles(t *testing.T) {
 	}
 }
 
+func TestTipAboveTotalWarns(t *testing.T) {
+	d, err := build(world(), Request{GroupID: &trip}, ports.DraftExtract{
+		Amount: "1.00", Tip: "5", Tax: "-2",
+		Items: []ports.DraftItem{{Name: "A", Amount: "10.00"}, {Name: "B", Amount: "-4.00"}},
+	}, "2026-10-06", "USD", noRates)
+	must(t, err)
+	var items int64
+	for _, it := range d.Items {
+		items += it.Amount
+	}
+	if len(d.Items) != 1 || items != 1000 || d.Tax != 0 || d.Tip != 500 || d.Total != 1500 || d.Payers[0].Amount != 1500 {
+		t.Fatalf("lines must stay as read when they cannot reach the total: %+v", d)
+	}
+	if !strings.Contains(strings.Join(d.Warnings, " "), "The receipt total did not match its lines") {
+		t.Fatalf("a total the lines cannot reach must be reported: %v", d.Warnings)
+	}
+}
+
 func eurTable() *rates.Table {
 	t, _ := rates.New("USD", map[string]string{"EUR": "0.8", "JPY": "150"})
 	t.Published = time.Date(2026, 11, 24, 0, 0, 0, 0, time.UTC)
