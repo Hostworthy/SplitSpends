@@ -299,9 +299,10 @@ class ExpenseInput {
     this.receiptId,
     this.recurrence = Recurrence.none,
     this.warnings = const [],
+    this.updatedAt,
   });
 
-  /// Parses an `ExpenseDraft` from the AI endpoint.
+  /// Parses an `ExpenseDraft` from the AI endpoint, or a queued write.
   factory ExpenseInput.fromJson(JsonMap json) => ExpenseInput(
     id: json['id'] as String?,
     groupId: json['groupId'] as String?,
@@ -339,6 +340,7 @@ class ExpenseInput {
     receiptId: json['receiptId'] as String?,
     recurrence: Recurrence.parse(json['recurrence'] as String?),
     warnings: (json['warnings'] as List? ?? const []).cast<String>(),
+    updatedAt: json['updatedAt'] as String?,
   );
 
   /// Prefills an editor from an existing expense.
@@ -372,6 +374,7 @@ class ExpenseInput {
     tip: e.tip,
     receiptId: e.receiptId,
     recurrence: e.recurrence,
+    updatedAt: e.updatedAt,
   );
 
   /// A payment: [from] paid [to] [amount], booked like the server books
@@ -416,6 +419,10 @@ class ExpenseInput {
   final Recurrence recurrence;
   final List<String> warnings;
 
+  /// On an update, the `updatedAt` of the version the edit started from:
+  /// the server refuses the edit when the expense has changed since.
+  final String? updatedAt;
+
   ExpenseInput withId(String value) => ExpenseInput(
     id: value,
     groupId: groupId,
@@ -433,6 +440,28 @@ class ExpenseInput {
     tip: tip,
     receiptId: receiptId,
     recurrence: recurrence,
+    updatedAt: updatedAt,
+  );
+
+  /// The same edit, based on the version [value] of the expense instead.
+  ExpenseInput withVersion(String? value) => ExpenseInput(
+    id: id,
+    groupId: groupId,
+    description: description,
+    currency: currency,
+    total: total,
+    date: date,
+    category: category,
+    notes: notes,
+    splitMethod: splitMethod,
+    payers: payers,
+    splits: splits,
+    items: items,
+    tax: tax,
+    tip: tip,
+    receiptId: receiptId,
+    recurrence: recurrence,
+    updatedAt: value,
   );
 
   JsonMap toJson() => {
@@ -455,6 +484,7 @@ class ExpenseInput {
     },
     'receiptId': receiptId,
     'recurrence': recurrence.name,
+    'updatedAt': ?updatedAt,
   };
 }
 
