@@ -139,7 +139,7 @@ func (k *known) input(text, today, currency string) ports.DraftInput {
 // Draft asks the provider to read the instructions (and receipt, if any).
 func (s *Service) Draft(ctx context.Context, actor uuid.UUID, req Request) (*Draft, error) {
 	if s.reader == nil {
-		return nil, errs.Unavailable("AI features are not enabled on this server.")
+		return nil, errs.AIDisabled("AI features are not enabled on this server.")
 	}
 	req.Text = strings.TrimSpace(req.Text)
 	if utf8.RuneCountInString(req.Text) > MaxText {

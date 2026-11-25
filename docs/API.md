@@ -29,7 +29,7 @@ When AI reads amounts in another currency (a receipt from abroad), `POST /ai/exp
 | Delete | 204 | empty |
 | Error | 4xx/5xx | `{ "error": string, "code": string, "field"?: string, "requestId"?: string }` |
 
-Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `CONFLICT` (409), `RATE_LIMITED` (429), `AI_DISABLED` (503), `RATES_UNAVAILABLE` (503), `APPROVAL_PENDING` (403, the account waits for an administrator), `APPROVAL_DECLINED` (403), `INTERNAL` (500).
+Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `CONFLICT` (409), `RATE_LIMITED` (429), `AI_DISABLED` (503), `RATES_UNAVAILABLE` (503), `APPROVAL_PENDING` (403, the account waits for an administrator), `APPROVAL_DECLINED` (403), `INTERNAL` (500). Several codes share a status, so clients read `code`, never the status alone; a 502, 503 or 504 without the error envelope comes from a proxy in front of the API (a timeout or an outage), not from the API.
 
 Lists accept `limit` (default 50, max 200) and `offset` (default 0).
 

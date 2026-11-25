@@ -349,7 +349,7 @@ var statusByKind = map[errs.Kind]int{
 	errs.KindForbidden:    http.StatusForbidden,
 	errs.KindConflict:     http.StatusConflict,
 	errs.KindRateLimited:  http.StatusTooManyRequests,
-	errs.KindUnavailable:  http.StatusServiceUnavailable,
+	errs.KindAIDisabled:   http.StatusServiceUnavailable,
 	errs.KindNoRates:      http.StatusServiceUnavailable,
 	errs.KindPending:      http.StatusForbidden,
 	errs.KindDeclined:     http.StatusForbidden,
