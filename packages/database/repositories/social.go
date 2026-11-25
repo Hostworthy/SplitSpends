@@ -256,7 +256,10 @@ func (r *Receipts) Get(ctx context.Context, id uuid.UUID) (*receipt.Receipt, err
 
 func (r *Receipts) Owned(ctx context.Context, id, userID uuid.UUID) (bool, error) {
 	var ok bool
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM receipts WHERE id=$1 AND uploaded_by=$2)`, id, userID).Scan(&ok)
+	err := r.db.Q(ctx).QueryRow(ctx, `SELECT true FROM receipts WHERE id=$1 AND uploaded_by=$2 FOR KEY SHARE`, id, userID).Scan(&ok)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
 	return ok, err
 }
 
@@ -290,7 +293,14 @@ func (r *Receipts) Stale(ctx context.Context, cutoff time.Time, limit int) ([]*r
 }
 
 func (r *Receipts) Delete(ctx context.Context, id uuid.UUID) (bool, error) {
-	tag, err := r.db.Q(ctx).Exec(ctx, `DELETE FROM receipts rc WHERE rc.id=$1
+	q := r.db.Q(ctx)
+	// Locked before the check, which runs as its own statement: an expense
+	// attaching the receipt meanwhile has either committed, and the check
+	// sees it, or waits and then finds the receipt gone.
+	if _, err := q.Exec(ctx, `SELECT 1 FROM receipts WHERE id=$1 FOR UPDATE`, id); err != nil {
+		return false, err
+	}
+	tag, err := q.Exec(ctx, `DELETE FROM receipts rc WHERE rc.id=$1
 		AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.receipt_id=rc.id)`, id)
 	return tag.RowsAffected() == 1, err
 }

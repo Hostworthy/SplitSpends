@@ -68,7 +68,9 @@ type Repository interface {
 	// Visible reports whether userID uploaded the receipt or can see an
 	// expense that uses it.
 	Visible(ctx context.Context, id, userID uuid.UUID) (bool, error)
-	// Owned reports whether userID uploaded the receipt.
+	// Owned reports whether userID uploaded the receipt. Inside a
+	// transaction it holds the receipt until the transaction ends, so Delete
+	// waits for it.
 	Owned(ctx context.Context, id, userID uuid.UUID) (bool, error)
 	// Pending counts the receipts userID uploaded that no expense uses,
 	// including deleted expenses, and their total size in bytes. Inside a
@@ -79,7 +81,8 @@ type Repository interface {
 	// expense uses, including deleted expenses.
 	Stale(ctx context.Context, cutoff time.Time, limit int) ([]*Receipt, error)
 	// Delete removes the receipt unless an expense uses it, and reports
-	// whether it did.
+	// whether it did. Inside a transaction it waits for one holding the
+	// receipt through Owned, and then sees the expense that one saved.
 	Delete(ctx context.Context, id uuid.UUID) (bool, error)
 }
 
