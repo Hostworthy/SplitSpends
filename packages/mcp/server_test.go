@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -558,5 +559,54 @@ func TestRecordPaymentNamesGroupMembers(t *testing.T) {
 	res, _, _ := bind(c).recordPayment(context.Background(), nil, paymentArgs{FromUserID: "u2", ToUserID: "u3", Amount: "1.5", Currency: "KWD", GroupID: "g1"})
 	if got := resultText(res); res.IsError || !strings.Contains(got, `"Ben" paid "Cy"`) {
 		t.Fatalf("want both members named, got %q", got)
+	}
+}
+
+// count returns how many requests a fake API saw for method and path.
+func count(a *api, method, path string) int {
+	n := 0
+	for _, r := range a.requests() {
+		if r == method+" "+platform.Prefix+path {
+			n++
+		}
+	}
+	return n
+}
+
+func TestOverviewFetchesFriendsOnce(t *testing.T) {
+	a, c := serve(t, routes(map[string]string{
+		"/me":          adaMe,
+		"/me/balances": `{"data":{"balances":[],"owed":[],"owing":[]}}`,
+		"/friends":     `{"items":[{"user":{"id":"u2","name":"Ben"},"balances":[{"currency":"USD","amount":-500}]}],"total":1}`,
+	}))
+	res, _, _ := bind(c).overview(context.Background(), nil, empty{})
+	if got := resultText(res); res.IsError || !strings.Contains(got, `"Ben" <no email> (id u2): -5.00 USD`) {
+		t.Fatalf("got %q", got)
+	}
+	if n := count(a, http.MethodGet, "/friends"); n != 1 {
+		t.Fatalf("want one /friends request, saw %d", n)
+	}
+}
+
+func TestHTTPHandlerFetchesConfigOnce(t *testing.T) {
+	a, c := serve(t, routes(map[string]string{
+		"/groups": `{"items":[{"id":"g1","name":"Flat","defaultCurrency":"USD","balances":[{"currency":"USD","amount":1250}]}],"total":1}`,
+	}))
+	srv := httptest.NewServer(HTTPHandler(c.base, "test", Options{}, nil, slog.New(slog.DiscardHandler)))
+	t.Cleanup(srv.Close)
+	for _, token := range []string{"ss_ada", "ss_ben"} {
+		status, answer := rpc(t, srv.URL, token, "tools/call", map[string]any{"name": "list_groups", "arguments": map[string]any{}})
+		if text, isError := toolText(t, answer); status != http.StatusOK || isError || !strings.Contains(text, "12.50 USD") {
+			t.Fatalf("status %d: %q", status, text)
+		}
+	}
+	if n := count(a, http.MethodGet, "/config"); n != 1 {
+		t.Fatalf("want /config fetched once across requests, saw %d", n)
+	}
+}
+
+func TestDefaultClientTimeout(t *testing.T) {
+	if got := NewClient("http://127.0.0.1:1", "", nil).http.Timeout; got != 30*time.Second {
+		t.Fatalf("timeout %v, want 30s", got)
 	}
 }

@@ -47,7 +47,9 @@ type settings struct {
 // https://split.example.com. hc may be nil; a client passed in is copied
 // so that, like the default one, it never follows redirects.
 func NewClient(base, token string, hc *http.Client) *Client {
-	client := http.Client{Timeout: 3 * time.Minute}
+	// No tool uploads anything, so an API call that takes longer than this
+	// is stuck rather than busy.
+	client := http.Client{Timeout: 30 * time.Second}
 	if hc != nil {
 		client = *hc
 	}
