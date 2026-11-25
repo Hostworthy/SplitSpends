@@ -122,6 +122,13 @@ class DashboardScreen extends ConsumerWidget {
                                 )
                               : GroupCard(group: value[i]),
                         ),
+                        AsyncValue(:final error?) => Center(
+                          child: InlineError(
+                            key: const Key('groups-error'),
+                            error: error,
+                            onRetry: () => ref.invalidate(groupsProvider),
+                          ),
+                        ),
                         _ => const SizedBox.shrink(),
                       },
                     ),
