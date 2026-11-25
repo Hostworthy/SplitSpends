@@ -223,12 +223,20 @@ func (s *Service) category(ctx context.Context, actor uuid.UUID, id, kept string
 }
 
 func (s *Service) build(e *Expense, n *Normalized, actor uuid.UUID, now time.Time) {
+	// Editing the expense that carries a series keeps the series' day unless
+	// the date changes, so an edit of the copy booked on 28 February still
+	// returns to the 31st.
+	if e.AnchorDay == 0 || !n.Date.Equal(e.Date) {
+		e.AnchorDay = n.Date.Day()
+	}
 	e.Description, e.Category, e.Currency, e.Total = n.Description, n.Category, n.Currency, n.Total
 	e.Date, e.Notes, e.Method, e.Shares = n.Date, n.Notes, n.Method, n.Shares
 	e.Items, e.Tax, e.Tip, e.ReceiptID, e.Recurrence = n.Items, n.Tax, n.Tip, n.ReceiptID, n.Recurrence
 	e.NextDate = nil
-	if e.Recurrence != RecurNone {
-		next := e.Recurrence.Next(e.Date)
+	if e.Recurrence == RecurNone {
+		e.AnchorDay = 0
+	} else {
+		next := e.Recurrence.Next(e.Date, e.AnchorDay)
 		e.NextDate = &next
 	}
 	e.UpdatedBy, e.UpdatedAt = actor, now
@@ -683,14 +691,18 @@ func (s *Service) repeat(ctx context.Context, id uuid.UUID, today time.Time) (in
 	if !ok {
 		return 0, s.record(ctx, src.CreatedBy, activity.ExpenseStopped, src, g, nil)
 	}
-	dates, next := src.Recurrence.Missed(*src.NextDate, today)
+	day := src.AnchorDay
+	if day == 0 {
+		day = src.Date.Day()
+	}
+	dates, next := src.Recurrence.Missed(*src.NextDate, today, day)
 	for i, date := range dates {
 		c := *src
 		c.ID, c.Date, c.ReceiptID = uuid.New(), date, nil
 		c.CreatedAt, c.UpdatedAt = now, now
-		c.Recurrence, c.NextDate = RecurNone, nil
+		c.Recurrence, c.NextDate, c.AnchorDay = RecurNone, nil, 0
 		if i == len(dates)-1 {
-			c.Recurrence, c.NextDate = src.Recurrence, &next
+			c.Recurrence, c.NextDate, c.AnchorDay = src.Recurrence, &next, day
 		}
 		if err := s.repo.Create(ctx, &c); err != nil {
 			return 0, err

@@ -3,6 +3,7 @@ package bootstrap_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -186,6 +187,38 @@ func TestRecurringCatchUpIsBounded(t *testing.T) {
 	}
 	if s[0].Date.Format(time.DateOnly) != "2026-03-15" || s[0].NextDate.Format(time.DateOnly) != "2026-03-22" {
 		t.Fatalf("the series should continue after today: %s next %s", s[0].Date, s[0].NextDate)
+	}
+}
+
+func TestRecurringKeepsMonthEnd(t *testing.T) {
+	env, ada, ben, g := flat(t)
+	series(t, env, ada, ben, &g.ID, "Rent", "2025-12-31", expense.RecurMonthly)
+	drain(t, env.Services.Expenses)
+	// Editing the copy booked on 28 February keeps the series on the 31st.
+	s := scheduled(groupExpenses(t, env, ada, g.ID))
+	if len(s) != 1 || s[0].Date.Format(time.DateOnly) != "2026-02-28" {
+		t.Fatalf("the February copy should carry the series: %+v", s)
+	}
+	_, err := env.Services.Expenses.Update(context.Background(), ada, s[0].ID, expense.Input{GroupID: &g.ID, Description: "Rent",
+		Currency: "EUR", Total: 120000, Date: "2026-02-28", Method: expense.MethodEqual, Recurrence: expense.RecurMonthly,
+		Payers: []expense.Payer{{UserID: ada, Amount: 120000}}, Splits: []expense.SplitInput{{UserID: ada}, {UserID: ben}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.Clock.Add(47 * 24 * time.Hour) // 1 May 2026
+	drain(t, env.Services.Expenses)
+	var dates []string
+	for _, e := range groupExpenses(t, env, ada, g.ID) {
+		dates = append(dates, e.Date.Format(time.DateOnly))
+	}
+	slices.Sort(dates)
+	want := []string{"2025-12-31", "2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30"}
+	if !slices.Equal(dates, want) {
+		t.Fatalf("rent booked on %v, want %v", dates, want)
+	}
+	s = scheduled(groupExpenses(t, env, ada, g.ID))
+	if len(s) != 1 || s[0].NextDate.Format(time.DateOnly) != "2026-05-31" {
+		t.Fatalf("the series should continue on 31 May: %+v", s)
 	}
 }
 

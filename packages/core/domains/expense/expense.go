@@ -49,19 +49,30 @@ func (r Recurrence) Valid() bool {
 	return false
 }
 
-// Next returns the next occurrence after date.
-func (r Recurrence) Next(date time.Time) time.Time {
+// Next returns the next occurrence after date. Monthly and yearly series
+// fall on day, the day of the month the series started on, or on the last
+// day of a shorter month: a series from 31 January books 28 February and
+// then 31 March, never skipping a month or drifting into the next one.
+func (r Recurrence) Next(date time.Time, day int) time.Time {
 	switch r {
 	case RecurWeekly:
 		return date.AddDate(0, 0, 7)
 	case RecurBiweekly:
 		return date.AddDate(0, 0, 14)
 	case RecurMonthly:
-		return date.AddDate(0, 1, 0)
+		return onDay(date, date.Year(), date.Month()+1, day)
 	case RecurYearly:
-		return date.AddDate(1, 0, 0)
+		return onDay(date, date.Year()+1, date.Month(), day)
 	}
 	return date
+}
+
+// onDay returns day of the given month at the clock time of date, or the
+// month's last day when it is shorter. month may be 13, as time.Date allows.
+func onDay(date time.Time, year int, month time.Month, day int) time.Time {
+	first := time.Date(year, month, 1, date.Hour(), date.Minute(), date.Second(), date.Nanosecond(), date.Location())
+	last := first.AddDate(0, 1, -1).Day()
+	return first.AddDate(0, 0, min(max(day, 1), last)-1)
 }
 
 // CatchUp is how many missed occurrences a series books at most when it has
@@ -71,13 +82,14 @@ const CatchUp = 12
 
 // Missed returns the occurrences from next up to and including today (the
 // latest CatchUp of them, oldest first) and the first occurrence after
-// today, where the series continues.
-func (r Recurrence) Missed(next, today time.Time) ([]time.Time, time.Time) {
+// today, where the series continues. day is the series' day of the month,
+// as for Next.
+func (r Recurrence) Missed(next, today time.Time, day int) ([]time.Time, time.Time) {
 	if r == RecurNone || !r.Valid() {
 		return nil, next
 	}
 	var dates []time.Time
-	for ; !next.After(today); next = r.Next(next) {
+	for ; !next.After(today); next = r.Next(next, day) {
 		if len(dates) == CatchUp {
 			dates = dates[1:]
 		}
@@ -126,6 +138,11 @@ type Expense struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	DeletedAt   *time.Time
+
+	// AnchorDay is the day of the month a recurring series falls on, kept
+	// so it returns to the 31st after booking 28 February. Zero when the
+	// expense does not recur.
+	AnchorDay int
 
 	// CommentCount is a read-model field filled by list queries.
 	CommentCount int

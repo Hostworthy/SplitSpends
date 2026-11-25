@@ -17,6 +17,7 @@ import 'package:splitspends/core/storage/local_db.dart';
 ///   archived, memberIds, defaultSplit?, createdAt, updatedAt }` (the
 ///   stored default split; views drop it once it no longer matches)
 /// * expense: the API `Expense` minus caller-specific fields, plus `nextDate`
+///   and `anchorDay` (the day of the month a recurring series falls on)
 /// * activity: `{ id, kind, actorId, groupId, expenseId, data, involved,
 ///   createdAt }`
 class LocalLedger {
@@ -263,6 +264,7 @@ class LocalLedger {
             ...src,
             'recurrence': 'none',
             'nextDate': null,
+            'anchorDay': null,
             'updatedAt': at,
           });
           final groupId = src['groupId'] as String?;
@@ -299,6 +301,7 @@ class LocalLedger {
               'date': formatDay(date),
               'recurrence': last ? src['recurrence'] : 'none',
               'nextDate': last ? formatDay(step.copyNext) : null,
+              'anchorDay': last ? step.source.anchorDay : null,
               'createdAt': at,
               'updatedAt': at,
               'receiptId': null,
@@ -338,6 +341,11 @@ class _RecurringRecord implements Recurring {
     final v = raw['nextDate'] as String?;
     return v == null ? null : parseDay(v);
   }
+
+  // Records saved before the day was stored continue on their own date's day.
+  @override
+  int? get anchorDay =>
+      (raw['anchorDay'] as int?) ?? parseDay(raw['date'] as String? ?? '')?.day;
 
   @override
   bool get deleted => LocalLedger.isDeleted(raw);

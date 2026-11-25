@@ -158,6 +158,39 @@ void main() {
     expect(await ledger.runRecurring(), 0);
   });
 
+  test('a monthly series keeps its day at month ends', () async {
+    final expenses = LocalExpensesRepository(ledger);
+    final sam = (await LocalFriendsRepository(ledger).add(name: 'Sam')).user.id;
+    ExpenseInput rent(String date, int total) => ExpenseInput(
+      description: 'Rent',
+      currency: 'EUR',
+      total: total,
+      date: date,
+      recurrence: Recurrence.monthly,
+      payers: [Payer(userId: meId, amount: total)],
+      splits: [
+        const SplitEntry(userId: meId),
+        SplitEntry(userId: sam),
+      ],
+    );
+    now = DateTime.utc(2027, 3, 1, 12);
+    await expenses.create(rent('2027-01-31', 1000));
+    expect(await ledger.runRecurring(), 1); // Feb 28
+    // Editing the copy that carries the series keeps it on the 31st.
+    final february = (await expenses.list(const ExpenseQuery())).items.first;
+    expect(february.date, '2027-02-28');
+    await expenses.update(february.id, rent('2027-02-28', 1200));
+    now = DateTime.utc(2027, 5, 1, 12);
+    expect(await ledger.runRecurring(), 2); // Mar 31 and Apr 30
+    final list = await expenses.list(const ExpenseQuery());
+    expect(list.items.map((e) => e.date), [
+      '2027-04-30',
+      '2027-03-31',
+      '2027-02-28',
+      '2027-01-31',
+    ]);
+  });
+
   test('a series that fell behind books only the latest weeks', () async {
     final expenses = LocalExpensesRepository(ledger);
     final sam = (await LocalFriendsRepository(ledger).add(name: 'Sam')).user.id;

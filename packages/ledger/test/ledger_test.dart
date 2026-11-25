@@ -137,16 +137,27 @@ void main() {
     });
   });
 
-  test('recurrence overflows months like Go AddDate', () {
-    expect(
-      formatDay(nextOccurrence('monthly', DateTime.utc(2026, 1, 31))!),
-      '2026-03-03',
-    );
-    expect(
-      formatDay(nextOccurrence('yearly', DateTime.utc(2028, 2, 29))!),
-      '2029-03-01',
-    );
+  test('recurrence keeps the series day at month ends', () {
+    String step(String r, DateTime d, [int? day]) =>
+        formatDay(nextOccurrence(r, d, day)!);
+    expect(step('monthly', DateTime.utc(2027, 1, 31)), '2027-02-28');
+    expect(step('monthly', DateTime.utc(2027, 2, 28), 31), '2027-03-31');
+    expect(step('monthly', DateTime.utc(2027, 3, 31), 31), '2027-04-30');
+    expect(step('yearly', DateTime.utc(2028, 2, 29)), '2029-02-28');
+    expect(step('yearly', DateTime.utc(2031, 2, 28), 29), '2032-02-29');
     expect(nextOccurrence('none', DateTime.utc(2026)), isNull);
+    final (dates, next) = missed(
+      'monthly',
+      DateTime.utc(2026, 1, 31),
+      DateTime.utc(2026, 4, 30),
+    );
+    expect(dates.map(formatDay), [
+      '2026-01-31',
+      '2026-02-28',
+      '2026-03-31',
+      '2026-04-30',
+    ]);
+    expect(formatDay(next), '2026-05-31');
   });
 
   test('a series behind schedule books only the latest occurrences', () {

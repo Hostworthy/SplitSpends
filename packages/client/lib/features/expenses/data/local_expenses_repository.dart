@@ -159,7 +159,14 @@ class LocalExpensesRepository implements ExpensesRepository {
       }
     }
     final at = _ledger.stamp();
-    final next = nextOccurrence(n.recurrence, n.date);
+    // Editing the expense that carries a series keeps the series' day unless
+    // the date changes, so an edit of the copy booked on 28 February still
+    // returns to the 31st, like the server.
+    final kept = existing?['anchorDay'] as int?;
+    final day = kept != null && existing?['date'] == formatDay(n.date)
+        ? kept
+        : n.date.day;
+    final next = nextOccurrence(n.recurrence, n.date, day);
     return {
       'id': id,
       'groupId': input.groupId,
@@ -198,6 +205,7 @@ class LocalExpensesRepository implements ExpensesRepository {
       'receiptId': null,
       'recurrence': n.recurrence,
       'nextDate': next == null ? null : formatDay(next),
+      'anchorDay': next == null ? null : day,
       'createdBy': existing?['createdBy'] ?? me.id,
       'updatedBy': me.id,
       'createdAt': existing?['createdAt'] ?? at,

@@ -120,6 +120,23 @@ void main() {
     );
   });
 
+  group('recurrence vectors', () {
+    final cases = (doc['recurrence'] as List).cast<Map<String, dynamic>>();
+    test('exist', () => expect(cases, isNotEmpty));
+    for (final c in cases) {
+      test(c['name'] as String, () {
+        final start = parseDay(c['start'] as String)!;
+        var at = start;
+        final got = <String>[];
+        for (var i = 0; i < (c['dates'] as List).length; i++) {
+          at = nextOccurrence(c['recurrence'] as String, at, start.day)!;
+          got.add(formatDay(at));
+        }
+        expect(got, c['dates']);
+      });
+    }
+  });
+
   group('default split vectors', () {
     final cases = (doc['defaultSplits'] as List).cast<Map<String, dynamic>>();
     test('exist', () => expect(cases, isNotEmpty));
