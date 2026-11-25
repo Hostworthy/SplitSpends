@@ -16,6 +16,7 @@ class AmountField extends ConsumerStatefulWidget {
     this.initial,
     this.onChanged,
     this.label,
+    this.semanticLabel,
     this.large = false,
     this.allowNegative = false,
     this.autofocus = false,
@@ -27,6 +28,10 @@ class AmountField extends ConsumerStatefulWidget {
   final int? initial;
   final ValueChanged<int?>? onChanged;
   final String? label;
+
+  /// What screen readers announce for the field when [label] is not shown,
+  /// such as whose amount it is in a row of people.
+  final String? semanticLabel;
   final bool large;
   final bool allowNegative;
   final bool autofocus;
@@ -116,7 +121,7 @@ class _AmountFieldState extends ConsumerState<AmountField> {
     final style = widget.large
         ? theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700)
         : null;
-    return TextField(
+    final field = TextField(
       controller: _controller,
       autofocus: widget.autofocus,
       onChanged: _changed,
@@ -151,5 +156,7 @@ class _AmountFieldState extends ConsumerState<AmountField> {
         errorText: _error,
       ),
     );
+    final label = widget.semanticLabel;
+    return label == null ? field : Semantics(label: label, child: field);
   }
 }
