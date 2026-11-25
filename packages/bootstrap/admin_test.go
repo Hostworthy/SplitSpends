@@ -170,3 +170,35 @@ func TestAdministration(t *testing.T) {
 	}
 	_ = admin.StatusPending
 }
+
+func TestDisabledAccountCannotUseEarlierCode(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User
+	ben := env.SignIn(t, "ben@example.com", "Ben").User
+	if err := svc.Auth.RequestCode(ctx, "ben@example.com", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	code := env.Notifier.Code("ben@example.com")
+	if _, err := svc.Admin.Disable(ctx, ada.ID, ben.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Auth.Verify(ctx, "ben@example.com", code, "", "test"); err == nil {
+		t.Fatal("a code sent before disabling must not sign in")
+	}
+	stored, err := svc.Users.Get(ctx, ben.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != user.StatusDisabled || stored.Email != "" {
+		t.Fatalf("the account must stay disabled: %+v", stored)
+	}
+	var codes int
+	if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM login_challenges WHERE email = 'ben@example.com'`).Scan(&codes); err != nil {
+		t.Fatal(err)
+	}
+	if codes != 0 {
+		t.Fatalf("disabling must remove the account's login codes, %d left", codes)
+	}
+}

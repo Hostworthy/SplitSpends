@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,23 +115,38 @@ func (c codes) LoginCode(_ context.Context, to, code string, _ time.Duration) er
 func (codes) Invite(context.Context, string, string) error { return nil }
 func (codes) Notify(context.Context, ports.Notification)   {}
 
-// links are the invite tokens that are currently valid.
+// links are the invite tokens that are currently valid. A link's storage
+// hash is its token with a "hash:" prefix.
 type links map[string]bool
 
-func (l links) Valid(_ context.Context, token string) (bool, error) { return l[token], nil }
+func (l links) Lookup(_ context.Context, token string) (string, error) {
+	if !l[token] {
+		return "", nil
+	}
+	return "hash:" + token, nil
+}
+func (l links) Live(_ context.Context, hash string) (bool, error) {
+	token, ok := strings.CutPrefix(hash, "hash:")
+	return ok && l[token], nil
+}
 
 type noTx struct{}
 
 func (noTx) Do(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
 
 func service(mode SignupMode) (*Service, *memUsers, codes) {
+	s, users, sent, _ := withLinks(mode)
+	return s, users, sent
+}
+
+func withLinks(mode SignupMode) (*Service, *memUsers, codes, links) {
 	p := DefaultPolicy()
 	p.Secret, p.Mode = []byte("test-secret-test-secret-test-secret"), mode
 	users := &memUsers{byEmail: map[string]*user.User{}}
 	sent := codes{}
 	now := clock.Fixed{At: time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)}
 	invites := links{"valid-link": true}
-	return NewService(p, &memChallenges{}, &memSessions{byHash: map[string]*Session{}}, users, invites, sent, noTx{}, now), users, sent
+	return NewService(p, &memChallenges{}, &memSessions{byHash: map[string]*Session{}}, users, invites, sent, noTx{}, now), users, sent, invites
 }
 
 func TestLoginFlow(t *testing.T) {
@@ -308,5 +324,37 @@ func TestCodeRequestsAreLimitedPerEmail(t *testing.T) {
 	}
 	if err := s.RequestCode(ctx, "ben@example.com", "", "another-network"); err != nil {
 		t.Fatalf("other addresses are not affected: %v", err)
+	}
+}
+
+func TestVerifyAppliesTheRulesAgain(t *testing.T) {
+	ctx := context.Background()
+	s, users, sent, invites := withLinks(SignupInvite)
+	first, _ := user.New("first@example.com", "First", user.StatusActive, time.Now())
+	_ = users.Create(ctx, first)
+	friend, _ := user.New("friend@example.com", "Friend", user.StatusInvited, time.Now())
+	_ = users.Create(ctx, friend)
+	for _, email := range []string{"friend@example.com", "stranger@example.com"} {
+		if err := s.RequestCode(ctx, email, "valid-link", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The link is revoked: the stranger's code no longer creates an account.
+	delete(invites, "valid-link")
+	if _, err := s.Verify(ctx, "stranger@example.com", sent["stranger@example.com"], "", ""); !errs.Is(err, errs.KindForbidden) {
+		t.Fatalf("a revoked link must not let a stranger in, got %v", err)
+	}
+	if users.byEmail["stranger@example.com"] != nil {
+		t.Fatal("no account may be created")
+	}
+
+	// Sign-up closes: the invited person's code no longer activates them.
+	s.policy.Mode = SignupClosed
+	if _, err := s.Verify(ctx, "friend@example.com", sent["friend@example.com"], "", ""); !errs.Is(err, errs.KindForbidden) {
+		t.Fatalf("closed mode must not activate accounts, got %v", err)
+	}
+	if users.byEmail["friend@example.com"].Status != user.StatusInvited {
+		t.Fatal("the invited account must stay invited")
 	}
 }
