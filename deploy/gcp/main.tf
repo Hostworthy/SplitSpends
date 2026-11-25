@@ -119,11 +119,17 @@ resource "google_secret_manager_secret_iam_member" "run" {
   member    = "serviceAccount:${google_service_account.run.email}"
 }
 
+# Cloud SQL roles are granted on the project; the condition limits this one
+# to the instance below, so the service cannot reach other databases there.
 resource "google_project_iam_member" "sql" {
   count   = var.create_database ? 1 : 0
   project = var.project_id
   role    = "roles/cloudsql.client"
   member  = "serviceAccount:${google_service_account.run.email}"
+  condition {
+    title      = "${var.name}-db only"
+    expression = "resource.name == 'projects/${var.project_id}/instances/${google_sql_database_instance.db[0].name}' && resource.service == 'sqladmin.googleapis.com'"
+  }
 }
 
 # ---------------------------------------------------------------- service
