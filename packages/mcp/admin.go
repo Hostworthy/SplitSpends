@@ -16,17 +16,14 @@ import (
 // them: managers can list and decide requests, administrators can do
 // everything.
 func admin(ts *toolset) {
-	readOnly := &sdk.ToolAnnotations{ReadOnlyHint: true}
-	destructive := true
-	add(ts, "admin_get_signup", "Administrators: the sign-up mode (open, invite, approval or closed) and the allowed list of emails and @domains.", readOnly, (*tools).getSignup)
-	add(ts, "admin_set_signup", "Administrators: change the sign-up mode and, when given, replace the allowed list. Confirm with the user first.", nil, (*tools).setSignup)
-	add(ts, "admin_list_requests", "Administrators and managers: people waiting for approval (or already approved or declined).", readOnly, (*tools).listRequests)
-	add(ts, "admin_decide_request", "Administrators and managers: approve or decline someone waiting to join. Confirm with the user first.", nil, (*tools).decideRequest)
-	add(ts, "admin_list_accounts", "Administrators: accounts with their role and status, filtered by status or a name or email search.", readOnly, (*tools).listAccounts)
-	add(ts, "admin_set_role", "Administrators: make an account a user, manager or admin. Confirm with the user first.", nil, (*tools).setRole)
-	add(ts, "admin_disable_account", "Administrators: disable an account. It is signed out everywhere and its email is removed (only a hash is kept); its name stays on past expenses. Confirm with the user first.",
-		&sdk.ToolAnnotations{DestructiveHint: &destructive}, (*tools).disableAccount)
-	add(ts, "admin_enable_account", "Administrators: let a disabled account sign in again with its old email.", nil, (*tools).enableAccount)
+	add(ts, "admin_get_signup", "Sign-up settings", "Administrators: the sign-up mode (open, invite, approval or closed) and the allowed list of emails and @domains.", readOnly, (*tools).getSignup)
+	add(ts, "admin_set_signup", "Change sign-up settings", "Administrators: change the sign-up mode and, when given, replace the allowed list. Confirm with the user first.", govern, (*tools).setSignup)
+	add(ts, "admin_list_requests", "Join requests", "Administrators and managers: people waiting for approval (or already approved or declined).", readOnly, (*tools).listRequests)
+	add(ts, "admin_decide_request", "Decide join request", "Administrators and managers: approve or decline someone waiting to join. Confirm with the user first.", govern, (*tools).decideRequest)
+	add(ts, "admin_list_accounts", "List accounts", "Administrators: accounts with their role and status, filtered by status or a name or email search.", readOnly, (*tools).listAccounts)
+	add(ts, "admin_set_role", "Change role", "Administrators: make an account a user, manager or admin. Confirm with the user first.", govern, (*tools).setRole)
+	add(ts, "admin_disable_account", "Disable account", "Administrators: disable an account. It is signed out everywhere and its email is removed (only a hash is kept); its name stays on past expenses. Confirm with the user first.", govern, (*tools).disableAccount)
+	add(ts, "admin_enable_account", "Enable account", "Administrators: let a disabled account sign in again with its old email.", restore, (*tools).enableAccount)
 }
 
 func (t *tools) getSignup(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (*sdk.CallToolResult, any, error) {
