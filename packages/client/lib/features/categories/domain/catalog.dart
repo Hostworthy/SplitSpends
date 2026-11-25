@@ -1,3 +1,5 @@
+import 'package:splitspends_ledger/split.dart' show paymentCategory;
+
 import 'package:splitspends/core/config/app_config.dart';
 import 'package:splitspends/core/widgets/category_icon.dart';
 
@@ -9,8 +11,6 @@ const generalCategory = Category(
   group: 'Other',
   icon: 'receipt_long',
 );
-
-const paymentCategoryId = 'payment';
 
 /// Built-in plus custom categories as one lookup.
 class CategoryCatalog {
@@ -35,8 +35,7 @@ class CategoryCatalog {
   /// plus [selected] when an edited expense already has another one.
   List<Category> choices({String? selected}) => [
     for (final c in all)
-      if (c.id != paymentCategoryId &&
-          (!c.custom || c.mine || c.id == selected))
+      if (c.id != paymentCategory && (!c.custom || c.mine || c.id == selected))
         c,
   ];
 

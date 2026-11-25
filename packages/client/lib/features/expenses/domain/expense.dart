@@ -1,3 +1,5 @@
+import 'package:splitspends_ledger/split.dart' show paymentCategory;
+
 import 'package:splitspends/core/models/json.dart';
 import 'package:splitspends/core/models/user.dart';
 
@@ -370,6 +372,29 @@ class ExpenseInput {
     tip: e.tip,
     receiptId: e.receiptId,
     recurrence: e.recurrence,
+  );
+
+  /// A payment: [from] paid [to] [amount], booked like the server books
+  /// one, as an exact split.
+  factory ExpenseInput.payment({
+    String? groupId,
+    required String from,
+    required String to,
+    required int amount,
+    required String currency,
+    required String date,
+    String? notes,
+  }) => ExpenseInput(
+    groupId: groupId,
+    description: 'Payment',
+    currency: currency,
+    total: amount,
+    date: date,
+    category: paymentCategory,
+    notes: notes ?? '',
+    splitMethod: SplitMethod.exact,
+    payers: [Payer(userId: from, amount: amount)],
+    splits: [SplitEntry(userId: to, value: '$amount')],
   );
 
   /// Client-chosen id: makes creates idempotent for the offline outbox.
