@@ -1,8 +1,15 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:splitspends/app/app.dart';
 import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/core/api/api_error.dart';
+import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/app_config.dart';
 import 'package:splitspends/core/config/config_provider.dart';
@@ -35,7 +42,7 @@ PushDevice _device(String id, String endpoint, {int failures = 0}) =>
     );
 
 class _FakePlatform implements PushPlatform {
-  _FakePlatform({this.distributorList, this.reason});
+  _FakePlatform({this.distributorList, this.reason, this.subscribed});
 
   final List<Distributor>? distributorList;
   final String? reason;
@@ -71,11 +78,18 @@ class _FakePlatform implements PushPlatform {
 }
 
 class _FakeRepository implements PushRepository {
+  _FakeRepository({this.failure});
+
+  /// Thrown by every call when set, as when the server is unreachable.
+  final ApiError? failure;
   final devices = <PushDevice>[];
   var tests = 0;
 
   @override
-  Future<List<PushDevice>> list() async => List.of(devices);
+  Future<List<PushDevice>> list() async {
+    if (failure case final failure?) throw failure;
+    return List.of(devices);
+  }
 
   @override
   Future<PushDevice> register(PushKeys keys) async {
@@ -287,6 +301,92 @@ void main() {
     expect(repo.devices, isEmpty);
     expect(platform.subscribed, isNull);
     expect(find.text('Enable push notifications'), findsOneWidget);
+  });
+
+  test(
+    'disable unsubscribes locally even when the server list fails',
+    () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final container = ProviderContainer(
+        overrides: [
+          sessionProvider.overrideWith(_ConnectedSession.new),
+          pushPlatformProvider.overrideWithValue(platform),
+          pushRepositoryProvider.overrideWithValue(
+            _FakeRepository(
+              failure: const ApiError.network('Cannot reach the server.'),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await expectLater(
+        container.read(pushActionsProvider).disable(),
+        throwsA(isA<ApiError>()),
+      );
+      expect(platform.subscribed, isNull);
+
+      platform.subscribed = _keys;
+      await container.read(pushActionsProvider).forget();
+      expect(platform.subscribed, isNull);
+    },
+  );
+
+  testWidgets('a 401 sign-out unsubscribes this device', (tester) async {
+    tester.view.physicalSize = const Size(420, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final platform = _FakePlatform(subscribed: _keys);
+    final store = MemoryLocalStore(
+      serverUrl: 'http://splitspends.test',
+      token: 'tok',
+      appMode: AppMode.connected.name,
+    );
+    final api = MockClient((request) async {
+      final path = request.url.path;
+      if (path.endsWith('/me/balances')) {
+        return http.Response(
+          jsonEncode({'error': 'Please sign in.', 'code': 'UNAUTHORIZED'}),
+          401,
+        );
+      }
+      if (path.endsWith('/me')) {
+        return http.Response(
+          jsonEncode({
+            'data': {'id': 'u1', 'name': 'Ada', 'defaultCurrency': 'EUR'},
+          }),
+          200,
+        );
+      }
+      final Object body = path.endsWith('/config')
+          ? {
+              'data': {
+                'appName': 'SplitSpends',
+                'currencies': <Object>[],
+                'categories': <Object>[],
+              },
+            }
+          : {'items': <Object>[], 'total': 0};
+      return http.Response(jsonEncode(body), 200);
+    });
+    await tester.pumpWidget(
+      ProviderScope(
+        retry: (_, _) => null,
+        overrides: [
+          localStoreProvider.overrideWithValue(store),
+          memoryDatabase(),
+          httpClientProvider.overrideWithValue(api),
+          pushPlatformProvider.overrideWithValue(platform),
+        ],
+        child: const SplitSpendsApp(),
+      ),
+    );
+    await settle(tester);
+
+    expect(store.token, isNull);
+    expect(find.text('Use on this device'), findsOneWidget);
+    expect(platform.subscribed, isNull);
+    expect(await pumpFuture(tester, platform.current()), isNull);
   });
 
   testWidgets('Android without a distributor explains what to install', (
