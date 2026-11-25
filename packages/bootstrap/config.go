@@ -86,6 +86,27 @@ type Config struct {
 	baseURLDefault bool
 }
 
+// Settings is the part of the configuration the HTTP routes read. It
+// leaves out the secrets the adapters use, so they reach only the adapters;
+// JobsSecret stays because the routes check it.
+type Settings struct {
+	AppName string
+	// ProxyHops is how many trusted proxies stand in front of the server.
+	ProxyHops int
+	// AIRateLimit is how many AI requests one person may make per hour.
+	AIRateLimit int
+	Gravatar    bool
+	// JobsSecret is the bearer token POST /internal/jobs takes; empty
+	// leaves that route out.
+	JobsSecret string
+}
+
+// Settings returns what the HTTP routes need of c.
+func (c *Config) Settings() Settings {
+	return Settings{AppName: c.AppName, ProxyHops: c.ProxyHops, AIRateLimit: c.AIRateLimit, Gravatar: c.Gravatar,
+		JobsSecret: c.JobsSecret}
+}
+
 func env(key, fallback string) string {
 	if v, ok := os.LookupEnv(key); ok && strings.TrimSpace(v) != "" {
 		return strings.TrimSpace(v)

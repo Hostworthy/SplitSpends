@@ -59,7 +59,7 @@ func run() error {
 	defer rt.Close()
 
 	mux := http.NewServeMux()
-	api := routes.New(routes.Deps{Services: rt.Services, Config: cfg, Log: log, Ping: rt.Ping, Jobs: rt.RunJobsOnce}).Routes()
+	api := routes.New(routes.Deps{Services: rt.Services, Settings: cfg.Settings(), Log: log, Ping: rt.Ping, Jobs: rt.RunJobsOnce}).Routes()
 	mux.Handle("/api/", api)
 	mux.Handle("/health", api)
 	mux.Handle("/internal/", api)

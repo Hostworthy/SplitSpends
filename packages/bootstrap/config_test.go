@@ -1,6 +1,7 @@
 package bootstrap_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -266,5 +267,26 @@ func TestLoadConfig(t *testing.T) {
 				t.Errorf("unexpected configuration: %+v", c)
 			}
 		})
+	}
+}
+
+// TestSettingsHoldNoSecrets checks that what the HTTP routes get from the
+// configuration carries none of the secrets the adapters use.
+func TestSettingsHoldNoSecrets(t *testing.T) {
+	cfg := &bootstrap.Config{AppName: "SplitSpends", ProxyHops: 1, AIRateLimit: 30, Gravatar: true,
+		JobsSecret:  "jobs-secret-0123456789abcdef0123456789",
+		DatabaseURL: "postgres://app:database-password@db/app", Secret: []byte("secret-key"),
+		SMTPPassword: "smtp-password", AIAPIKey: "ai-key", S3AccessKey: "s3-access-key", S3SecretKey: "s3-secret-key",
+		VAPIDPrivateKey: "vapid-private-key"}
+	got := cfg.Settings()
+	want := bootstrap.Settings{AppName: "SplitSpends", ProxyHops: 1, AIRateLimit: 30, Gravatar: true,
+		JobsSecret: "jobs-secret-0123456789abcdef0123456789"}
+	if got != want {
+		t.Fatalf("Settings() = %+v, want %+v", got, want)
+	}
+	for _, secret := range []string{"database-password", "secret-key", "smtp-password", "ai-key", "s3-access-key", "s3-secret-key", "vapid-private-key"} {
+		if strings.Contains(fmt.Sprintf("%+v", got), secret) {
+			t.Errorf("Settings() carries %q", secret)
+		}
 	}
 }

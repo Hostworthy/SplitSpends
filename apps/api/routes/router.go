@@ -23,7 +23,7 @@ const expenseLimit = 300
 // Deps are what the API needs from the runtime.
 type Deps struct {
 	Services *bootstrap.Services
-	Config   *bootstrap.Config
+	Settings bootstrap.Settings
 	Log      *slog.Logger
 	// Ping checks dependencies for /health.
 	Ping func(ctx context.Context) error
@@ -34,7 +34,7 @@ type Deps struct {
 // API holds handler dependencies.
 type API struct {
 	svc  *bootstrap.Services
-	cfg  *bootstrap.Config
+	cfg  bootstrap.Settings
 	log  *slog.Logger
 	ping func(ctx context.Context) error
 	jobs func(ctx context.Context) error
@@ -42,7 +42,7 @@ type API struct {
 
 // New builds the API.
 func New(d Deps) *API {
-	return &API{svc: d.Services, cfg: d.Config, log: d.Log, ping: d.Ping, jobs: d.Jobs}
+	return &API{svc: d.Services, cfg: d.Settings, log: d.Log, ping: d.Ping, jobs: d.Jobs}
 }
 
 // Routes returns the API handler mounted at platform.Prefix plus /health.

@@ -68,7 +68,7 @@ func newServer(t *testing.T, o bootstraptest.Options) *server {
 	env.Config.ProxyHops = 1
 	logged := &logs{}
 	log := slog.New(slog.NewJSONHandler(logged, nil))
-	api := New(Deps{Services: env.Services, Config: env.Config, Log: log,
+	api := New(Deps{Services: env.Services, Settings: env.Config.Settings(), Log: log,
 		Ping: func(ctx context.Context) error { return env.DB.Pool.Ping(ctx) },
 		Jobs: func(context.Context) error { return nil }}).Routes()
 	mux := http.NewServeMux()
