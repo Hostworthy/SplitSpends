@@ -3,9 +3,11 @@ package stats
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/clock"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/google/uuid"
 )
@@ -70,12 +72,29 @@ func (a *asked) Summary(_ context.Context, q Query) (*Summary, error) {
 	return &Summary{Currency: q.Currency}, nil
 }
 
+// TestSummaryDefaultsToLastYear checks that a query without dates covers the
+// year up to and including today.
+func TestSummaryDefaultsToLastYear(t *testing.T) {
+	ada := uuid.New()
+	repo := &asked{}
+	now := time.Date(2026, 3, 15, 23, 30, 0, 0, time.UTC)
+	s := NewService(repo, members{}, people{ada: {ID: ada, DefaultCurrency: "EUR"}}, names{}, clock.Fixed{At: now})
+	if _, err := s.Summary(context.Background(), Query{UserID: ada}); err != nil {
+		t.Fatal(err)
+	}
+	from, to := time.Date(2025, 3, 15, 0, 0, 0, 0, time.UTC), time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	if !repo.q.From.Equal(from) || !repo.q.To.Equal(to) {
+		t.Fatalf("want %s to %s, got %s to %s", from, to, repo.q.From, repo.q.To)
+	}
+}
+
 func TestSummaryNeedsMembership(t *testing.T) {
 	ctx := context.Background()
 	ada, mal := uuid.New(), uuid.New()
 	g := &group.Group{ID: uuid.New(), DefaultCurrency: "JPY", Members: []uuid.UUID{ada}}
 	repo := &asked{}
-	s := NewService(repo, members{g.ID: g}, people{ada: {ID: ada, DefaultCurrency: "EUR"}}, names{})
+	s := NewService(repo, members{g.ID: g}, people{ada: {ID: ada, DefaultCurrency: "EUR"}}, names{},
+		clock.Fixed{At: time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)})
 	for name, id := range map[string]uuid.UUID{"a group Mal is not in": g.ID, "a group that does not exist": uuid.New()} {
 		if _, err := s.Summary(ctx, Query{UserID: mal, GroupID: &id}); !errs.Is(err, errs.KindNotFound) {
 			t.Errorf("%s must be not found, got %v", name, err)
