@@ -1,14 +1,34 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/app/theme.dart';
+import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/paging/page_result.dart';
 import 'package:splitspends/features/admin/domain/admin.dart';
 import 'package:splitspends/features/admin/presentation/admin_screen.dart';
+
+import '../helpers.dart';
+
+/// Signed in as Ada (u1) with [role].
+class _Session extends SessionController {
+  _Session(this.role);
+
+  final String role;
+
+  @override
+  Future<Session> build() async => Session(
+    mode: AppMode.connected,
+    serverUrl: 'http://splitspends.test',
+    token: 'tok',
+    me: Me(id: 'u1', email: 'ada@example.com', name: 'Ada', role: role),
+  );
+}
 
 class FakeAdmin implements AdminRepository {
   final calls = <String>[];
@@ -36,9 +56,17 @@ class FakeAdmin implements AdminRepository {
   Future<List<SignupRequest>> requests({String status = 'pending'}) async =>
       status == 'pending' ? pending : const [];
 
+  /// Thrown by every change instead of making it.
+  ApiError? refusal;
+
+  /// When set, approvals wait for it before answering.
+  Completer<void>? hold;
+
   @override
   Future<SignupRequest> approve(String id) async {
     calls.add('approve $id');
+    await hold?.future;
+    if (refusal != null) throw refusal!;
     pending.clear();
     return SignupRequest(
       id: id,
@@ -74,14 +102,21 @@ class FakeAdmin implements AdminRepository {
   @override
   Future<Account> setRole(String userId, String role) async {
     calls.add('role $userId $role');
+    if (refusal != null) throw refusal!;
     return Account(
-      user: const User(id: 'u2', name: 'Ben'),
+      user: people.firstWhere((a) => a.user.id == userId).user,
       role: role,
     );
   }
 
   @override
-  Future<Account> disable(String userId) async => throw UnimplementedError();
+  Future<Account> disable(String userId) async {
+    calls.add('disable $userId');
+    return Account(
+      user: people.firstWhere((a) => a.user.id == userId).user,
+      role: 'user',
+    );
+  }
 
   @override
   Future<Account> enable(String userId) async => throw UnimplementedError();
@@ -99,9 +134,8 @@ Future<FakeAdmin> pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        meProvider.overrideWithValue(
-          Me(id: 'u1', email: 'ada@example.com', name: 'Ada', role: role),
-        ),
+        memoryDatabase(),
+        sessionProvider.overrideWith(() => _Session(role)),
         adminRepositoryProvider.overrideWithValue(fake),
       ],
       child: MaterialApp(theme: AppTheme.light(), home: const AdminScreen()),
@@ -190,6 +224,22 @@ void main() {
     expect(fake.calls, ['role u2 manager']);
   });
 
+  testWidgets('administrators disable an account after confirming', (
+    tester,
+  ) async {
+    final fake = await pump(tester, 'admin');
+    await tester.tap(find.text('People'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ben'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Disable account'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-disable')));
+    await tester.pumpAndSettle();
+    expect(fake.calls, ['disable u2']);
+    expect(find.text('Ben is disabled'), findsOneWidget);
+  });
+
   testWidgets('a long account list says it is not complete', (tester) async {
     final admin = FakeAdmin()
       ..total = 250
@@ -222,6 +272,53 @@ void main() {
     await tester.tap(find.text('People'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Search to narrow'), findsNothing);
+  });
+
+  testWidgets('a refused action shows the server message', (tester) async {
+    final admin = FakeAdmin()
+      ..refusal = const ApiError(
+        status: 403,
+        code: 'FORBIDDEN',
+        message: 'Only administrators and managers can do this.',
+        hasEnvelope: true,
+      );
+    final fake = await pump(tester, 'manager', admin: admin);
+    await tester.tap(find.text('Approve'));
+    await tester.pumpAndSettle();
+    expect(fake.calls, ['approve r1']);
+    expect(
+      find.descendant(
+        of: find.byType(SnackBar),
+        matching: find.text('Only administrators and managers can do this.'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('request-dan@else.org')), findsOneWidget);
+  });
+
+  testWidgets('approve ignores a second tap while busy', (tester) async {
+    final hold = Completer<void>();
+    final fake = await pump(tester, 'manager', admin: FakeAdmin()..hold = hold);
+    await tester.tap(find.text('Approve'));
+    await tester.pump();
+    await tester.tap(find.text('Approve'));
+    await tester.pump();
+    hold.complete();
+    await tester.pumpAndSettle();
+    expect(fake.calls, ['approve r1']);
+    expect(find.text('Nobody is waiting'), findsOneWidget);
+  });
+
+  testWidgets('stepping down leaves Administration', (tester) async {
+    final fake = await pump(tester, 'admin');
+    await tester.tap(find.text('People'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ada'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('User'));
+    await tester.pumpAndSettle();
+    expect(fake.calls, ['role u1 user']);
+    expect(find.text('Not available'), findsOneWidget);
   });
 
   testWidgets('everyone else sees nothing', (tester) async {

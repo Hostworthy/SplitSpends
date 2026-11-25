@@ -52,22 +52,24 @@ class _DefaultSplitSectionState extends ConsumerState<DefaultSplitSection> {
 
   Future<void> _save() async {
     final split = _form.split;
+    // The save outlives this section when the person leaves settings
+    // meanwhile; the lists must refresh either way.
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _saving = true);
     try {
-      final saved = await ref
+      final saved = await container
           .read(groupsRepositoryProvider)
           .update(
             widget.group.id,
             GroupInput(defaultSplit: split, clearDefaultSplit: split == null),
           );
+      refreshLedgerIn(container);
+      if (!mounted) return;
       _form.load(saved.defaultSplit);
-      ref.refreshLedger();
-      if (mounted) {
-        showMessage(
-          context,
-          split == null ? 'Default split removed' : 'Default split saved',
-        );
-      }
+      showMessage(
+        context,
+        split == null ? 'Default split removed' : 'Default split saved',
+      );
     } catch (error) {
       if (mounted) showError(context, error);
     } finally {

@@ -109,6 +109,7 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 		blobs, err = storage.NewLocal(cfg.DataDir)
 	}
 	if err != nil {
+		notifier.Close()
 		pool.Close()
 		return nil, err
 	}
@@ -125,31 +126,44 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 		log.Info("bootstrap.ai.enabled", "provider", cfg.AIProvider)
 	}
 
-	sender := pushSender(ctx, db, cfg, log)
-	services := WireWithPush(db, notifier, blobs, reader, sender, clock.System{}, cfg, log)
+	services := Wire(cfg, Adapters{DB: db, Email: notifier, Blobs: blobs, Reader: reader,
+		Push: pushSender(ctx, db, cfg, log), Clock: clock.System{}, Log: log})
 	if open, err := services.Auth.Unclaimed(ctx); err == nil && open {
 		log.Warn("auth.bootstrap.open", "reason", "no account yet and ADMIN_EMAIL is empty: whoever signs in first becomes the administrator, whatever SIGNUP_MODE says")
 	}
 	return &Runtime{Config: cfg, Log: log, db: db, notifier: notifier, Services: services}, nil
 }
 
-// Wire builds services from adapters, without push. Tests call it with
-// fakes.
-func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reader ports.Assistant, c clock.Clock, cfg *Config) *Services {
-	return WireWithPush(db, notifier, blobs, reader, nil, c, cfg, slog.New(slog.DiscardHandler))
+// Adapters are the infrastructure services run on. Tests fill the ones they
+// need with fakes.
+type Adapters struct {
+	DB *database.DB
+	// Email sends login codes, invites and notifications.
+	Email  ports.Notifier
+	Blobs  ports.BlobStore
+	Reader ports.Assistant
+	// Push delivers Web Push and knows its VAPID key; nil disables push.
+	Push  push.Sender
+	Clock clock.Clock
+	// Log is where services log; nil discards.
+	Log *slog.Logger
 }
 
-// WireWithPush builds services and sends notifications by email (notifier)
-// and Web Push (sender, nil to disable push).
-func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, reader ports.Assistant, sender push.Sender,
-	c clock.Clock, cfg *Config, log *slog.Logger) *Services {
-	pushes := push.NewService(repositories.NewPushSubscriptions(db), sender, c,
-		push.Settings{PublicKey: cfg.VAPIDPublicKey, AppName: cfg.AppName, Link: cfg.BaseURL, AllowPrivate: cfg.PushAllowPrivate})
+// Wire builds services on adapters. Notifications go out by email and, when
+// a.Push is set, by Web Push.
+func Wire(cfg *Config, a Adapters) *Services {
+	db, c, log := a.DB, a.Clock, a.Log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	pushes := push.NewService(repositories.NewPushSubscriptions(db), a.Push, c,
+		push.Settings{AppName: cfg.AppName, Link: cfg.BaseURL, AllowPrivate: cfg.PushAllowPrivate})
 	var p pusher
 	if pushes.Enabled() {
 		p = pushes
 	}
-	notifier := newFanout(email, p, log, cfg.Serverless)
+	notifier := newFanout(a.Email, p, log, cfg.Serverless)
+	blobs, reader := a.Blobs, a.Reader
 	tx := database.NewTx(db)
 	userRepo := repositories.NewUsers(db)
 	groupRepo := repositories.NewGroups(db)
@@ -164,15 +178,16 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	}
 
 	quotas := repositories.NewQuotas(db)
-	users := user.NewService(userRepo, notifier, quotas, c)
+	users := user.NewService(userRepo, notifier, quotas, c, log, user.Settings{Gravatar: cfg.Gravatar})
 	act := activity.NewService(repositories.NewActivities(db), c)
 	balances := balance.NewService(expenseRepo)
-	groups := group.NewService(groupRepo, users, balances, act, notifier, quotas, tx, c, cfg.BaseURL)
+	groups := group.NewService(group.Deps{Repo: groupRepo, Users: users, Balances: balances, Activity: act, Notifier: notifier,
+		Quota: quotas, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
 	receipts := receipt.NewService(receiptRepo, blobs, reader, tx, c)
 	categories := category.NewService(repositories.NewCategories(db), c)
-	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groupRepo,
-		Connections: friends, Receipts: receiptRepo, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+	expenses := expense.NewService(expense.Deps{Repo: expenseRepo, Comments: repositories.NewComments(db), Groups: groups,
+		Connections: friends, Receipts: receiptRepo, Catalog: categories, Users: users, Activity: act, Notifier: notifier, Tx: tx, Clock: c, Log: log, BaseURL: cfg.BaseURL})
 	// Rates only convert AI drafts read in another currency, so nothing is
 	// fetched unless AI is on.
 	var source rates.Source
@@ -186,28 +201,30 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	administration := admin.NewService(admin.Deps{Settings: repositories.NewSignupSettings(db), Requests: repositories.NewSignupRequests(db),
 		Users: userRepo, Accounts: userRepo, Credentials: repositories.NewCredentials(db), Notifier: notifier, Tx: tx, Clock: c, Log: log,
 		Defaults: policy.Signup(), BaseURL: cfg.BaseURL, AppName: cfg.AppName})
-	authn := auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, invites, notifier, tx, c)
+	authn := auth.NewService(policy, repositories.NewChallenges(db), repositories.NewSessions(db), userRepo, invites, notifier, tx, c, log)
 	authn.Use(administration)
+	assistant := assist.NewService(reader, users, groups, friendRepo, receipts, fx, c)
+	statistics := stats.NewService(repositories.NewStats(db), groups, users, categories, c)
+	transfers := transfer.NewService(users, friendRepo, groups, expenses, categories, tx, tx)
 	return &Services{
-		Admin:    administration,
-		Rates:    fx,
-		Auth:     authn,
-		Users:    users,
-		Friends:  friends,
-		Groups:   groups,
-		Balances: balances,
-		Activity: act,
-		Expenses: expenses,
-		Transfer: transfer.NewService(users, friendRepo, groups, expenses, categories, tx, tx),
-		Receipts: receipts,
-		Assist:   assist.NewService(reader, users, groups, friendRepo, receipts, fx, c),
-		Stats:    stats.NewService(repositories.NewStats(db), groupRepo, users, categories),
-
+		Auth:       authn,
+		Users:      users,
+		Friends:    friends,
+		Groups:     groups,
+		Expenses:   expenses,
+		Balances:   balances,
+		Activity:   act,
+		Receipts:   receipts,
+		Assist:     assistant,
+		Stats:      statistics,
+		Transfer:   transfers,
 		Reminders:  reminders,
 		Invites:    invites,
+		Rates:      fx,
 		Push:       pushes,
-		notifier:   notifier,
 		Categories: categories,
+		Admin:      administration,
+		notifier:   notifier,
 	}
 }
 

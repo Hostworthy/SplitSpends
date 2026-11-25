@@ -15,7 +15,7 @@ import (
 // the account's other sessions stay.
 func TestSignOutRemovesDevice(t *testing.T) {
 	cfg := bootstraptest.Defaults()
-	cfg.Serverless, cfg.VAPIDPublicKey = true, "test-key"
+	cfg.Serverless = true
 	s := newServer(t, bootstraptest.Options{Config: cfg, Sender: accepting{}})
 	laptop := s.signIn(t, "ada@example.com", "Ada").Token
 	phone := s.signIn(t, "ada@example.com", "Ada").Token

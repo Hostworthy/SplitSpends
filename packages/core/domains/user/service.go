@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -29,11 +30,29 @@ type Service struct {
 	notifier ports.Notifier
 	quota    ports.Quota
 	clock    clock.Clock
+	log      *slog.Logger
+	settings Settings
+}
+
+// Settings are the host's choices about accounts.
+type Settings struct {
+	// Gravatar lets people show their Gravatar picture. When it is off
+	// nobody can turn theirs on and no picture is shown.
+	Gravatar bool
 }
 
 // NewService builds a Service.
-func NewService(repo Repository, notifier ports.Notifier, quota ports.Quota, c clock.Clock) *Service {
-	return &Service{repo: repo, notifier: notifier, quota: quota, clock: c}
+func NewService(repo Repository, notifier ports.Notifier, quota ports.Quota, c clock.Clock, log *slog.Logger, settings Settings) *Service {
+	return &Service{repo: repo, notifier: notifier, quota: quota, clock: c, log: log, settings: settings}
+}
+
+// Picture is the Gravatar image URL to show for u at size pixels, or ""
+// when u has none or the host turned pictures off.
+func (s *Service) Picture(u *User, size int) string {
+	if !s.settings.Gravatar {
+		return ""
+	}
+	return u.Picture(size)
 }
 
 // Get returns a user by id.
@@ -64,6 +83,9 @@ func (s *Service) Index(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*Us
 
 // Update applies a profile patch.
 func (s *Service) Update(ctx context.Context, id uuid.UUID, p Patch) (*User, error) {
+	if p.Gravatar != nil && *p.Gravatar && !s.settings.Gravatar {
+		return nil, errs.Validation("gravatar", "Gravatar pictures are turned off on this server.")
+	}
 	u, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -124,7 +146,15 @@ func (s *Service) SendInvite(ctx context.Context, u, inviter *User) {
 	if u.Status != StatusInvited || u.Email == "" || s.notifier == nil || ports.IsQuiet(ctx) {
 		return
 	}
-	_ = s.notifier.Invite(ctx, u.Email, inviter.Name)
+	s.invite(ctx, u, inviter.Name)
+}
+
+// invite emails u an invitation from inviter. The account is saved already,
+// so a failure is logged rather than returned.
+func (s *Service) invite(ctx context.Context, u *User, inviter string) {
+	if err := s.notifier.Invite(ctx, u.Email, inviter); err != nil {
+		s.log.ErrorContext(ctx, "user.invite.failed", "user", u.ID, "error", err)
+	}
 }
 
 // spend uses one of the inviter's invitation emails.
@@ -203,8 +233,14 @@ func (s *Service) Invite(ctx context.Context, actor, id uuid.UUID, email string)
 	if err := s.repo.Update(ctx, u); err != nil {
 		return nil, err
 	}
-	if inviter, err := s.repo.Get(ctx, actor); err == nil && s.notifier != nil {
-		_ = s.notifier.Invite(ctx, u.Email, inviter.Name)
+	if s.notifier == nil {
+		return u, nil
 	}
+	inviter, err := s.repo.Get(ctx, actor)
+	if err != nil {
+		s.log.ErrorContext(ctx, "user.invite.failed", "user", u.ID, "error", err)
+		return u, nil
+	}
+	s.invite(ctx, u, inviter.Name)
 	return u, nil
 }

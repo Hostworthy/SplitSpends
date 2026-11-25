@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/api/address.dart';
 import 'package:splitspends/features/invites/domain/invite.dart';
 
 /// Asks for a pasted invite link and opens it.
@@ -38,9 +39,11 @@ class _JoinLinkDialogState extends State<_JoinLinkDialog> {
     final link = JoinLink.parse(_controller.text);
     if (link == null) {
       setState(
-        () => _error =
-            'Paste the whole invite link, for example '
-            'https://split.example.com/join/…',
+        () => _error = publicPlainServer(_controller.text)
+            ? 'This link starts with http://, which is only safe on your '
+                  'local network. Ask for a link that starts with https://.'
+            : 'Paste the whole invite link, for example '
+                  'https://split.example.com/join/…',
       );
       return;
     }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -57,7 +58,11 @@ func (m *memChallenges) Consume(_ context.Context, id uuid.UUID, at time.Time) (
 }
 func (m *memChallenges) DeleteBefore(context.Context, time.Time) error { return nil }
 
-type memSessions struct{ byHash map[string]*Session }
+type memSessions struct {
+	byHash map[string]*Session
+	// touch fails every Touch when set.
+	touch error
+}
 
 func (m *memSessions) Create(_ context.Context, s *Session) error {
 	m.byHash[s.TokenHash] = s
@@ -66,7 +71,7 @@ func (m *memSessions) Create(_ context.Context, s *Session) error {
 func (m *memSessions) FindByHash(_ context.Context, h string) (*Session, error) {
 	return m.byHash[h], nil
 }
-func (m *memSessions) Touch(context.Context, uuid.UUID, time.Time) error { return nil }
+func (m *memSessions) Touch(context.Context, uuid.UUID, time.Time) error { return m.touch }
 func (m *memSessions) Delete(_ context.Context, id uuid.UUID) error {
 	for h, s := range m.byHash {
 		if s.ID == id {
@@ -164,7 +169,8 @@ func withLinks(mode SignupMode) (*Service, *memUsers, codes, links) {
 	sent := codes{}
 	now := clock.Fixed{At: time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)}
 	invites := links{"valid-link": true}
-	return NewService(p, &memChallenges{}, &memSessions{byHash: map[string]*Session{}}, users, invites, sent, noTx{}, now), users, sent, invites
+	return NewService(p, &memChallenges{}, &memSessions{byHash: map[string]*Session{}}, users, invites, sent, noTx{}, now,
+		slog.New(slog.DiscardHandler)), users, sent, invites
 }
 
 func TestLoginFlow(t *testing.T) {
@@ -193,6 +199,29 @@ func TestLoginFlow(t *testing.T) {
 	}
 	if _, err := s.Authenticate(ctx, login.Token); !errs.Is(err, errs.KindUnauthorized) {
 		t.Fatal("token must be revoked after logout")
+	}
+}
+
+// TestTouchFailureIsLogged checks that a session whose last use cannot be
+// recorded still authenticates, and that the failure is logged.
+func TestTouchFailureIsLogged(t *testing.T) {
+	ctx := context.Background()
+	s, _, sent := service(SignupOpen)
+	var logs strings.Builder
+	s.log = slog.New(slog.NewJSONHandler(&logs, nil))
+	if err := s.RequestCode(ctx, "ada@example.com", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	login, err := s.Verify(ctx, "ada@example.com", sent["ada@example.com"], "Ada", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.sessions.(*memSessions).touch = errors.New("connection refused")
+	if _, err := s.Authenticate(ctx, login.Token); err != nil {
+		t.Fatalf("the session is valid anyway: %v", err)
+	}
+	if got := strings.Count(logs.String(), `"msg":"auth.session.touch.failed"`); got != 1 {
+		t.Fatalf("auth.session.touch.failed logged %d times, want 1: %s", got, logs.String())
 	}
 }
 

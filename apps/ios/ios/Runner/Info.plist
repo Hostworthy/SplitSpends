@@ -4,7 +4,10 @@
 <dict>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- Self-hosted servers on the local network may use plain HTTP. -->
+		<!-- App Transport Security governs Apple's networking APIs only. The app
+		     talks to its server through Dart's HTTP client, which ATS does not
+		     cover, so the app itself asks before using plain HTTP outside the
+		     local network. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>

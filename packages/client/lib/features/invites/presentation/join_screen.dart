@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
@@ -23,7 +22,9 @@ class JoinScreen extends ConsumerStatefulWidget {
 
   final String token;
 
-  /// The link's server when it differs from the app's (pasted links).
+  /// The link's `?server=`, as given: pasted links for another server than
+  /// the app's. Installed apps check it and ask before switching; the web
+  /// build ignores it, since its own server serves the page.
   final String? server;
 
   @override
@@ -61,43 +62,96 @@ class _JoinScreenState extends ConsumerState<JoinScreen> {
   }
 
   String _serverFor(Session session) =>
-      widget.server ?? (kIsWeb ? defaultServerUrl() : session.serverUrl);
+      ref.read(homeServerProvider) ??
+      (widget.server == null ? null : JoinLink.origin(widget.server!)) ??
+      session.serverUrl;
+
+  /// True when the link names a server the app refuses to talk to.
+  bool get _unsafe =>
+      ref.read(homeServerProvider) == null &&
+      widget.server != null &&
+      JoinLink.origin(widget.server!) == null;
 
   Future<void> _join() async {
+    // Joining completes even when the person leaves this screen meanwhile;
+    // the pending invite must clear and the lists refresh either way.
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final group = await ref
+      final group = await container
           .read(invitesRepositoryProvider)
           .accept(widget.token);
-      ref.read(pendingInviteProvider.notifier).set(null);
-      ref.refreshLedger();
+      container.read(pendingInviteProvider.notifier).set(null);
+      refreshLedgerIn(container);
       if (mounted) context.go(Routes.group(group.id));
-    } on ApiError catch (error) {
-      setState(() => _error = describeError(error));
+    } catch (error) {
+      if (mounted) setState(() => _error = describeError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  /// Sign in (or connect from on-device mode), then come back here.
+  /// Sign in (or connect from on-device mode), then come back here. A link
+  /// never moves the app to another server without the person's say-so.
   Future<void> _signIn(String server) async {
+    final current = ref.read(sessionProvider).value?.serverUrl ?? '';
+    final switching = normalizeServerUrl(current) != normalizeServerUrl(server);
+    if (switching && !await _confirmServer(server, current)) return;
+    if (!mounted) return;
     ref
         .read(pendingInviteProvider.notifier)
         .set(JoinLink(token: widget.token, server: server));
-    final session = ref.read(sessionProvider.notifier);
-    if (normalizeServerUrl(ref.read(sessionProvider).value?.serverUrl ?? '') !=
-        normalizeServerUrl(server)) {
-      await session.setServerUrl(server);
+    if (switching) {
+      await ref.read(sessionProvider.notifier).setServerUrl(server);
     }
     if (mounted) context.go(Routes.login);
+  }
+
+  Future<bool> _confirmServer(String server, String current) async {
+    final host = Uri.tryParse(server)?.host ?? server;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(current.isEmpty ? 'Use this server?' : 'Switch servers?'),
+        content: Text(
+          'This invite is for $server. Split Spends will use that server '
+          '${current.isEmpty ? 'from now on' : 'instead of $current'} and '
+          'send your sign-in code to it. Continue only if you trust whoever '
+          'sent you the link.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('join-confirm-server'),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Use $host'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider).value ?? const Session();
+    if (_unsafe) {
+      return AuthLayout(
+        showBack: true,
+        title: 'This link is not safe to open',
+        subtitle:
+            'It points to a server Split Spends will not use. Invite links '
+            'start with https:// (plain http:// only works on your local '
+            'network). Ask for a new link.',
+        children: const [],
+      );
+    }
     final server = _serverFor(session);
     if (server.isEmpty) {
       return AuthLayout(

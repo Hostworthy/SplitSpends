@@ -8,7 +8,7 @@ import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/widgets/avatar.dart';
 import 'package:splitspends/core/widgets/states.dart';
-import 'package:splitspends/features/account/presentation/providers.dart';
+import 'package:splitspends/features/dashboard/presentation/providers.dart';
 import 'package:splitspends/features/activity/presentation/activity_tile.dart';
 import 'package:splitspends/features/activity/presentation/providers.dart';
 import 'package:splitspends/features/dashboard/presentation/summary_card.dart';
@@ -121,6 +121,13 @@ class DashboardScreen extends ConsumerWidget {
                                   onTap: () => showNewGroupSheet(context),
                                 )
                               : GroupCard(group: value[i]),
+                        ),
+                        AsyncValue(:final error?) => Center(
+                          child: InlineError(
+                            key: const Key('groups-error'),
+                            error: error,
+                            onRetry: () => ref.invalidate(groupsProvider),
+                          ),
                         ),
                         _ => const SizedBox.shrink(),
                       },

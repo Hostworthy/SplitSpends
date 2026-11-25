@@ -91,6 +91,18 @@ func TestInventedIDsAreIgnored(t *testing.T) {
 	}
 }
 
+// TestUnreadableDateIsToday checks that a date the model wrote in another
+// format leaves the draft dated today rather than empty.
+func TestUnreadableDateIsToday(t *testing.T) {
+	for _, date := range []string{"05/10/2026", "", "2026-13-01"} {
+		d, err := build(world(), Request{}, ports.DraftExtract{Amount: "30", Date: date}, "2026-10-06", "USD", noRates)
+		must(t, err)
+		if d.Date != "2026-10-06" {
+			t.Errorf("%q: want today, got %q", date, d.Date)
+		}
+	}
+}
+
 func TestReceiptTotalReconciles(t *testing.T) {
 	d, err := build(world(), Request{GroupID: &trip}, ports.DraftExtract{
 		Amount: "45.00",

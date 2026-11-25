@@ -140,6 +140,8 @@ func (f *fakeSender) Send(ctx context.Context, s *Subscription, payload []byte) 
 	return answer
 }
 
+func (f *fakeSender) PublicKey() string { return "key" }
+
 var (
 	testKey  = base64.RawURLEncoding.EncodeToString(append([]byte{4}, make([]byte, 64)...))
 	testAuth = base64.RawURLEncoding.EncodeToString(make([]byte, 16))
@@ -153,7 +155,7 @@ func setup() (*Service, *memRepo, *fakeSender) {
 	repo := &memRepo{subs: map[uuid.UUID]*Subscription{}}
 	sender := &fakeSender{answers: map[string]error{}, hang: map[string]bool{}}
 	svc := NewService(repo, sender, clock.Fixed{At: time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)},
-		Settings{PublicKey: "key", AppName: "SplitSpends", Link: "https://split.example.com"})
+		Settings{AppName: "SplitSpends", Link: "https://split.example.com"})
 	return svc, repo, sender
 }
 

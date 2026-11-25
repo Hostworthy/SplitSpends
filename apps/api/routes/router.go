@@ -36,7 +36,6 @@ type API struct {
 
 // New builds the API.
 func New(d Deps) *API {
-	pictures = d.Config.Gravatar
 	return &API{svc: d.Services, cfg: d.Config, log: d.Log, ping: d.Ping, jobs: d.Jobs}
 }
 

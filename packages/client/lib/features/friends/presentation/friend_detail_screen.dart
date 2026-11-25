@@ -27,7 +27,10 @@ class FriendDetailScreen extends ConsumerWidget {
   final String userId;
   final bool embedded;
 
-  Future<void> _remove(BuildContext context, WidgetRef ref) async {
+  Future<void> _remove(BuildContext context) async {
+    // The removal outlives this screen when the person leaves it meanwhile;
+    // the lists must refresh either way.
+    final container = ProviderScope.containerOf(context, listen: false);
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -47,8 +50,8 @@ class FriendDetailScreen extends ConsumerWidget {
     );
     if (ok != true) return;
     try {
-      await ref.read(friendsRepositoryProvider).remove(userId);
-      ref.refreshLedger();
+      await container.read(friendsRepositoryProvider).remove(userId);
+      refreshLedgerIn(container);
       if (context.mounted) context.go(Routes.friends);
     } catch (error) {
       if (context.mounted) showError(context, error);
@@ -66,7 +69,7 @@ class FriendDetailScreen extends ConsumerWidget {
         actions: [
           PopupMenuButton<String>(
             onSelected: (v) {
-              if (v == 'remove') _remove(context, ref);
+              if (v == 'remove') _remove(context);
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'remove', child: Text('Remove friend')),

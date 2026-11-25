@@ -144,7 +144,9 @@ func (r *Expenses) attachShares(ctx context.Context, list []*expense.Expense) er
 	return rows.Err()
 }
 
-// visible restricts to expenses $1 may see.
+// visible restricts to expenses $1 may see. It is the rule expense canRead
+// states, applied in the query so pages and totals count only those; the two
+// change together.
 const visible = `((e.group_id IS NOT NULL AND EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = e.group_id AND m.user_id = $1 AND m.left_at IS NULL))
 	OR EXISTS (SELECT 1 FROM expense_shares s WHERE s.expense_id = e.id AND s.user_id = $1))`
 
@@ -198,6 +200,24 @@ func (r *Expenses) List(ctx context.Context, f expense.Filter) ([]*expense.Expen
 		return nil, 0, err
 	}
 	return list, total, r.attachShares(ctx, list)
+}
+
+func (r *Expenses) After(ctx context.Context, groupID uuid.UUID, last *expense.Expense, limit int) ([]*expense.Expense, error) {
+	where, args := `e.group_id = $1 AND e.deleted_at IS NULL`, []any{groupID, limit}
+	if last != nil {
+		where += ` AND (e.date, e.created_at, e.id) > ($3, $4, $5)`
+		args = append(args, last.Date, last.CreatedAt, last.ID)
+	}
+	rows, err := r.db.Q(ctx).Query(ctx, `SELECT `+expenseColumns+` FROM expenses e WHERE `+where+
+		` ORDER BY e.date, e.created_at, e.id LIMIT $2`, args...)
+	if err != nil {
+		return nil, err
+	}
+	list, err := collect(rows, scanExpense)
+	if err != nil {
+		return nil, err
+	}
+	return list, r.attachShares(ctx, list)
 }
 
 func (r *Expenses) Due(ctx context.Context, day time.Time, limit int) ([]*expense.Expense, error) {

@@ -9,6 +9,8 @@ import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/core/storage/local_ledger.dart';
 import 'package:splitspends/features/account/data/local_account_repository.dart';
 import 'package:splitspends/features/activity/data/local_activity_repository.dart';
+import 'package:splitspends/features/categories/data/local_categories_repository.dart';
+import 'package:splitspends/features/categories/domain/categories_repository.dart';
 import 'package:splitspends/features/expenses/data/local_expenses_repository.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
@@ -105,7 +107,10 @@ void main() {
 
     // Settled members can leave; unsettled ones cannot.
     await groups.removeMember(group.id, sam);
-    expect(() => groups.removeMember(group.id, alex), throwsA(anything));
+    await expectLater(
+      groups.removeMember(group.id, alex),
+      throwsA(isA<ApiError>().having((e) => e.status, 'status', 409)),
+    );
   });
 
   Matcher apiError(String field, String message) => isA<ApiError>()
@@ -121,6 +126,58 @@ void main() {
       ],
     ),
   );
+
+  test('adding someone twice is a conflict, like on the server', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final group = await groups.create(
+      const GroupInput(
+        name: 'Trip',
+        members: [MemberInput(email: 'sam@example.com', name: 'Sam')],
+      ),
+    );
+    await expectLater(
+      groups.addMember(group.id, email: 'sam@example.com'),
+      throwsA(
+        isA<ApiError>()
+            .having((e) => e.status, 'status', 409)
+            .having(
+              (e) => e.message,
+              'message',
+              'Sam is already in this group.',
+            ),
+      ),
+    );
+    expect((await groups.get(group.id)).members, hasLength(2));
+  });
+
+  test('removing someone who is not a member is not found', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final group = await trip(groups);
+    final activity = LocalActivityRepository(ledger);
+    final before = (await activity.list()).total;
+    await expectLater(
+      groups.removeMember(group.id, '00000000-0000-4000-8000-0000000000ff'),
+      throwsA(
+        isA<ApiError>().having(
+          (e) => e.message,
+          'message',
+          'Member not found.',
+        ),
+      ),
+    );
+    expect((await activity.list()).total, before);
+    expect((await groups.get(group.id)).members, hasLength(3));
+  });
+
+  test('the device owner cannot leave a group', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final group = await trip(groups);
+    await expectLater(
+      groups.removeMember(group.id, meId),
+      throwsA(isA<ApiError>().having((e) => e.status, 'status', 409)),
+    );
+    expect((await groups.list()).map((g) => g.id), [group.id]);
+  });
 
   test('a group member can record a payment between two others', () async {
     final groups = LocalGroupsRepository(ledger);
@@ -529,7 +586,14 @@ void main() {
         ],
       ),
     );
-    await groups.removeMember(group.id, meId);
+    // The app no longer lets the owner leave; a stored group without them
+    // still keeps its expenses out of reach.
+    final db = await ledger.db;
+    final stored = await ledger.group(group.id, db);
+    await Stores.groups.record(group.id).put(db, {
+      ...stored,
+      'memberIds': [sam, alex],
+    });
     final notFound = isA<ApiError>().having((e) => e.code, 'code', 'NOT_FOUND');
     await expectLater(expenses.delete(e.id), throwsA(notFound));
     await expectLater(
@@ -695,6 +759,53 @@ void main() {
     );
   });
 
+  test('export matches the server: decimals and former members', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final group = await trip(groups);
+    final sam = group.members[1].id, alex = group.members[2].id;
+    await expenses.create(
+      ExpenseInput(
+        groupId: group.id,
+        description: 'Dinner',
+        category: 'food.dining',
+        currency: 'EUR',
+        total: 9000,
+        date: '2026-11-20',
+        payers: const [Payer(userId: meId, amount: 9000)],
+        splits: [
+          const SplitEntry(userId: meId),
+          SplitEntry(userId: sam),
+          SplitEntry(userId: alex),
+        ],
+      ),
+    );
+    now = now.add(const Duration(minutes: 1));
+    await expenses.recordPayment(
+      groupId: group.id,
+      fromUserId: sam,
+      toUserId: meId,
+      amount: 3000,
+      currency: 'EUR',
+      date: '2026-11-20',
+    );
+    await groups.removeMember(group.id, sam);
+
+    final lines = const LineSplitter().convert(
+      utf8.decode(await groups.export(group.id)),
+    );
+    expect(lines, hasLength(3));
+    expect(
+      lines[0],
+      'Date,Description,Category,Kind,Currency,Cost,Ada,Alex,Sam',
+    );
+    expect(
+      lines[1],
+      '2026-11-20,Dinner,food.dining,expense,EUR,90.00,60.00,-30.00,-30.00',
+    );
+    expect(lines[2], endsWith(',payment,EUR,30.00,-30.00,0.00,30.00'));
+  });
+
   test('export neutralises formulas in names and descriptions', () async {
     final groups = LocalGroupsRepository(ledger);
     final group = await groups.create(
@@ -726,6 +837,197 @@ void main() {
     ];
     expect(rows[0].sublist(6), ['Ada', "'=1+1"]);
     expect(rows[1][1], "'@SUM(A1)");
-    expect(rows[1].sublist(6), ['100', '-100']);
+    expect(rows[1].sublist(6), ['1.00', '-1.00']);
+  });
+
+  /// An expense in [group] paid by me and shared as [splits] says.
+  Future<Expense> spend(
+    LocalExpensesRepository expenses,
+    String? group,
+    String description,
+    String date,
+    int total, {
+    String currency = 'EUR',
+    String? category,
+    required List<String> splits,
+  }) => expenses.create(
+    ExpenseInput(
+      groupId: group,
+      description: description,
+      currency: currency,
+      total: total,
+      date: date,
+      category: category,
+      payers: [Payer(userId: meId, amount: total)],
+      splits: [for (final id in splits) SplitEntry(userId: id)],
+    ),
+  );
+
+  test('local stats honours the one-year window and currency', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final categories = LocalCategoriesRepository(ledger);
+    final group = await trip(groups);
+    final sam = group.members[1].id;
+    final other = await trip(groups);
+    final pets = await categories.create(const CategoryInput(name: 'Pets'));
+
+    // Today is 2026-11-24: the window opens on 2025-11-24.
+    await spend(
+      expenses,
+      group.id,
+      'Edge',
+      '2025-11-24',
+      3000,
+      category: 'food.dining',
+      splits: [meId, sam],
+    );
+    await spend(
+      expenses,
+      group.id,
+      'Too old',
+      '2025-11-23',
+      5000,
+      category: 'food.dining',
+      splits: [meId, sam],
+    );
+    await spend(
+      expenses,
+      group.id,
+      'Vet',
+      '2026-10-02',
+      1000,
+      category: pets.id,
+      splits: [meId, sam],
+    );
+    await spend(
+      expenses,
+      group.id,
+      'Dollars',
+      '2026-11-01',
+      7000,
+      currency: 'USD',
+      splits: [meId, sam],
+    );
+    await spend(
+      expenses,
+      other.id,
+      'Elsewhere',
+      '2026-11-01',
+      9000,
+      splits: [meId, other.members[1].id],
+    );
+    await expenses.recordPayment(
+      groupId: group.id,
+      fromUserId: sam,
+      toUserId: meId,
+      amount: 500,
+      currency: 'EUR',
+      date: '2026-11-20',
+    );
+    await categories.delete(pets.id);
+
+    final stats = await groups.stats(groupId: group.id);
+    expect(stats.currency, 'EUR');
+    expect(stats.totalSpent, 4000);
+    expect(
+      {for (final c in stats.byCategory) c.category: c.amount},
+      {'food.dining': 3000, 'general': 1000},
+    );
+    expect(
+      {for (final m in stats.byMonth) m.month: m.amount},
+      {'2025-11': 3000, '2026-10': 1000},
+    );
+    expect(
+      {for (final m in stats.byMember) m.userId: (m.paid, m.owed)},
+      {meId: (4000, 2000), sam: (0, 2000)},
+    );
+
+    final dollars = await groups.stats(groupId: group.id, currency: 'USD');
+    expect(dollars.totalSpent, 7000);
+  });
+
+  test('local personal stats count only what I owe', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final group = await trip(groups);
+    final sam = group.members[1].id, alex = group.members[2].id;
+    await spend(
+      expenses,
+      group.id,
+      'Dinner',
+      '2026-11-20',
+      3000,
+      splits: [meId, sam, alex],
+    );
+    await spend(
+      expenses,
+      group.id,
+      'Their taxi',
+      '2026-11-21',
+      2000,
+      splits: [sam, alex],
+    );
+
+    final stats = await groups.stats();
+    expect(stats.currency, 'EUR');
+    expect(stats.totalSpent, 1000);
+    expect(stats.byMember, isEmpty);
+  });
+
+  test('local delete refuses unsettled and cascades', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final expenses = LocalExpensesRepository(ledger);
+    final activity = LocalActivityRepository(ledger);
+    final group = await trip(groups);
+    final kept = await trip(groups);
+    final sam = group.members[1].id;
+    await spend(
+      expenses,
+      group.id,
+      'Dinner',
+      '2026-11-20',
+      2000,
+      splits: [meId, sam],
+    );
+    final stays = await spend(
+      expenses,
+      kept.id,
+      'Lunch',
+      '2026-11-20',
+      1000,
+      splits: [meId, kept.members[1].id],
+    );
+    final keptActivity = (await activity.list(groupId: kept.id)).total;
+
+    await expectLater(
+      groups.delete(group.id),
+      throwsA(
+        isA<ApiError>()
+            .having((e) => e.status, 'status', 409)
+            .having(
+              (e) => e.message,
+              'message',
+              'Settle up before deleting this group.',
+            ),
+      ),
+    );
+    expect((await groups.get(group.id)).id, group.id);
+
+    await expenses.recordPayment(
+      groupId: group.id,
+      fromUserId: sam,
+      toUserId: meId,
+      amount: 1000,
+      currency: 'EUR',
+    );
+    await groups.delete(group.id);
+
+    expect((await groups.list()).map((g) => g.id), [kept.id]);
+    await expectLater(groups.get(group.id), throwsA(isA<ApiError>()));
+    expect((await activity.list(groupId: group.id)).total, 0);
+    expect((await activity.list(groupId: kept.id)).total, keptActivity);
+    final left = await expenses.list(const ExpenseQuery());
+    expect(left.items.map((e) => e.id), [stays.id]);
   });
 }

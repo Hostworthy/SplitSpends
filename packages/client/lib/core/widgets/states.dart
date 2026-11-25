@@ -83,6 +83,27 @@ class ErrorView extends StatelessWidget {
   }
 }
 
+/// A failed load in a small part of a screen, such as one section or a
+/// strip of cards, with a retry.
+class InlineError extends StatelessWidget {
+  const InlineError({super.key, required this.error, required this.onRetry});
+
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final network = error is ApiError && (error as ApiError).isNetwork;
+    return ListTile(
+      leading: Icon(
+        network ? Icons.cloud_off_rounded : Icons.error_outline_rounded,
+      ),
+      title: Text(describeError(error)),
+      trailing: TextButton(onPressed: onRetry, child: const Text('Try again')),
+    );
+  }
+}
+
 /// The end of a list whose next page failed to load.
 class PageError extends StatelessWidget {
   const PageError({super.key, required this.error, required this.onRetry});

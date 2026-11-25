@@ -13,11 +13,7 @@ import 'package:splitspends/features/categories/presentation/providers.dart';
 class ManageCategoriesScreen extends ConsumerWidget {
   const ManageCategoriesScreen({super.key});
 
-  Future<void> _delete(
-    BuildContext context,
-    WidgetRef ref,
-    Category category,
-  ) async {
+  Future<void> _delete(BuildContext context, Category category) async {
     final ok =
         await showDialog<bool>(
           context: context,
@@ -39,10 +35,11 @@ class ManageCategoriesScreen extends ConsumerWidget {
           ),
         ) ??
         false;
-    if (!ok) return;
+    if (!ok || !context.mounted) return;
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
-      await ref.read(categoriesRepositoryProvider).delete(category.id);
-      ref.invalidate(categoriesProvider);
+      await container.read(categoriesRepositoryProvider).delete(category.id);
+      container.invalidate(categoriesProvider);
       if (context.mounted) showMessage(context, 'Category deleted');
     } catch (error) {
       if (context.mounted) showError(context, error);
@@ -96,7 +93,7 @@ class ManageCategoriesScreen extends ConsumerWidget {
                   trailing: IconButton(
                     tooltip: 'Delete',
                     icon: const Icon(Icons.delete_outline_rounded),
-                    onPressed: () => _delete(context, ref, c),
+                    onPressed: () => _delete(context, c),
                   ),
                 ),
             ],

@@ -84,6 +84,13 @@ String defaultServerUrl() {
   return kIsWeb ? Uri.base.origin : '';
 }
 
+/// The server that serves this app: the page origin on web, null for
+/// installed apps, which can talk to any server. A provider so tests can
+/// stand in for the web build.
+final homeServerProvider = Provider<String?>(
+  (ref) => kIsWeb ? defaultServerUrl() : null,
+);
+
 final sessionProvider = AsyncNotifierProvider<SessionController, Session>(
   SessionController.new,
 );

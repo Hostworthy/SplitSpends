@@ -2,6 +2,7 @@ package routes
 
 import (
 	"encoding/csv"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,14 +16,6 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 	"github.com/google/uuid"
 )
-
-func parseID(raw, field string) (uuid.UUID, error) {
-	id, err := uuid.Parse(raw)
-	if err != nil {
-		return uuid.Nil, errs.Validation(field, "Invalid user id.")
-	}
-	return id, nil
-}
 
 func toInput(in platform.ExpenseInput) (expense.Input, error) {
 	out := expense.Input{Description: in.Description, Currency: in.Currency, Total: in.Total, Date: in.Date, Category: in.Category,
@@ -44,15 +37,15 @@ func toInput(in platform.ExpenseInput) (expense.Input, error) {
 		}
 		out.UpdatedAt = &at
 	}
-	for _, p := range in.Payers {
-		id, err := parseID(p.UserID, "payers")
+	for i, p := range in.Payers {
+		id, err := requiredID(p.UserID, fmt.Sprintf("payers[%d].userId", i))
 		if err != nil {
 			return out, err
 		}
 		out.Payers = append(out.Payers, expense.Payer{UserID: id, Amount: p.Amount})
 	}
-	for _, s := range in.Splits {
-		id, err := parseID(s.UserID, "splits")
+	for i, s := range in.Splits {
+		id, err := requiredID(s.UserID, fmt.Sprintf("splits[%d].userId", i))
 		if err != nil {
 			return out, err
 		}
@@ -62,10 +55,10 @@ func toInput(in platform.ExpenseInput) (expense.Input, error) {
 		}
 		out.Splits = append(out.Splits, expense.SplitInput{UserID: id, Value: v})
 	}
-	for _, it := range in.Items {
+	for i, it := range in.Items {
 		item := expense.Item{Name: it.Name, Amount: it.Amount}
-		for _, raw := range it.UserIDs {
-			id, err := parseID(raw, "items")
+		for j, raw := range it.UserIDs {
+			id, err := requiredID(raw, fmt.Sprintf("items[%d].userIds[%d]", i, j))
 			if err != nil {
 				return out, err
 			}
@@ -198,7 +191,7 @@ func (a *API) listComments(w http.ResponseWriter, r *http.Request) error {
 	for _, c := range comments {
 		u := platform.User{ID: c.UserID.String(), Name: "Someone"}
 		if p := people[c.UserID]; p != nil {
-			u = toUser(p)
+			u = a.toUser(p)
 		}
 		out = append(out, platform.Comment{ID: c.ID.String(), ExpenseID: c.ExpenseID.String(), User: u, Body: c.Body, CreatedAt: stamp(c.CreatedAt)})
 	}
@@ -222,7 +215,7 @@ func (a *API) addComment(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return details(w, http.StatusCreated, platform.Comment{ID: c.ID.String(), ExpenseID: c.ExpenseID.String(), User: toUser(u), Body: c.Body, CreatedAt: stamp(c.CreatedAt)})
+	return details(w, http.StatusCreated, platform.Comment{ID: c.ID.String(), ExpenseID: c.ExpenseID.String(), User: a.toUser(u), Body: c.Body, CreatedAt: stamp(c.CreatedAt)})
 }
 
 func (a *API) deleteComment(w http.ResponseWriter, r *http.Request) error {
@@ -248,10 +241,10 @@ func (a *API) createPayment(w http.ResponseWriter, r *http.Request) error {
 	if in.GroupID, err = optionalID(body.GroupID, "groupId"); err != nil {
 		return err
 	}
-	if in.From, err = parseID(body.FromUserID, "fromUserId"); err != nil {
+	if in.From, err = requiredID(body.FromUserID, "fromUserId"); err != nil {
 		return err
 	}
-	if in.To, err = parseID(body.ToUserID, "toUserId"); err != nil {
+	if in.To, err = requiredID(body.ToUserID, "toUserId"); err != nil {
 		return err
 	}
 	e, err := a.svc.Expenses.RecordPayment(r.Context(), me(r), in)
@@ -266,99 +259,35 @@ func (a *API) exportGroup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	view, err := a.svc.Groups.View(r.Context(), me(r), id)
-	if err != nil {
-		return err
-	}
-	// The expenses are read twice, a page at a time, so a large group is
-	// never held in memory: once for the people who need a column, once to
-	// write the rows.
-	seen := map[uuid.UUID]bool{}
-	ids := []uuid.UUID{}
-	err = a.pages(r, id, func(e *expense.Expense) error {
-		for _, p := range e.Participants() {
-			if !seen[p] {
-				seen[p] = true
-				ids = append(ids, p)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	people, err := a.svc.Users.Index(r.Context(), ids)
-	if err != nil {
-		return err
-	}
-	names := map[uuid.UUID]string{}
-	for id, u := range people {
-		names[id] = u.Name
-	}
-	order := []uuid.UUID{}
-	for _, u := range view.People {
-		order = append(order, u.ID)
-	}
-	for id := range names {
-		if !view.HasMember(id) {
-			order = append(order, id)
-		}
-	}
-
-	filename := strings.Map(func(r rune) rune {
-		if r == '"' || r == '\\' || r < 32 {
-			return '_'
-		}
-		return r
-	}, view.Name) + ".csv"
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	cw := csv.NewWriter(w)
-	header := []string{"Date", "Description", "Category", "Kind", "Currency", "Cost"}
-	for _, id := range order {
-		header = append(header, safeCell(names[id]))
-	}
-	_ = cw.Write(header)
-	err = a.pages(r, id, func(e *expense.Expense) error {
-		c, _ := money.Lookup(e.Currency)
-		row := []string{e.Date.Format(time.DateOnly), safeCell(e.Description), safeCell(e.Category), string(e.Kind), e.Currency, decimalString(e.Total, c.Exponent)}
-		for _, id := range order {
-			row = append(row, decimalString(e.Net(id), c.Exponent))
-		}
-		return cw.Write(row)
-	})
-	cw.Flush()
-	if err != nil {
-		return err
-	}
-	return cw.Error()
-}
-
-// exportPage is how many expenses an export reads at a time.
-const exportPage = 200
-
-// pages calls fn with each of the group's expenses, oldest first, reading
-// them a page at a time from the end of the newest-first list.
-func (a *API) pages(r *http.Request, groupID uuid.UUID, fn func(*expense.Expense) error) error {
-	f := expense.Filter{UserID: me(r), GroupID: &groupID, Limit: 1}
-	_, total, err := a.svc.Expenses.List(r.Context(), f)
-	if err != nil {
-		return err
-	}
-	for end := total; end > 0; end -= exportPage {
-		f.Offset = max(0, end-exportPage)
-		f.Limit = end - f.Offset
-		items, _, err := a.svc.Expenses.List(r.Context(), f)
-		if err != nil {
-			return err
-		}
-		for i := len(items) - 1; i >= 0; i-- {
-			if err := fn(items[i]); err != nil {
-				return err
+	head := func(t expense.Table) error {
+		filename := strings.Map(func(r rune) rune {
+			if r == '"' || r == '\\' || r < 32 {
+				return '_'
 			}
+			return r
+		}, t.Name) + ".csv"
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		header := []string{"Date", "Description", "Category", "Kind", "Currency", "Cost"}
+		for _, u := range t.People {
+			header = append(header, safeCell(u.Name))
 		}
+		return cw.Write(header)
 	}
-	return nil
+	row := func(e expense.Row) error {
+		cells := []string{e.Date.Format(time.DateOnly), safeCell(e.Description), safeCell(e.Category), string(e.Kind), e.Currency,
+			money.Plain(e.Total, e.Currency)}
+		for _, net := range e.Nets {
+			cells = append(cells, money.Plain(net, e.Currency))
+		}
+		return cw.Write(cells)
+	}
+	if err := a.svc.Expenses.Export(r.Context(), me(r), id, head, row); err != nil {
+		return err
+	}
+	cw.Flush()
+	return cw.Error()
 }
 
 // safeCell neutralises spreadsheet formula injection in text a person
@@ -370,24 +299,6 @@ func safeCell(s string) string {
 		return "'" + s
 	}
 	return s
-}
-
-func decimalString(amount int64, exponent int) string {
-	neg := amount < 0
-	if neg {
-		amount = -amount
-	}
-	digits := strconv.FormatInt(amount, 10)
-	if exponent > 0 {
-		for len(digits) <= exponent {
-			digits = "0" + digits
-		}
-		digits = digits[:len(digits)-exponent] + "." + digits[len(digits)-exponent:]
-	}
-	if neg {
-		digits = "-" + digits
-	}
-	return digits
 }
 
 func (a *API) listActivity(w http.ResponseWriter, r *http.Request) error {
@@ -414,7 +325,7 @@ func (a *API) listActivity(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]platform.Activity, 0, len(items))
 	for _, it := range items {
-		out = append(out, toActivity(it, people[it.ActorID]))
+		out = append(out, a.toActivity(it, people[it.ActorID]))
 	}
 	return list(w, out, total)
 }

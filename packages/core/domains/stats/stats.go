@@ -9,6 +9,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/clock"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/money"
 	"github.com/google/uuid"
@@ -58,28 +59,38 @@ type Names interface {
 	Names(ctx context.Context, ids []string) (map[string]string, error)
 }
 
+// Groups is what stats need from the group context.
+type Groups interface {
+	// Member returns the group if actor is a current member, and
+	// errs.NotFound otherwise.
+	Member(ctx context.Context, actor, id uuid.UUID) (*group.Group, error)
+}
+
+// Users reads the caller's profile for their default currency.
+type Users interface {
+	Get(ctx context.Context, id uuid.UUID) (*user.User, error)
+}
+
 // Service validates access and fills defaults.
 type Service struct {
 	repo   Repository
-	groups group.Repository
-	users  *user.Service
+	groups Groups
+	users  Users
 	names  Names
+	clock  clock.Clock
 }
 
 // NewService builds a Service.
-func NewService(repo Repository, groups group.Repository, users *user.Service, names Names) *Service {
-	return &Service{repo: repo, groups: groups, users: users, names: names}
+func NewService(repo Repository, groups Groups, users Users, names Names, c clock.Clock) *Service {
+	return &Service{repo: repo, groups: groups, users: users, names: names, clock: c}
 }
 
 // Summary returns spending statistics.
 func (s *Service) Summary(ctx context.Context, q Query) (*Summary, error) {
 	if q.GroupID != nil {
-		g, err := s.groups.Get(ctx, *q.GroupID)
+		g, err := s.groups.Member(ctx, q.UserID, *q.GroupID)
 		if err != nil {
 			return nil, err
-		}
-		if !g.HasMember(q.UserID) {
-			return nil, errs.NotFound("Group")
 		}
 		if q.Currency == "" {
 			q.Currency = g.DefaultCurrency
@@ -98,7 +109,7 @@ func (s *Service) Summary(ctx context.Context, q Query) (*Summary, error) {
 	}
 	q.Currency = c.Code
 	if q.To.IsZero() {
-		q.To = time.Now().UTC()
+		q.To = clock.Today(s.clock)
 	}
 	if q.From.IsZero() {
 		q.From = q.To.AddDate(-1, 0, 0)

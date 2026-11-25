@@ -30,11 +30,19 @@ class _InviteSectionState extends ConsumerState<InviteSection> {
 
   String get _groupId => widget.group.id;
 
+  /// The container outlives this section, so a change saved after the
+  /// person left settings still refreshes the list of links.
+  ProviderContainer get _container =>
+      ProviderScope.containerOf(context, listen: false);
+
   Future<void> _create() async {
+    final container = _container;
     setState(() => _busy = true);
     try {
-      final invite = await ref.read(invitesRepositoryProvider).create(_groupId);
-      ref.invalidate(groupInvitesProvider(_groupId));
+      final invite = await container
+          .read(invitesRepositoryProvider)
+          .create(_groupId);
+      container.invalidate(groupInvitesProvider(_groupId));
       if (mounted) setState(() => _created = invite);
     } catch (error) {
       if (mounted) showError(context, error);
@@ -78,10 +86,13 @@ class _InviteSectionState extends ConsumerState<InviteSection> {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true || !mounted) return;
+    final container = _container;
     try {
-      await ref.read(invitesRepositoryProvider).revoke(_groupId, invite.id);
-      ref.invalidate(groupInvitesProvider(_groupId));
+      await container
+          .read(invitesRepositoryProvider)
+          .revoke(_groupId, invite.id);
+      container.invalidate(groupInvitesProvider(_groupId));
       if (!mounted) return;
       if (_created?.id == invite.id) setState(() => _created = null);
       showMessage(context, 'Link revoked');

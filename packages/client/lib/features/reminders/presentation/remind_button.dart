@@ -45,12 +45,13 @@ class _RemindButtonState extends ConsumerState<RemindButton> {
   String get _name => widget.user.firstName;
 
   Future<void> _send() async {
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _busy = true);
     try {
-      final sent = await ref
+      final sent = await container
           .read(remindersRepositoryProvider)
           .send(widget.user.id, groupId: widget.groupId);
-      ref.invalidate(activityFeedProvider);
+      container.invalidate(activityFeedProvider);
       if (!mounted) return;
       showMessage(
         context,

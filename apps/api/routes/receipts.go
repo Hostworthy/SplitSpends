@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/assist"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
@@ -110,9 +109,6 @@ func (a *API) draftExpense(w http.ResponseWriter, r *http.Request) error {
 		Payers: []platform.Payer{}, Splits: []platform.Split{}, Items: []platform.Item{}, Tax: d.Tax, Tip: d.Tip, Warnings: d.Warnings}
 	if out.Warnings == nil {
 		out.Warnings = []string{}
-	}
-	if _, err := time.Parse(time.DateOnly, out.Date); err != nil {
-		out.Date = time.Now().UTC().Format(time.DateOnly)
 	}
 	for _, p := range d.Payers {
 		out.Payers = append(out.Payers, platform.Payer{UserID: p.UserID.String(), Amount: p.Amount})

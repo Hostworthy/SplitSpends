@@ -7,6 +7,7 @@ import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/category_icon.dart';
+import 'package:splitspends/core/widgets/pickers.dart';
 import 'package:splitspends/features/categories/presentation/category_badge.dart';
 import 'package:splitspends/features/categories/presentation/providers.dart';
 import 'package:splitspends/core/widgets/states.dart';
@@ -24,7 +25,17 @@ class GroupStatsTab extends ConsumerStatefulWidget {
 }
 
 class _GroupStatsTabState extends ConsumerState<GroupStatsTab> {
-  late final String _currency = widget.group.defaultCurrency;
+  /// The currency the person chose here. Until they choose one, the stats
+  /// follow the group's default, read on every build so that changing it in
+  /// settings shows up without reopening the group.
+  String? _picked;
+
+  String get _currency => _picked ?? widget.group.defaultCurrency;
+
+  Future<void> _pick() async {
+    final code = await pickCurrency(context, selected: _currency);
+    if (code != null && mounted) setState(() => _picked = code);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,10 +53,15 @@ class _GroupStatsTabState extends ConsumerState<GroupStatsTab> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
           children: [
+            _CurrencyNote(currency: s.currency, onChange: _pick),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
-                  child: StatsTotal(stats: s, label: 'Group spending'),
+                  child: StatsTotal(
+                    stats: s,
+                    label: 'Group spending in the past year',
+                  ),
                 ),
               ],
             ),
@@ -68,6 +84,32 @@ class _GroupStatsTabState extends ConsumerState<GroupStatsTab> {
       ),
     );
   }
+}
+
+/// Stats cover one currency; say which, and let the person pick another.
+class _CurrencyNote extends StatelessWidget {
+  const _CurrencyNote({required this.currency, required this.onChange});
+
+  final String currency;
+  final VoidCallback onChange;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          'Only expenses in $currency are counted.',
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+      ),
+      TextButton.icon(
+        onPressed: onChange,
+        icon: const Icon(Icons.currency_exchange_rounded, size: 18),
+        label: const Text('Change currency'),
+      ),
+    ],
+  );
 }
 
 class StatsTotal extends ConsumerWidget {
@@ -162,7 +204,8 @@ class CategoryChart extends ConsumerWidget {
   }
 }
 
-/// Bars of spending per month.
+/// Bars of spending per month over the stats window (the past year up to
+/// today), with quiet months shown as empty bars.
 class MonthChart extends ConsumerWidget {
   const MonthChart({super.key, required this.stats});
 
@@ -172,9 +215,13 @@ class MonthChart extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final info = ref.watch(configValueProvider).currency(stats.currency);
-    final months = stats.byMonth.length > 12
-        ? stats.byMonth.sublist(stats.byMonth.length - 12)
-        : stats.byMonth;
+    final today = Dates.today();
+    final start = DateTime(today.year - 1, today.month);
+    final months = fillMonths(
+      stats.byMonth,
+      first: Dates.toApi(start).substring(0, 7),
+      last: Dates.toApi(today).substring(0, 7),
+    );
     final unit = Money.pow10(info.exponent);
     return Card(
       child: Padding(
@@ -183,6 +230,11 @@ class MonthChart extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('By month', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              '${Dates.monthTitle(start)} to ${Dates.monthTitle(today)}',
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
             const SizedBox(height: 16),
             SizedBox(
               height: 180,

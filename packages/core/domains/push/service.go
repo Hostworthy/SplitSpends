@@ -48,10 +48,7 @@ const (
 
 // Settings describe this server to devices.
 type Settings struct {
-	// PublicKey is the VAPID application server key (base64url) that
-	// browsers and distributors subscribe with.
-	PublicKey string
-	AppName   string
+	AppName string
 	// Link is where a notification without its own link opens.
 	Link string
 	// AllowPrivate lets endpoints point at private and loopback addresses,
@@ -75,14 +72,14 @@ func NewService(repo Repository, sender Sender, c clock.Clock, settings Settings
 }
 
 // Enabled reports whether this server sends push notifications.
-func (s *Service) Enabled() bool { return s != nil && s.sender != nil && s.settings.PublicKey != "" }
+func (s *Service) Enabled() bool { return s != nil && s.sender != nil && s.sender.PublicKey() != "" }
 
 // PublicKey is the VAPID key devices subscribe with; empty when disabled.
 func (s *Service) PublicKey() string {
 	if !s.Enabled() {
 		return ""
 	}
-	return s.settings.PublicKey
+	return s.sender.PublicKey()
 }
 
 func (s *Service) available() error {

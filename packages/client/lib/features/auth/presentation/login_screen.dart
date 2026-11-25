@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/routes.dart';
+import 'package:splitspends/core/api/address.dart';
 import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
@@ -59,6 +60,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       setState(() => _error = 'Enter a valid email address.');
       return;
     }
+    if (publicPlainServer(server) && !await _confirmPlain()) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -83,6 +85,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Asks before sending a code and a session over plain HTTP outside the
+  /// local network.
+  Future<bool> _confirmPlain() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('This server is not encrypted'),
+        content: const Text(
+          'Your sign-in code and session would travel unencrypted, so '
+          'anyone on the network between you and the server could read '
+          'them and use your account. Use https:// outside your home '
+          'network.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue anyway'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
   }
 
   @override
@@ -176,7 +206,3 @@ bool _validServer(String url) {
       (uri.isScheme('http') || uri.isScheme('https')) &&
       uri.host.isNotEmpty;
 }
-
-/// True for `http://` addresses, which send sign-in codes unencrypted.
-bool insecureServer(String url) =>
-    url.trim().toLowerCase().startsWith('http://');

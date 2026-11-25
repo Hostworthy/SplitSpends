@@ -153,6 +153,13 @@ class _GroupsListState extends ConsumerState<_GroupsList> {
         for (final g in value)
           GroupListTile(group: g, selected: g.id == widget.selectedId),
       ],
+      AsyncValue(:final error?) => [
+        InlineError(
+          key: const Key('archived-error'),
+          error: error,
+          onRetry: () => ref.invalidate(archivedGroupsProvider),
+        ),
+      ],
       _ => const [LinearProgressIndicator()],
     };
   }

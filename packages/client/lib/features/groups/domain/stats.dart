@@ -64,3 +64,28 @@ class Stats {
 
   bool get isEmpty => totalSpent == 0 && byCategory.isEmpty && byMonth.isEmpty;
 }
+
+/// [months] (`YYYY-MM`, oldest first) with a zero for every month missing
+/// from [first] to [last], so a chart shows a quiet month as a gap instead
+/// of drawing its neighbours side by side. The range widens to any month in
+/// [months] outside it.
+List<MonthAmount> fillMonths(
+  List<MonthAmount> months, {
+  String? first,
+  String? last,
+}) {
+  final amounts = {for (final m in months) m.month: m.amount};
+  final keys = [...amounts.keys, ?first, ?last]..sort();
+  if (keys.isEmpty) return const [];
+  DateTime? parse(String key) => DateTime.tryParse('$key-01T00:00:00Z');
+  final start = parse(keys.first);
+  final end = parse(keys.last);
+  if (start == null || end == null) return months;
+  return [
+    for (var d = start; !d.isAfter(end); d = DateTime.utc(d.year, d.month + 1))
+      MonthAmount(_month(d), amounts[_month(d)] ?? 0),
+  ];
+}
+
+String _month(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';

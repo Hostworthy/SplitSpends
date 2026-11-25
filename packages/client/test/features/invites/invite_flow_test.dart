@@ -142,6 +142,11 @@ void main() {
     await tester.tap(find.byKey(const Key('join-sign-in')));
     await tester.pumpAndSettle();
 
+    // The app had no server yet: the person confirms the link's.
+    expect(find.textContaining('This invite is for $_server'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('join-confirm-server')));
+    await tester.pumpAndSettle();
+
     // The server comes from the link; the token goes with the code request.
     expect(find.textContaining('to join the group'), findsOneWidget);
     await tester.enterText(

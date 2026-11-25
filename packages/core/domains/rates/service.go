@@ -12,8 +12,8 @@ import (
 // Providers publish once a day.
 const Fresh = 12 * time.Hour
 
-// Repo stores the latest table. Latest returns nil when there is none.
-type Repo interface {
+// Repository stores the latest table. Latest returns nil when there is none.
+type Repository interface {
 	Latest(ctx context.Context) (*Table, error)
 	Save(ctx context.Context, t Table) error
 }
@@ -25,14 +25,14 @@ type Source interface {
 
 // Service serves cached rates and refreshes them from the configured source.
 type Service struct {
-	repo   Repo
+	repo   Repository
 	source Source
 	clock  clock.Clock
 	mu     sync.Mutex
 }
 
 // NewService builds a Service. A nil source turns rates off.
-func NewService(repo Repo, source Source, c clock.Clock) *Service {
+func NewService(repo Repository, source Source, c clock.Clock) *Service {
 	return &Service{repo: repo, source: source, clock: c}
 }
 

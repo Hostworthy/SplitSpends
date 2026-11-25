@@ -13,17 +13,18 @@ import 'package:splitspends/features/account/presentation/providers.dart';
 class TokensScreen extends ConsumerWidget {
   const TokensScreen({super.key});
 
-  Future<void> _create(BuildContext context, WidgetRef ref) async {
+  Future<void> _create(BuildContext context) async {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => const _NameDialog(),
     );
-    if (name == null || name.trim().isEmpty) return;
+    if (name == null || name.trim().isEmpty || !context.mounted) return;
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
-      final token = await ref
+      final token = await container
           .read(tokensRepositoryProvider)
           .create(name.trim());
-      ref.invalidate(tokensProvider);
+      container.invalidate(tokensProvider);
       if (!context.mounted || token.token == null) return;
       // The secret is shown only once, so only Done closes the dialog.
       await showDialog<void>(
@@ -36,11 +37,7 @@ class TokensScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _revoke(
-    BuildContext context,
-    WidgetRef ref,
-    ApiToken token,
-  ) async {
+  Future<void> _revoke(BuildContext context, ApiToken token) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -62,9 +59,10 @@ class TokensScreen extends ConsumerWidget {
       ),
     );
     if (ok != true || !context.mounted) return;
+    final container = ProviderScope.containerOf(context, listen: false);
     try {
-      await ref.read(tokensRepositoryProvider).revoke(token.id);
-      ref.invalidate(tokensProvider);
+      await container.read(tokensRepositoryProvider).revoke(token.id);
+      container.invalidate(tokensProvider);
     } catch (error) {
       if (context.mounted) showError(context, error);
     }
@@ -79,7 +77,7 @@ class TokensScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('API tokens')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _create(context, ref),
+        onPressed: () => _create(context),
         icon: const Icon(Icons.add_rounded),
         label: const Text('New token'),
       ),
@@ -133,7 +131,7 @@ class TokensScreen extends ConsumerWidget {
                                   '${t.lastUsedAt == null ? ' · never used' : ' · used ${Dates.relative(Dates.tryParse(t.lastUsedAt) ?? DateTime.now())}'}',
                                 ),
                                 trailing: TextButton(
-                                  onPressed: () => _revoke(context, ref, t),
+                                  onPressed: () => _revoke(context, t),
                                   child: const Text('Revoke'),
                                 ),
                               ),
