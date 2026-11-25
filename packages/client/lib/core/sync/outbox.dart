@@ -19,6 +19,7 @@ class OutboxOp {
     required this.path,
     required this.label,
     this.body,
+    this.at,
     this.attempts = 0,
     this.error,
     this.stuck = false,
@@ -29,6 +30,11 @@ class OutboxOp {
   final String path;
   final String label;
   final Object? body;
+
+  /// When the write was queued, as ISO 8601 UTC. A copy of the record shown
+  /// from the queue carries it as its version, so an edit started on that
+  /// copy can be traced to the version this write produces on the server.
+  final String? at;
 
   /// Times the server failed on this write.
   final int attempts;
@@ -125,6 +131,12 @@ class Outbox {
   /// Server failures on one write before it is marked stuck.
   static const stuckAfter = 3;
 
+  /// By record id, the [OutboxOp.at] of the writes replayed so far and the
+  /// version the server answered the last of them with. Kept for this run
+  /// of the app: it serves edits started on a copy shown from the queue,
+  /// which do not outlive it.
+  final _replayed = <String, ({Set<String> stamps, String version})>{};
+
   static const _verdicts = {
     'VALIDATION_ERROR',
     'NOT_FOUND',
@@ -178,6 +190,17 @@ class Outbox {
     }
     await add(method, path, body: body, label: label);
     return result;
+  }
+
+  /// The server version that this device's writes of record [id] produced,
+  /// when [version] is the version of a copy shown from them before they
+  /// replayed: an edit started on that copy is based on what they saved,
+  /// not on something someone else changed. Null otherwise.
+  String? replayed(String id, String? version) {
+    final entry = _replayed[id];
+    return entry != null && entry.stamps.contains(version)
+        ? entry.version
+        : null;
   }
 
   /// The owner's queued writes, oldest first, stuck ones included.
@@ -272,7 +295,7 @@ class Outbox {
       }
       try {
         final answer = await api.send(op.method, op.path, payload: op.body);
-        await _follow(db, answer, ops, i + 1);
+        await _follow(db, op, answer, ops, i + 1);
         sent++;
       } on ApiError catch (error) {
         if (error.hasEnvelope && _verdicts.contains(error.code)) {
@@ -304,12 +327,14 @@ class Outbox {
     return FlushResult(sent: sent, rejected: rejected);
   }
 
-  /// Moves the conditional edits queued after a write that the server just
-  /// took (those naming the `updatedAt` they are based on) on to the version
-  /// it [answer]ed with: they were made on top of that write, so they are
-  /// based on its result, not on whatever the record was before it.
+  /// Moves the conditional edits queued after [op], a write that the server
+  /// just took (those naming the `updatedAt` they are based on), on to the
+  /// version it [answer]ed with: they were made on top of that write, so
+  /// they are based on its result, not on whatever the record was before
+  /// it. Also notes the version for [replayed].
   Future<void> _follow(
     Database db,
+    OutboxOp op,
     Object? answer,
     List<OutboxOp> ops,
     int from,
@@ -319,26 +344,29 @@ class Outbox {
     final id = data['id'];
     final version = data['updatedAt'];
     if (id is! String || version is! String) return;
+    final known = _replayed[id];
+    _replayed[id] = (stamps: {...?known?.stamps, ?op.at}, version: version);
     for (var i = from; i < ops.length; i++) {
-      final op = ops[i];
-      final body = op.body;
-      if (op.method != 'PUT' ||
-          op.path.split('/').last != id ||
+      final later = ops[i];
+      final body = later.body;
+      if (later.method != 'PUT' ||
+          later.path.split('/').last != id ||
           body is! Map ||
           !body.containsKey('updatedAt')) {
         continue;
       }
       final next = {...body.cast<String, Object?>(), 'updatedAt': version};
-      await Stores.outbox.record(op.key).update(db, {'body': next});
+      await Stores.outbox.record(later.key).update(db, {'body': next});
       ops[i] = OutboxOp(
-        key: op.key,
-        method: op.method,
-        path: op.path,
-        label: op.label,
+        key: later.key,
+        method: later.method,
+        path: later.path,
+        label: later.label,
         body: next,
-        attempts: op.attempts,
-        error: op.error,
-        stuck: op.stuck,
+        at: later.at,
+        attempts: later.attempts,
+        error: later.error,
+        stuck: later.stuck,
       );
     }
   }
@@ -367,6 +395,7 @@ class Outbox {
           path: r.value['path'] as String,
           label: (r.value['label'] as String?) ?? 'A change',
           body: r.value['body'],
+          at: r.value['createdAt'] as String?,
           attempts: (r.value['attempts'] as int?) ?? 0,
           error: r.value['error'] as String?,
           stuck: (r.value['stuck'] as bool?) ?? false,

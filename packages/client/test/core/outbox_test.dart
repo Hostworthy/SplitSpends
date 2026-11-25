@@ -682,7 +682,8 @@ void main() {
 
   group('edits name the version they are based on', () {
     // A server that keeps expenses and refuses an edit based on a version
-    // that is no longer current, as the API does.
+    // that is no longer current, unless it would change nothing, as the API
+    // does.
     late Map<String, Map<String, Object?>> stored;
     late ApiClient client;
     late OfflineExpensesRepository repo;
@@ -722,7 +723,16 @@ void main() {
               return data(200);
             case 'PUT':
               final based = body['updatedAt'];
-              if (based != null && based != stored[id]!['updatedAt']) {
+              final current = stored[id]!;
+              if (based != null && based != current['updatedAt']) {
+                if ([
+                  'description',
+                  'currency',
+                  'total',
+                  'date',
+                ].every((k) => body[k] == current[k])) {
+                  return data(200);
+                }
                 return http.Response(
                   jsonEncode({
                     'error':
@@ -871,6 +881,97 @@ void main() {
         expect(stored['e0']!['description'], 'Dinner');
       },
     );
+
+    test('a replayed edit that was already saved is not refused', () async {
+      online = true;
+      final dinner = await repo.get('e0');
+      online = false;
+      await repo.update('e0', edit(dinner, 'Dinner at Luigi'));
+      final queued = (await outbox.pending()).single;
+
+      // The edit reached the server, but the app stopped before it could
+      // take it off the queue.
+      online = true;
+      await client.send(queued.method, queued.path, payload: queued.body);
+      final saved = stored['e0']!['updatedAt'];
+      final result = await outbox.flush(client);
+      expect(result.rejected, isEmpty);
+      expect(result.sent, 1);
+      expect(await outbox.pending(), isEmpty);
+      expect(stored['e0']!['updatedAt'], saved);
+    });
+
+    group('an edit started on a copy shown from the queue', () {
+      Future<Expense> queuedCopy() async {
+        online = true;
+        final dinner = await repo.get('e0');
+        online = false;
+        await repo.update('e0', edit(dinner, 'Dinner at Luigi'));
+        final copy = await repo.get('e0');
+        expect(copy.pending, isTrue);
+        return copy;
+      }
+
+      test('is saved online after the queue replayed', () async {
+        final copy = await queuedCopy();
+        online = true;
+        expect((await outbox.flush(client)).sent, 1);
+
+        await repo.update('e0', edit(copy, 'Dinner for four'));
+        expect(await outbox.pending(), isEmpty);
+        expect(stored['e0']!['description'], 'Dinner for four');
+      });
+
+      test('is saved when queued after the queue replayed', () async {
+        final copy = await queuedCopy();
+        online = true;
+        expect((await outbox.flush(client)).sent, 1);
+
+        online = false;
+        await repo.update('e0', edit(copy, 'Dinner for four'));
+        online = true;
+        final result = await outbox.flush(client);
+        expect(result.rejected, isEmpty);
+        expect(result.sent, 1);
+        expect(stored['e0']!['description'], 'Dinner for four');
+      });
+
+      test('of an expense created offline is saved after its create', () async {
+        final created = await repo.create(
+          const ExpenseInput(
+            description: 'Taxi',
+            currency: 'EUR',
+            total: 12000,
+            date: '2026-11-24',
+            payers: [Payer(userId: 'me', amount: 12000)],
+            splits: [
+              SplitEntry(userId: 'me'),
+              SplitEntry(userId: 'sam'),
+            ],
+          ),
+        );
+        final copy = await repo.get(created.id);
+        online = true;
+        expect((await outbox.flush(client)).sent, 1);
+
+        await repo.update(created.id, edit(copy, 'Cab'));
+        expect(stored[created.id]!['description'], 'Cab');
+      });
+
+      test('is refused when someone changed it after the replay', () async {
+        final copy = await queuedCopy();
+        online = true;
+        expect((await outbox.flush(client)).sent, 1);
+        benEdits('e0');
+
+        await expectLater(
+          repo.update('e0', edit(copy, 'Dinner for four')),
+          throwsA(isA<ApiError>().having((e) => e.code, 'code', 'CONFLICT')),
+        );
+        expect(stored['e0']!['total'], 10200);
+        expect(stored['e0']!['description'], 'Dinner at Luigi');
+      });
+    });
 
     test('an edit of an expense created offline follows its create', () async {
       final created = await repo.create(

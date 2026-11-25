@@ -37,6 +37,13 @@ func decimal(value string) *string {
 
 func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
+// version is stamp to the microsecond, all the database keeps: an expense's
+// updatedAt names the version an edit starts from, and two edits within
+// one second must not look the same.
+func version(t time.Time) string {
+	return t.UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano)
+}
+
 // optionalStamp is stamp for a time that may be unset, which stays null.
 func optionalStamp(t *time.Time) *string {
 	if t == nil {
@@ -148,7 +155,7 @@ func toExpense(e *expense.Expense, viewer uuid.UUID) platform.Expense {
 		Category: e.Category, Currency: e.Currency, Total: e.Total, Date: e.Date.Format(time.DateOnly), Notes: e.Notes,
 		SplitMethod: string(e.Method), Shares: shares, Items: items, Tax: e.Tax, Tip: e.Tip, ReceiptID: optionalString(e.ReceiptID),
 		Recurrence: string(e.Recurrence), NextDate: next, CreatedBy: e.CreatedBy.String(), UpdatedBy: e.UpdatedBy.String(),
-		CreatedAt: stamp(e.CreatedAt), UpdatedAt: stamp(e.UpdatedAt), Deleted: e.DeletedAt != nil, CommentCount: e.CommentCount,
+		CreatedAt: stamp(e.CreatedAt), UpdatedAt: version(e.UpdatedAt), Deleted: e.DeletedAt != nil, CommentCount: e.CommentCount,
 		MyBalance: e.Net(viewer)}
 }
 
