@@ -1,13 +1,16 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sembast/sembast.dart';
 
 import 'package:splitspends/app/app.dart';
+import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';
@@ -101,11 +104,13 @@ class _FailingLocalSession extends SessionController {
   }) async => throw StateError('database unavailable');
 }
 
-/// Pumps the app on the email step of "Connect to a server".
+/// Pumps the app on the email step of "Connect to a server", first
+/// starting on-device mode as [local] when given.
 Future<void> _openLogin(
   WidgetTester tester,
   FakeAuthRepository auth, {
   MemoryLocalStore? store,
+  String? local,
 }) async {
   tester.view.physicalSize = const Size(420, 900);
   tester.view.devicePixelRatio = 1;
@@ -123,6 +128,19 @@ Future<void> _openLogin(
     ),
   );
   await tester.pumpAndSettle();
+  if (local != null) {
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('local-name')), local);
+    await tester.tap(find.byKey(const Key('local-start')));
+    await tester.pumpAndSettle();
+    unawaited(
+      GoRouter.of(tester.element(find.byType(Scaffold).first))
+          .push(Routes.login),
+    );
+    await tester.pumpAndSettle();
+    return;
+  }
   await tester.ensureVisible(find.text('Connect'));
   await tester.tap(find.text('Connect'));
   await tester.pumpAndSettle();
@@ -285,6 +303,34 @@ void main() {
     expect(find.text('Grace'), findsWidgets);
   });
 
+  testWidgets('a new account from on-device mode keeps the name given there', (
+    tester,
+  ) async {
+    final auth = FakeAuthRepository();
+    final store = MemoryLocalStore();
+    await _openLogin(tester, auth, store: store, local: 'Grace');
+
+    await tester.enterText(
+      find.byKey(const Key('login-server')),
+      'http://splitspends.test',
+    );
+    await tester.enterText(
+      find.byKey(const Key('login-email')),
+      'grace@example.com',
+    );
+    await tester.tap(find.byKey(const Key('login-continue')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('otp-field')), '123456');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Welcome aboard'), findsNothing);
+    expect(auth.named, 'Grace');
+    expect(store.token, 'tok');
+    expect(store.appMode, 'connected');
+  });
+
   testWidgets('approval mode: the code leads to a waiting screen', (
     tester,
   ) async {
@@ -424,6 +470,8 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
     expect(auth.requested, hasLength(1));
+    expect(find.text('Resend code'), findsNothing);
+    expect(find.textContaining('Resend in'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 30));
     expect(find.text('Resend code'), findsOneWidget);

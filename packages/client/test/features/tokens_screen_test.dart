@@ -55,7 +55,9 @@ Future<void> _pump(WidgetTester tester, _FakeTokens tokens) async {
 }
 
 void main() {
-  testWidgets('token dialog stays until Done', (tester) async {
+  testWidgets('token dialog stays until Done and the token is listed', (
+    tester,
+  ) async {
     await _pump(tester, _FakeTokens());
 
     await tester.tap(find.text('New token'));
@@ -75,6 +77,8 @@ void main() {
     await tester.tap(find.text('Done'));
     await settle(tester);
     expect(find.text('ss_secret_value'), findsNothing);
+    expect(find.text('MCP'), findsOneWidget);
+    expect(find.text('Claude Desktop'), findsOneWidget);
   });
 
   testWidgets('revoke asks first', (tester) async {
