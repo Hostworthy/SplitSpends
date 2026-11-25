@@ -160,6 +160,9 @@ func (f *fanout) deliver(n ports.Notification) {
 		f.log.Error("push.deliver.failed", "kind", n.Kind, "error", err)
 		return
 	}
+	if r.Store != nil {
+		f.log.Error("push.deliver.store-failed", "kind", n.Kind, "error", r.Store)
+	}
 	if r.Failed > 0 || r.Removed > 0 {
 		f.log.Warn("push.deliver.partial", "kind", n.Kind, "sent", r.Sent, "failed", r.Failed, "removed", r.Removed, "error", r.Err)
 	}
