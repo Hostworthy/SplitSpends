@@ -66,6 +66,13 @@ func Conflict(message string) *Error {
 	return &Error{Kind: KindConflict, Message: message}
 }
 
+// Taken reports that a client-chosen id is already used by something the
+// caller may not reuse it for. It reads the same whatever the id names, so
+// it says nothing about whose it is.
+func Taken() *Error {
+	return Conflict("That id is already in use. Try again with a new one.")
+}
+
 // RateLimited reports too many attempts.
 func RateLimited(message string) *Error {
 	return &Error{Kind: KindRateLimited, Message: message}

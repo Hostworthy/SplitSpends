@@ -56,7 +56,7 @@ func (r *Expenses) Create(ctx context.Context, e *expense.Expense) error {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return errs.Conflict("That expense id is already in use.")
+		return errs.Taken()
 	}
 	return r.writeShares(ctx, e)
 }
@@ -238,7 +238,7 @@ func (r *Expenses) EndSeries(ctx context.Context, id uuid.UUID, at time.Time) er
 func (r *Expenses) entries(ctx context.Context, where string, args ...any) (map[uuid.UUID][]balance.Entry, []balance.Entry, error) {
 	rows, err := r.db.Q(ctx).Query(ctx, `SELECT e.id, e.group_id, e.currency, s.user_id, s.paid, s.owed
 		FROM expenses e JOIN expense_shares s ON s.expense_id = e.id
-		WHERE e.deleted_at IS NULL AND `+where+` ORDER BY e.id`, args...)
+		WHERE e.deleted_at IS NULL AND `+where+` ORDER BY e.id, s.user_id`, args...)
 	if err != nil {
 		return nil, nil, err
 	}

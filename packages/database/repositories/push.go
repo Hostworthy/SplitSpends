@@ -27,9 +27,24 @@ func scanPush(row pgx.Row) (*push.Subscription, error) {
 	return &s, err
 }
 
-func (r *PushSubscriptions) Save(ctx context.Context, s *push.Subscription) (bool, error) {
+// Save holds a lock on the user while it counts and writes, so concurrent
+// registrations for one user see each other's rows.
+func (r *PushSubscriptions) Save(ctx context.Context, s *push.Subscription, limit int) (bool, error) {
 	var created bool
-	err := r.db.Q(ctx).QueryRow(ctx, `
+	err := database.NewTx(r.db).Do(ctx, func(ctx context.Context) error {
+		q := r.db.Q(ctx)
+		if _, err := q.Exec(ctx, `SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE`, s.UserID); err != nil {
+			return err
+		}
+		var others int
+		if err := q.QueryRow(ctx, `SELECT count(*) FROM push_subscriptions WHERE user_id = $1 AND endpoint <> $2`,
+			s.UserID, s.Endpoint).Scan(&others); err != nil {
+			return err
+		}
+		if others >= limit {
+			return push.ErrFull
+		}
+		return q.QueryRow(ctx, `
 		INSERT INTO push_subscriptions (id, user_id, created_at, updated_at, platform, endpoint, p256dh, auth, label)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = EXCLUDED.updated_at,
@@ -37,8 +52,9 @@ func (r *PushSubscriptions) Save(ctx context.Context, s *push.Subscription) (boo
 			failures = CASE WHEN push_subscriptions.p256dh = EXCLUDED.p256dh AND push_subscriptions.auth = EXCLUDED.auth
 				THEN push_subscriptions.failures ELSE 0 END
 		RETURNING id, created_at, last_success_at, failures, (xmax = 0)`,
-		s.ID, s.UserID, s.CreatedAt, s.UpdatedAt, s.Platform, s.Endpoint, s.P256dh, s.Auth, s.Label,
-	).Scan(&s.ID, &s.CreatedAt, &s.LastSuccessAt, &s.Failures, &created)
+			s.ID, s.UserID, s.CreatedAt, s.UpdatedAt, s.Platform, s.Endpoint, s.P256dh, s.Auth, s.Label,
+		).Scan(&s.ID, &s.CreatedAt, &s.LastSuccessAt, &s.Failures, &created)
+	})
 	return created, err
 }
 
@@ -48,18 +64,6 @@ func (r *PushSubscriptions) List(ctx context.Context, userID uuid.UUID) ([]*push
 		return nil, err
 	}
 	return collect(rows, scanPush)
-}
-
-func (r *PushSubscriptions) Count(ctx context.Context, userID uuid.UUID) (int, error) {
-	var n int
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM push_subscriptions WHERE user_id = $1`, userID).Scan(&n)
-	return n, err
-}
-
-func (r *PushSubscriptions) Exists(ctx context.Context, endpoint string) (bool, error) {
-	var ok bool
-	err := r.db.Q(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM push_subscriptions WHERE endpoint = $1)`, endpoint).Scan(&ok)
-	return ok, err
 }
 
 func (r *PushSubscriptions) Delete(ctx context.Context, userID, id uuid.UUID) error {

@@ -5,6 +5,7 @@ package balance
 import (
 	"bytes"
 	"math/big"
+	"slices"
 	"sort"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/money"
@@ -57,37 +58,76 @@ type pairKey struct {
 
 // Pairwise returns who owes whom without simplification: every expense's
 // debtors owe its creditors in proportion to what each creditor fronted, and
-// opposite debts between the same two people cancel out.
+// opposite debts between the same two people cancel out. Within an expense
+// each debtor's debts add up to what they owe and each creditor is owed
+// exactly what they fronted, so the debts always agree with Nets.
 func Pairwise(entries []Entry) []Debt {
 	pairs := map[pairKey]int64{}
 	for _, e := range entries {
-		var creditors, debtors []Share
-		for _, s := range e.Shares {
+		shares := slices.Clone(e.Shares)
+		slices.SortFunc(shares, func(x, y Share) int { return bytes.Compare(x.UserID[:], y.UserID[:]) })
+		var creditors, debtors []uuid.UUID
+		var credits, debts []int64
+		for _, s := range shares {
 			switch net := s.Paid - s.Owed; {
 			case net > 0:
-				creditors = append(creditors, s)
+				creditors = append(creditors, s.UserID)
+				credits = append(credits, net)
 			case net < 0:
-				debtors = append(debtors, s)
+				debtors = append(debtors, s.UserID)
+				debts = append(debts, -net)
 			}
 		}
 		if len(creditors) == 0 {
 			continue
 		}
-		weights := make([]*big.Rat, len(creditors))
-		for i, c := range creditors {
-			weights[i] = big.NewRat(c.Paid-c.Owed, 1)
-		}
-		for _, d := range debtors {
-			parts, err := money.Allocate(d.Owed-d.Paid, weights)
-			if err != nil {
-				continue
-			}
-			for i, c := range creditors {
-				addPair(pairs, d.UserID, c.UserID, e.Currency, parts[i])
+		for i, row := range spread(debts, credits) {
+			for j, amount := range row {
+				addPair(pairs, debtors[i], creditors[j], e.Currency, amount)
 			}
 		}
 	}
 	return pairDebts(pairs)
+}
+
+// spread splits debts among creditors in proportion to credits so that row i
+// adds up to debts[i] and column j to credits[j]; an expense's debts and
+// credits are equal in total. Every cell starts at the floor of its exact
+// share. The units left over then number fewer than the creditors in each
+// row and fewer than the debtors in each column, and they are handed out
+// from the first row and column onwards, which fills both totals exactly.
+// Callers pass debtors and creditors in id order so the result is the same
+// whatever order the shares were read in.
+func spread(debts, credits []int64) [][]int64 {
+	total := new(big.Int)
+	for _, c := range credits {
+		total.Add(total, big.NewInt(c))
+	}
+	cells := make([][]int64, len(debts))
+	rows := slices.Clone(debts)
+	cols := slices.Clone(credits)
+	for i, d := range debts {
+		cells[i] = make([]int64, len(credits))
+		for j, c := range credits {
+			exact := new(big.Int).Mul(big.NewInt(d), big.NewInt(c))
+			cells[i][j] = exact.Quo(exact, total).Int64()
+			rows[i] -= cells[i][j]
+			cols[j] -= cells[i][j]
+		}
+	}
+	for i, j := 0, 0; i < len(rows) && j < len(cols); {
+		n := min(rows[i], cols[j])
+		cells[i][j] += n
+		rows[i] -= n
+		cols[j] -= n
+		if rows[i] == 0 {
+			i++
+		}
+		if cols[j] == 0 {
+			j++
+		}
+	}
+	return cells
 }
 
 // addPair records that from owes to amount.

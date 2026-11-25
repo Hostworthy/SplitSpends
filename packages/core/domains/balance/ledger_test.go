@@ -1,6 +1,8 @@
 package balance
 
 import (
+	"math/rand/v2"
+	"reflect"
 	"testing"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/money"
@@ -11,6 +13,7 @@ var (
 	a = uuid.MustParse("00000000-0000-0000-0000-00000000000a")
 	b = uuid.MustParse("00000000-0000-0000-0000-00000000000b")
 	c = uuid.MustParse("00000000-0000-0000-0000-00000000000c")
+	d = uuid.MustParse("00000000-0000-0000-0000-00000000000d")
 )
 
 // a pays 30 split by three; b pays 30 split by three; c pays nothing.
@@ -67,5 +70,82 @@ func TestWith(t *testing.T) {
 	got := With(Pairwise(ledger), a, c)
 	if got["USD"] != 1000 {
 		t.Fatalf("got %v", got)
+	}
+}
+
+// cuts splits total into n random non-negative parts.
+func cuts(r *rand.Rand, total int64, n int) []int64 {
+	parts := make([]int64, n)
+	for range total {
+		parts[r.IntN(n)]++
+	}
+	return parts
+}
+
+// randomLedger builds balanced entries with several payers each, so most of
+// them leave rounding remainders between creditors.
+func randomLedger(r *rand.Rand) []Entry {
+	users := []uuid.UUID{a, b, c, d, uuid.MustParse("00000000-0000-0000-0000-00000000000e"), uuid.MustParse("00000000-0000-0000-0000-00000000000f")}
+	var entries []Entry
+	for range 200 {
+		r.Shuffle(len(users), func(i, j int) { users[i], users[j] = users[j], users[i] })
+		people := users[:2+r.IntN(len(users)-1)]
+		total := 1 + r.Int64N(500)
+		paid := cuts(r, total, 1+r.IntN(len(people)))
+		owed := cuts(r, total, len(people))
+		shares := make([]Share, len(people))
+		for i, id := range people {
+			shares[i] = Share{UserID: id, Owed: owed[i]}
+			if i < len(paid) {
+				shares[i].Paid = paid[i]
+			}
+		}
+		entries = append(entries, Entry{Currency: []string{"USD", "EUR"}[r.IntN(2)], Shares: shares})
+	}
+	return entries
+}
+
+func TestPairwiseMatchesNets(t *testing.T) {
+	r := rand.New(rand.NewPCG(1, 2))
+	for round := range 50 {
+		entries := randomLedger(r)
+		debts := Pairwise(entries)
+		nets := Nets(entries)
+		for me, want := range nets {
+			got := money.Balances{}
+			for other := range nets {
+				for cur, amount := range With(debts, me, other) {
+					got.Add(cur, amount)
+				}
+			}
+			for _, cur := range []string{"USD", "EUR"} {
+				if got[cur] != want[cur] {
+					t.Fatalf("round %d: %s %s from debts = %d, net = %d", round, me, cur, got[cur], want[cur])
+				}
+			}
+		}
+	}
+}
+
+func TestPairwiseKeepsEveryCreditorWhole(t *testing.T) {
+	// a and b each fronted 2 and owe 1; c and d owe 1 each.
+	entries := []Entry{{Currency: "USD", Shares: []Share{{a, 2, 1}, {b, 2, 1}, {c, 0, 1}, {d, 0, 1}}}}
+	want := []Debt{{From: c, To: a, Currency: "USD", Amount: 1}, {From: d, To: b, Currency: "USD", Amount: 1}}
+	if got := Pairwise(entries); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestPairwiseIgnoresShareOrder(t *testing.T) {
+	r := rand.New(rand.NewPCG(3, 4))
+	entries := randomLedger(r)
+	want := Pairwise(entries)
+	for range 20 {
+		for _, e := range entries {
+			r.Shuffle(len(e.Shares), func(i, j int) { e.Shares[i], e.Shares[j] = e.Shares[j], e.Shares[i] })
+		}
+		if got := Pairwise(entries); !reflect.DeepEqual(got, want) {
+			t.Fatalf("shuffled shares changed the debts:\n got %+v\nwant %+v", got, want)
+		}
 	}
 }

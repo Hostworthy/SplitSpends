@@ -1,6 +1,3 @@
-import 'package:splitspends_ledger/allocate.dart';
-import 'package:splitspends_ledger/rational.dart';
-
 // Dart port of packages/core/domains/balance/ledger.go and the
 // sheet logic of service.go. spec/vectors.json runs against both.
 
@@ -79,25 +76,31 @@ Map<String, Balances> nets(Iterable<LedgerEntry> entries) {
 
 /// Who owes whom without simplification: each expense's debtors owe its
 /// creditors in proportion to what each creditor fronted; opposite debts
-/// between the same two people cancel out.
+/// between the same two people cancel out. Within an expense each debtor's
+/// debts add up to what they owe and each creditor is owed exactly what they
+/// fronted, so the debts always agree with [nets].
 List<LedgerDebt> pairwise(Iterable<LedgerEntry> entries) {
   final pairs = <(String, String, String), int>{};
   for (final e in entries) {
-    final creditors = <LedgerShare>[];
-    final debtors = <LedgerShare>[];
-    for (final s in e.shares) {
+    final shares = [...e.shares]..sort((a, b) => a.userId.compareTo(b.userId));
+    final creditors = <String>[], debtors = <String>[];
+    final credits = <int>[], debts = <int>[];
+    for (final s in shares) {
       final net = s.paid - s.owed;
-      if (net > 0) creditors.add(s);
-      if (net < 0) debtors.add(s);
+      if (net > 0) {
+        creditors.add(s.userId);
+        credits.add(net);
+      }
+      if (net < 0) {
+        debtors.add(s.userId);
+        debts.add(-net);
+      }
     }
     if (creditors.isEmpty) continue;
-    final weights = [
-      for (final c in creditors) Rational.integer(c.paid - c.owed),
-    ];
-    for (final d in debtors) {
-      final parts = allocate(d.owed - d.paid, weights);
-      for (var i = 0; i < creditors.length; i++) {
-        _addPair(pairs, d.userId, creditors[i].userId, e.currency, parts[i]);
+    final cells = _spread(debts, credits);
+    for (var i = 0; i < debtors.length; i++) {
+      for (var j = 0; j < creditors.length; j++) {
+        _addPair(pairs, debtors[i], creditors[j], e.currency, cells[i][j]);
       }
     }
   }
@@ -108,6 +111,40 @@ List<LedgerDebt> pairwise(Iterable<LedgerEntry> entries) {
   });
   sortDebts(out);
   return out;
+}
+
+/// Splits [debts] among creditors in proportion to [credits] so that row i
+/// adds up to `debts[i]` and column j to `credits[j]`, like `spread` in Go:
+/// floor every exact share, then hand out the leftover units from the first
+/// row and column onwards. Callers pass both lists in user id order.
+List<List<int>> _spread(List<int> debts, List<int> credits) {
+  var total = BigInt.zero;
+  for (final c in credits) {
+    total += BigInt.from(c);
+  }
+  final rows = [...debts], cols = [...credits];
+  final cells = [
+    for (var i = 0; i < debts.length; i++)
+      [
+        for (var j = 0; j < credits.length; j++)
+          (BigInt.from(debts[i]) * BigInt.from(credits[j]) ~/ total).toInt(),
+      ],
+  ];
+  for (var i = 0; i < debts.length; i++) {
+    for (var j = 0; j < credits.length; j++) {
+      rows[i] -= cells[i][j];
+      cols[j] -= cells[i][j];
+    }
+  }
+  for (var i = 0, j = 0; i < rows.length && j < cols.length;) {
+    final n = rows[i] < cols[j] ? rows[i] : cols[j];
+    cells[i][j] += n;
+    rows[i] -= n;
+    cols[j] -= n;
+    if (rows[i] == 0) i++;
+    if (cols[j] == 0) j++;
+  }
+  return cells;
 }
 
 void _addPair(

@@ -214,7 +214,11 @@ class LocalGroupsRepository implements GroupsRepository {
         txn,
         'group.member-added',
         groupId: id,
-        data: {'groupName': g['name'], 'targetName': person?['name']},
+        data: {
+          'groupName': g['name'],
+          'targetName': person?['name'],
+          'targetId': pid,
+        },
         involved: [pid],
       );
     });
@@ -245,7 +249,11 @@ class LocalGroupsRepository implements GroupsRepository {
         txn,
         'group.member-removed',
         groupId: id,
-        data: {'groupName': g['name'], 'targetName': person?['name']},
+        data: {
+          'groupName': g['name'],
+          'targetName': person?['name'],
+          'targetId': userId,
+        },
         involved: [userId],
       );
     });

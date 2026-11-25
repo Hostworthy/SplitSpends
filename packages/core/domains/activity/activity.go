@@ -129,7 +129,8 @@ func Describe(a *Activity, actor string) string {
 	case GroupMemberAdded:
 		return actor + " added " + str("targetName") + " to " + str("groupName")
 	case GroupMemberRemoved:
-		if str("targetName") == actor {
+		// Names are neither unique nor stable, so compare ids.
+		if str("targetId") == a.ActorID.String() {
 			return actor + " left " + str("groupName")
 		}
 		return actor + " removed " + str("targetName") + " from " + str("groupName")

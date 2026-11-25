@@ -31,6 +31,8 @@ When AI reads amounts in another currency (a receipt from abroad), `POST /ai/exp
 
 Error codes: `VALIDATION_ERROR` (422), `NOT_FOUND` (404), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `CONFLICT` (409), `RATE_LIMITED` (429), `AI_DISABLED` (503), `RATES_UNAVAILABLE` (503), `APPROVAL_PENDING` (403, the account waits for an administrator), `APPROVAL_DECLINED` (403), `INTERNAL` (500). Several codes share a status, so clients read `code`, never the status alone; a 502, 503 or 504 without the error envelope comes from a proxy in front of the API (a timeout or an outage), not from the API.
 
+An object the caller may not see answers 404 `NOT_FOUND`, exactly as an id that does not exist, so ids of other people's groups, expenses, comments, categories and people reveal nothing. 403 `FORBIDDEN` is only for objects the caller can see but may not change.
+
 Lists accept `limit` (default 50, max 200) and `offset` (default 0).
 
 Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
@@ -172,7 +174,7 @@ A `percent` or `shares` default applies only while its members are exactly the g
 
 Notification preferences: `PATCH /me` with `notifications` merges, so omitted keys keep their value. `{ "notifications": { "push": { "paymentReceived": false } } }` turns off push for payments and leaves everything else as it was. Unknown kinds added later default to on.
 
-Push subscriptions follow the Web Push standards: the body of `POST /me/push-subscriptions` is what `PushSubscription.toJSON()` returns in a browser (plus `platform` and `label`), and UnifiedPush on Android provides the same endpoint and keys. Rules: the endpoint must be an `https` URL; `p256dh` is an uncompressed P-256 public key and `auth` 16 bytes, both base64url. Registering is idempotent on the endpoint: the existing row is refreshed (its failure count is reset only when the keys changed), and it moves to the caller if another account registered it (the device now belongs to whoever is signed in). At most 25 devices per user (409 beyond that). `POST .../test` returns 409 when push is off or no device is registered. When push is off on the server, `POST` returns 409.
+Push subscriptions follow the Web Push standards: the body of `POST /me/push-subscriptions` is what `PushSubscription.toJSON()` returns in a browser (plus `platform` and `label`), and UnifiedPush on Android provides the same endpoint and keys. Rules: the endpoint must be an `https` URL (any port), and a URL whose host is an IP address the server would refuse to contact (see `PUSH_ALLOW_PRIVATE` in ENVIRONMENT.md) is rejected with 422; `p256dh` is an uncompressed P-256 public key and `auth` 16 bytes, both base64url. Registering is idempotent on the endpoint: the existing row is refreshed (its failure count is reset only when the keys changed), and it moves to the caller if another account registered it (the device now belongs to whoever is signed in). At most 25 devices per user, counting a device moved from another account (409 beyond that). `POST .../test` returns 409 when push is off or no device is registered, and waits at most 15 seconds. Each account may register devices 20 times a minute and send 5 test notifications a minute (429 `RATE_LIMITED`). When push is off on the server, `POST` returns 409.
 
 Delivery: the server encrypts each message (RFC 8291, `aes128gcm`) and signs it with VAPID (RFC 8292), with a TTL of one day. The decrypted payload is small JSON, `{ "title": "Ada added “Rent”", "body": "Ada added “Rent” (€1,000.00) in Flat. Your share: €500.00.", "url": "<BASE_URL>" }`, with the same text as the email. A device the push service answers 404 or 410 for is removed; other failures, including no answer within 5 seconds, are counted (`failures`) and a device is removed after 25 failures in a row. Push is sent in the background, or before the response when `SERVERLESS=true`.
 
@@ -182,7 +184,7 @@ Delivery: the server encrypts each message (RFC 8291, `aes128gcm`) and signs it 
 | ------ | ---- | ---- | -------- |
 | GET | `/friends` | | List of `{ user: User, balances: [Balance] }` (positive: friend owes you) |
 | POST | `/friends` | `{ email?, name? }` | 201 `{ data: { user, balances } }`; with an email, creates an invited user when new and emails an invite; with only a name, creates a `placeholder` person |
-| PATCH | `/friends/{userId}` | `{ email }` | `{ data: { user, balances } }`; gives a placeholder you created an email and invites them. 409 when the email already has an account |
+| PATCH | `/friends/{userId}` | `{ email }` | `{ data: { user, balances } }`; gives a placeholder you created an email and invites them. 404 for anyone you did not add by name; 409 when the email already has an account or the person already has an email |
 | GET | `/friends/{userId}` | | `{ data: { user, balances, groups: [{ groupId, groupName, balances }], nonGroup: [Balance] } }` |
 | DELETE | `/friends/{userId}` | | 204; 409 when balances are not settled |
 
@@ -243,7 +245,7 @@ People without an account follow the link, request a login code with `inviteToke
 | POST | `/expenses/{expenseId}/restore` | | `{ data: Expense }`; 409 when someone in it has left the group |
 | GET | `/expenses/{expenseId}/comments` | | List of `{ id, expenseId, user: User, body, createdAt }` |
 | POST | `/expenses/{expenseId}/comments` | `{ body }` | 201 `{ data: Comment }` |
-| DELETE | `/comments/{commentId}` | | 204 (author only) |
+| DELETE | `/comments/{commentId}` | | 204 (author only; 403 for someone else's comment you can see, 404 when you cannot see the expense) |
 | POST | `/payments` | `{ id?, groupId?, fromUserId, toUserId, amount, currency?, date?, notes? }` | 201 `{ data: Expense }` (kind `payment`) |
 
 A payment is always one person paying another. `PUT /expenses/{id}` on a payment takes the usual expense body but must keep that shape: one entry in `payers` paying the whole `total` and one other person in `splits` (422 otherwise). Only the people, `total`, `currency`, `date` and `notes` are used; the description stays `Payment`, the category `payment`, and payments never recur. Only payments use the `payment` category.
@@ -265,7 +267,7 @@ Asks someone who owes you money to settle up: in one group when `groupId` is set
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
 | GET | `/categories` | | List of `Category`: the built-ins, then the caller's own custom categories and custom categories used by expenses the caller can see (`mine: false`), by name |
-| POST | `/categories` | `{ id?, name, icon?, group? }` | 201 `{ data: Category }`; repeating a create with the same `id` returns the existing category, an `id` owned by someone else returns 409 |
+| POST | `/categories` | `{ id?, name, icon?, group? }` | 201 `{ data: Category }`; repeating a create with the same `id` returns the existing category; repeating it after you deleted the category brings it back with the details sent; an `id` owned by someone else returns 409 |
 | PATCH | `/categories/{categoryId}` | `{ name?, icon?, group? }` | `{ data: Category }`; owner only (404 otherwise) |
 | DELETE | `/categories/{categoryId}` | | 204; owner only |
 
@@ -310,7 +312,7 @@ Deleting hides a category from listings and from new expenses but never rewrites
 
 ### Offline Clients and Import
 
-`POST /groups`, `POST /expenses` and `POST /payments` accept an optional client-generated `id` (UUID). Repeating the request with the same `id` returns the existing object as it is now (edited, or with `deleted: true` when it was deleted since) instead of creating a duplicate, so an offline outbox can retry safely, also while the first request is still running. An `id` that belongs to something the caller cannot see returns 409, and so does an `id` used for a different kind of object: an expense `id` sent to `/payments` or a payment `id` to `/expenses`, or a retry naming another `groupId`.
+`POST /groups`, `POST /expenses` and `POST /payments` accept an optional client-generated `id` (UUID). Repeating the request with the same `id` returns the existing object as it is now (edited, or with `deleted: true` when it was deleted since) instead of creating a duplicate, so an offline outbox can retry safely, also while the first request is still running. An `id` that belongs to something the caller cannot see returns 409, and so does an `id` used for a different kind of object: an expense `id` sent to `/payments` or a payment `id` to `/expenses`, or a retry naming another `groupId`. Every such 409 has the same message, whatever the `id` names.
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
@@ -329,7 +331,7 @@ Deleting hides a category from listings and from new expenses but never rewrites
 // groups[].defaultSplit is optional; its values are keyed by local person ids
 ```
 
-Rules: runs in one transaction and sends no emails. People with an email resolve to the existing (or a newly invited) user, so their server id may differ from the local id: use the returned `people` map to rewrite local references. People without an email become placeholders that keep the local id. The caller becomes friends with everyone imported. Payments use `kind: "payment"` with one payer and one split (the recipient). Custom categories are created first with their device ids, so expenses can use them; deleted ones are created too and deleted once the expenses are in. A group's `defaultSplit` has its person ids remapped like `memberIds` and must match the group's members (send it only while it still applies). Validation errors name the failing item in `field`, for example `expenses[3].total`. Retrying the same import is safe.
+Rules: runs in one transaction and sends no emails. People with an email resolve to the existing (or a newly invited) user, so their server id may differ from the local id: use the returned `people` map to rewrite local references. People without an email become placeholders that keep the local id. The caller becomes friends with everyone imported. Payments use `kind: "payment"` with one payer and one split (the recipient). Custom categories are created first with their device ids, so expenses can use them; deleted ones are created too and deleted once the expenses are in. A group's `defaultSplit` has its person ids remapped like `memberIds` and must match the group's members (send it only while it still applies). Two people in the bundle who resolve to the same server user (the same email, or your own email) are refused with 422 when both appear in one default split, among one expense's payers or splits, or in one item; as group members they simply join once. Validation errors name the failing item in `field`, for example `expenses[3].total`. Retrying the same import is safe.
 
 Limits: one import may hold at most 1000 people, 200 custom categories, 500 groups and 20,000 expenses. Each account runs one import at a time (409 `CONFLICT` while another is running) and at most 10 an hour (429 `RATE_LIMITED`); the server runs at most two imports at once and answers 429 `RATE_LIMITED` to a third until one ends.
 

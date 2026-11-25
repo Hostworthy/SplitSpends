@@ -128,7 +128,7 @@ func (r *Groups) Create(ctx context.Context, g *group.Group) error {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return errs.Conflict("That group id is already in use.")
+		return errs.Taken()
 	}
 	return nil
 }
