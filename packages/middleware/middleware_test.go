@@ -650,3 +650,14 @@ func TestBound(t *testing.T) {
 		}
 	}
 }
+
+// TestWriteErrorMapsEveryKind checks that every domain error kind has its own
+// status, so none falls back to a 500.
+func TestWriteErrorMapsEveryKind(t *testing.T) {
+	for _, kind := range errs.Kinds() {
+		status, ok := statusByKind[kind]
+		if !ok || status < 400 || status == http.StatusInternalServerError {
+			t.Errorf("%s maps to %d", kind, status)
+		}
+	}
+}
