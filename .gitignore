@@ -26,5 +26,9 @@ coverage/
 **/android/.kotlin/
 .claude/worktrees/
 
+# Python
+__pycache__/
+*.pyc
+
 # Database dumps from deploy/docker hold personal data
 deploy/docker/backups/

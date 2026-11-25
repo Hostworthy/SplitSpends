@@ -2,7 +2,7 @@
 
 Regenerates the README hero image (`docs/images/hero.webp`) with demo data.
 
-1. Build the web app (`make web-build`) and start the server with an empty database, `SIGNUP_MODE=open`, `WEB_DIR=apps/web/build/web` and no `SMTP_HOST`, writing its log to a file (login codes are read from it).
+1. Build the web app (`make web-build`) and start the server with an empty database, `SIGNUP_MODE=open`, `LOG_FORMAT=text`, `WEB_DIR=apps/web/build/web` and no `SMTP_HOST`, writing its log to a file (login codes are read from it).
 2. Seed demo data through the API:
 
    ```bash
