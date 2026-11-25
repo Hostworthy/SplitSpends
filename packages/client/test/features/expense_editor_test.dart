@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:sembast/sembast.dart';
 
 import 'package:splitspends/app/app.dart';
 import 'package:splitspends/app/repositories.dart';
@@ -12,6 +13,7 @@ import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';
+import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/core/widgets/amount_field.dart';
 import 'package:splitspends/features/expenses/data/local_expenses_repository.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
@@ -184,6 +186,50 @@ void main() {
     expect(chip.onPressed, isNull);
     expect(chip.tooltip, 'The group of an expense cannot change');
   });
+
+  for (final date in ['1999-12-31', '2099-01-01']) {
+    testWidgets('editing an expense dated $date opens the date picker', (
+      tester,
+    ) async {
+      final (container, flat) = await _start(tester);
+      final me = container.read(meProvider)!;
+      final taxi = await pumpFuture(
+        tester,
+        container
+            .read(expensesRepositoryProvider)
+            .create(
+              ExpenseInput(
+                groupId: flat.id,
+                description: 'Taxi',
+                currency: 'EUR',
+                total: 1200,
+                date: '2026-11-20',
+                payers: [Payer(userId: me.id, amount: 1200)],
+                splits: [
+                  for (final m in flat.members) SplitEntry(userId: m.id),
+                ],
+              ),
+            ),
+      );
+      // Stored before the date rules existed, or by another client.
+      final ledger = container.read(localLedgerProvider);
+      await pumpFuture(
+        tester,
+        ledger.db.then(
+          (db) => Stores.expenses.record(taxi.id).update(db, {'date': date}),
+        ),
+      );
+      unawaited(
+        container.read(routerProvider).push('/expenses/${taxi.id}/edit'),
+      );
+      await settle(tester);
+
+      await tester.tap(find.widgetWithIcon(ActionChip, Icons.event_rounded));
+      await settle(tester);
+      expect(tester.takeException(), isNull);
+      expect(find.byType(DatePickerDialog), findsOneWidget);
+    });
+  }
 
   testWidgets('picking a group in another currency does not keep the amount', (
     tester,
