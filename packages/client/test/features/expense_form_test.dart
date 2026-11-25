@@ -62,6 +62,7 @@ void main() {
               Share(userId: 'me', paid: 900, owed: 600, value: '2'),
               Share(userId: 'a', paid: 0, owed: 300, value: '1'),
             ],
+            updatedAt: '2026-11-02T08:00:00Z',
           ),
         ),
       );
@@ -69,6 +70,11 @@ void main() {
     expect(form.method, SplitMethod.shares);
     expect(form.preview.owed['me'], 600);
     expect(form.canSave, isTrue);
+    expect(
+      form.toInput().toJson()['updatedAt'],
+      '2026-11-02T08:00:00Z',
+      reason: 'the edit names the version it started from',
+    );
   });
 
   test('an edited expense keeps its group', () {

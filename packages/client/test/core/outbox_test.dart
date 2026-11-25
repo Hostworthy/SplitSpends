@@ -8,6 +8,7 @@ import 'package:sembast/sembast_memory.dart';
 import 'package:splitspends/core/storage/local_db.dart';
 
 import 'package:splitspends/core/api/api_client.dart';
+import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/sync/outbox.dart';
 import 'package:splitspends/features/expenses/data/offline_expenses_repository.dart';
@@ -658,6 +659,194 @@ void main() {
       await queue('e2');
       await outbox.discard((await outbox.pending()).first.key);
       expect((await outbox.pending()).single.label, 'e2');
+    });
+  });
+
+  group('edits name the version they are based on', () {
+    // A server that keeps expenses and refuses an edit based on a version
+    // that is no longer current, as the API does.
+    late Map<String, Map<String, Object?>> stored;
+    late ApiClient client;
+    late OfflineExpensesRepository repo;
+    var versions = 0;
+
+    String stamp() =>
+        '2026-11-24T10:00:${(versions++).toString().padLeft(2, '0')}Z';
+
+    setUp(() {
+      versions = 0;
+      stored = {
+        'e0': {
+          'id': 'e0',
+          'description': 'Dinner',
+          'currency': 'EUR',
+          'total': 12000,
+          'date': '2026-11-20',
+          'updatedAt': stamp(),
+        },
+      };
+      client = ApiClient(
+        serverUrl: 'http://server.test',
+        token: 't',
+        cache: _Cache(),
+        httpClient: MockClient((request) async {
+          if (!online) throw http.ClientException('offline');
+          seen.add('${request.method} ${request.url.path}');
+          final segments = request.url.pathSegments;
+          final body = request.body.isEmpty
+              ? const <String, dynamic>{}
+              : jsonDecode(request.body) as Map<String, dynamic>;
+          final id = segments.length > 3 ? segments[3] : body['id'] as String;
+          http.Response data(int status) =>
+              http.Response(jsonEncode({'data': stored[id]}), status);
+          switch (request.method) {
+            case 'GET':
+              return data(200);
+            case 'PUT':
+              final based = body['updatedAt'];
+              if (based != null && based != stored[id]!['updatedAt']) {
+                return http.Response(
+                  jsonEncode({
+                    'error':
+                        'Someone else changed this expense. Reload it and '
+                        'try again.',
+                    'code': 'CONFLICT',
+                  }),
+                  409,
+                );
+              }
+          }
+          stored[id] = {
+            'id': id,
+            'description': body['description'],
+            'currency': body['currency'],
+            'total': body['total'],
+            'date': body['date'],
+            'updatedAt': stamp(),
+          };
+          return data(request.method == 'POST' ? 201 : 200);
+        }),
+      );
+      repo = OfflineExpensesRepository(
+        RemoteExpensesRepository(client),
+        outbox,
+        meId: () => 'me',
+      );
+    });
+
+    ExpenseInput edit(Expense e, String description) {
+      final input = ExpenseInput.fromExpense(e);
+      return ExpenseInput(
+        groupId: input.groupId,
+        description: description,
+        currency: input.currency,
+        total: input.total,
+        date: input.date,
+        payers: const [Payer(userId: 'me', amount: 12000)],
+        splits: const [
+          SplitEntry(userId: 'me'),
+          SplitEntry(userId: 'sam'),
+        ],
+        updatedAt: input.updatedAt,
+      );
+    }
+
+    /// Ben, on another device, edits the expense on the server.
+    void benEdits(String id) =>
+        stored[id] = {...stored[id]!, 'total': 10200, 'updatedAt': stamp()};
+
+    test('an offline edit of a version changed since is not saved', () async {
+      online = true;
+      final dinner = await repo.get('e0');
+      online = false;
+      await repo.update('e0', edit(dinner, 'Dinner at Luigi'));
+      final queued = (await outbox.pending()).single.body! as Map;
+      expect(queued['updatedAt'], dinner.updatedAt);
+
+      benEdits('e0');
+      online = true;
+      final result = await outbox.flush(client);
+      expect(result.sent, 0);
+      expect(
+        result.rejected.single,
+        'Edit “Dinner at Luigi”: Someone else changed this expense. Reload it '
+        'and try again.',
+      );
+      expect(await outbox.pending(), isEmpty);
+      expect(stored['e0']!['total'], 10200, reason: 'the newer edit is kept');
+      expect(stored['e0']!['description'], 'Dinner');
+    });
+
+    test('an edit of a version changed since is refused online', () async {
+      online = true;
+      final dinner = await repo.get('e0');
+      benEdits('e0');
+      await expectLater(
+        repo.update('e0', edit(dinner, 'Dinner at Luigi')),
+        throwsA(isA<ApiError>().having((e) => e.code, 'code', 'CONFLICT')),
+      );
+      expect(await outbox.pending(), isEmpty);
+      expect(stored['e0']!['total'], 10200);
+    });
+
+    test('offline edits made on top of each other are all saved', () async {
+      online = true;
+      final dinner = await repo.get('e0');
+      online = false;
+      await repo.update('e0', edit(dinner, 'Dinner at Luigi'));
+      await repo.update('e0', edit(await repo.get('e0'), 'Dinner for four'));
+      final queued = [
+        for (final op in await outbox.pending()) (op.body! as Map)['updatedAt'],
+      ];
+      expect(queued, [dinner.updatedAt, dinner.updatedAt]);
+
+      online = true;
+      final result = await outbox.flush(client);
+      expect(result.rejected, isEmpty);
+      expect(result.sent, 2);
+      expect(stored['e0']!['description'], 'Dinner for four');
+    });
+
+    test(
+      'a later offline edit is not saved when the first one was not',
+      () async {
+        online = true;
+        final dinner = await repo.get('e0');
+        online = false;
+        await repo.update('e0', edit(dinner, 'Dinner at Luigi'));
+        await repo.update('e0', edit(await repo.get('e0'), 'Dinner for four'));
+
+        benEdits('e0');
+        online = true;
+        final result = await outbox.flush(client);
+        expect(result.rejected, hasLength(2));
+        expect(await outbox.pending(), isEmpty);
+        expect(stored['e0']!['total'], 10200);
+        expect(stored['e0']!['description'], 'Dinner');
+      },
+    );
+
+    test('an edit of an expense created offline follows its create', () async {
+      final created = await repo.create(
+        const ExpenseInput(
+          description: 'Taxi',
+          currency: 'EUR',
+          total: 12000,
+          date: '2026-11-24',
+          payers: [Payer(userId: 'me', amount: 12000)],
+          splits: [
+            SplitEntry(userId: 'me'),
+            SplitEntry(userId: 'sam'),
+          ],
+        ),
+      );
+      await repo.update(created.id, edit(await repo.get(created.id), 'Cab'));
+
+      online = true;
+      final result = await outbox.flush(client);
+      expect(result.rejected, isEmpty);
+      expect(result.sent, 2);
+      expect(stored[created.id]!['description'], 'Cab');
     });
   });
 }
