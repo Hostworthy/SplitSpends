@@ -70,6 +70,7 @@ packages/                 Shared code the apps are built from
   webpush/                Web Push adapter (browsers, and Android through UnifiedPush)
   storage/                Local disk and S3-compatible blob stores
   ai/                     Anthropic and OpenAI-compatible AI providers
+  exchange/               Exchange-rate feeds over HTTP (converting AI drafts)
   platform/               HTTP contract (request and response shapes), standard library only
   middleware/             Request ids, logging, CORS, auth, rate limits, error mapping
   mcp/                    MCP tools, implemented as a client of the HTTP API

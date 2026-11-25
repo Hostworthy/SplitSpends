@@ -11,7 +11,7 @@ Dependencies point inward to `packages/core`. See [ADR-001](../../../docs/adr/00
 | ------- | -------- | ---------- |
 | `packages/core` | Entities, services, repository ports, `errs`, `money`, `clock` | Standard library (no `net/http`), `uuid` |
 | `packages/database` | pgx repositories, migrations | core |
-| `packages/notifications`, `packages/storage`, `packages/ai` | Adapters for ports | core ports and shared |
+| `packages/notifications`, `packages/webpush`, `packages/storage`, `packages/ai`, `packages/exchange` | Adapters for ports | core ports, shared and the domain they serve (`push`, `rates`) |
 | `packages/platform` | Wire contract | Standard library only |
 | `packages/middleware` | HTTP cross-cutting | core (auth, errs), platform |
 | `packages/bootstrap` | Config and wiring | core and adapters |

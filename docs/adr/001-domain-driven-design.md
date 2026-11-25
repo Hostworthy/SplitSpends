@@ -16,6 +16,7 @@ Dependencies point inward. `packages/core` is the centre and imports no infrastr
 flowchart TB
   subgraph transports [Transports]
     API[apps/api/routes]
+    MW[packages/middleware]
     MCP[packages/mcp]
     Jobs[apps/api jobs]
   end
@@ -31,9 +32,14 @@ flowchart TB
     Mail[packages/notifications]
     Store[packages/storage]
     AI[packages/ai]
+    Push[packages/webpush]
+    FX[packages/exchange]
   end
   API --> Boot
+  API --> MW
   API --> Plat
+  MW --> Core
+  MW --> Plat
   MCP --> Plat
   MCP -. HTTP .-> API
   Boot --> Core
@@ -41,9 +47,13 @@ flowchart TB
   Boot --> Mail
   Boot --> Store
   Boot --> AI
+  Boot --> Push
+  Boot --> FX
   DB --> Core
   Mail --> Core
   AI --> Core
+  Push --> Core
+  FX --> Core
 ```
 
 ### Bounded Contexts
@@ -81,11 +91,15 @@ flowchart TB
 
 ### Rules
 
-- Core imports only itself, `github.com/google/uuid` and the standard library, and of the standard library no network, process or database packages (`net/mail`, `net/url` and `net/netip` are allowed).
-- Repositories hold no business rules.
-- `packages/platform` is the wire contract and depends only on the standard library.
-- Wiring happens only in `packages/bootstrap`.
-- The MCP server goes through the HTTP API (ADR-004).
+The rules in `packages/archtest/boundaries_test.go` are the source of truth; each rule below names the one that enforces it, or says it is left to review.
+
+- Core imports only itself, `github.com/google/uuid` and the standard library, and of the standard library no network, process or database packages (`net/mail`, `net/url` and `net/netip` are allowed). Checked by "core is pure".
+- Repositories hold no business rules. Left to review.
+- `packages/platform` is the wire contract and depends only on the standard library. Checked by "platform is stdlib only".
+- Wiring happens only in `packages/bootstrap`. Checked by "only bootstrap wires repositories", "apps never wire repositories" and "the api app gets its adapters from bootstrap".
+- The MCP server goes through the HTTP API (ADR-004). Checked by "mcp talks to the API, not the domain" and "the mcp app only hosts the mcp package".
+- Middleware stays in the transport layer. Checked by "middleware does not touch persistence".
+- Adapters (`packages/notifications`, `packages/webpush`, `packages/ai`, `packages/exchange`, `packages/storage`) do not import each other, bootstrap or transports. Checked by the "... stays an adapter" rules.
 
 `packages/archtest` checks in `go test`, for code and test files alike:
 
@@ -107,7 +121,7 @@ Left to review: that repositories hold no business rules, that `packages/platfor
 ### Positive
 
 - Split and balance rules are tested without a database.
-- Adapters (SMTP, storage, AI, database) can be replaced behind ports.
+- Adapters (SMTP, Web Push, exchange rates, storage, AI, database) can be replaced behind ports.
 
 ### Negative
 
