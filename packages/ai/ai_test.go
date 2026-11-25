@@ -7,9 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/anthropics/anthropic-sdk-go/v2"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 )
 
 // A draft answer as a provider would return it.
@@ -151,5 +155,111 @@ func TestRejectsUnsupportedImages(t *testing.T) {
 	if _, err := NewOpenAICompatible("http://127.0.0.1:1", "", "m").DraftExpense(context.Background(), in); err == nil ||
 		!strings.Contains(err.Error(), "JPEG, PNG and WebP") {
 		t.Fatalf("want a friendly format error, got %v", err)
+	}
+}
+
+// provider answers every request with status and body and counts requests.
+func provider(t *testing.T, status int, body string) (url string, calls *atomic.Int32) {
+	t.Helper()
+	calls = &atomic.Int32{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL, calls
+}
+
+// choice is an OpenAI chat completion whose message has content and refusal.
+func choice(content, refusal string) string {
+	raw, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": content, "refusal": refusal}}}})
+	return string(raw)
+}
+
+// message is an Anthropic message answering text with stopReason.
+func message(text, stopReason string) string {
+	raw, _ := json.Marshal(map[string]any{
+		"id": "msg_1", "type": "message", "role": "assistant", "model": "claude-opus-5-5",
+		"content":     []any{map[string]any{"type": "text", "text": text}},
+		"stop_reason": stopReason, "usage": map[string]any{"input_tokens": 10, "output_tokens": 10},
+	})
+	return string(raw)
+}
+
+// anthropicAt is an Anthropic reader on url that does not retry, so a
+// failing answer is seen at once.
+func anthropicAt(url string) *Anthropic {
+	return &Anthropic{client: anthropic.NewClient(option.WithAPIKey("sk-test"), option.WithBaseURL(url), option.WithMaxRetries(0)),
+		model: DefaultAnthropicModel}
+}
+
+const receiptAnswer = `{"merchant":"Market","date":"2026-10-05","currency":"EUR","category":"food.groceries","subtotal":"10.00",
+"tax":"1.00","tip":"0","total":"11.00","items":[{"name":"Bread","quantity":2,"amount":"10.00"}]}`
+
+func receiptInput() ports.ReceiptInput {
+	return ports.ReceiptInput{Image: []byte{0xFF, 0xD8, 0xFF}, ContentType: "image/jpeg", Currency: "EUR", Categories: []string{"food.groceries"}}
+}
+
+// TestProviderAnswers checks how each adapter reads a receipt from the
+// answers a provider can give: domain errors for what the user can act on,
+// plain errors for everything else.
+func TestProviderAnswers(t *testing.T) {
+	openai := func(url string) (ports.ReceiptExtract, error) {
+		return NewOpenAICompatible(url, "key", "m").ReadReceipt(context.Background(), receiptInput())
+	}
+	claude := func(url string) (ports.ReceiptExtract, error) {
+		return anthropicAt(url).ReadReceipt(context.Background(), receiptInput())
+	}
+	fenced := "```json\n" + receiptAnswer + "\n```"
+	for _, tc := range []struct {
+		name   string
+		read   func(url string) (ports.ReceiptExtract, error)
+		status int
+		body   string
+		kind   errs.Kind // "" means success when plain is false
+		plain  bool      // a non-domain error
+	}{
+		{"openai reads a receipt", openai, http.StatusOK, choice(receiptAnswer, ""), "", false},
+		{"openai reads fenced JSON", openai, http.StatusOK, choice(fenced, ""), "", false},
+		{"openai busy", openai, http.StatusTooManyRequests, `{"error":{"message":"slow down"}}`, errs.KindRateLimited, false},
+		{"openai refusal", openai, http.StatusOK, choice("", "I can't help with that."), errs.KindValidation, false},
+		{"openai bad key", openai, http.StatusUnauthorized, `{"error":{"message":"bad key"}}`, "", true},
+		{"openai no choices", openai, http.StatusOK, `{"choices":[]}`, "", true},
+		{"openai not JSON", openai, http.StatusOK, `<html>gateway</html>`, "", true},
+		{"openai answer not JSON", openai, http.StatusOK, choice("Sorry, I cannot read that.", ""), "", true},
+		{"anthropic reads a receipt", claude, http.StatusOK, message(receiptAnswer, "end_turn"), "", false},
+		{"anthropic reads fenced JSON", claude, http.StatusOK, message(fenced, "end_turn"), "", false},
+		{"anthropic busy", claude, http.StatusTooManyRequests, `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`, errs.KindRateLimited, false},
+		{"anthropic refusal", claude, http.StatusOK, message("", "refusal"), errs.KindValidation, false},
+		{"anthropic bad key", claude, http.StatusUnauthorized, `{"type":"error","error":{"type":"authentication_error","message":"bad key"}}`, "", true},
+		{"anthropic answer not JSON", claude, http.StatusOK, message("Sorry.", "end_turn"), "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url, calls := provider(t, tc.status, tc.body)
+			got, err := tc.read(url)
+			if calls.Load() != 1 {
+				t.Fatalf("want one request, got %d", calls.Load())
+			}
+			e, domain := errs.As(err)
+			switch {
+			case tc.kind != "":
+				if !domain || e.Kind != tc.kind {
+					t.Fatalf("want a %s error, got %v", tc.kind, err)
+				}
+			case tc.plain:
+				if err == nil || domain {
+					t.Fatalf("want a plain error, got %v", err)
+				}
+			default:
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got.Merchant != "Market" || got.Total != "11.00" || len(got.Items) != 1 || got.Items[0].Quantity != 2 {
+					t.Fatalf("parsed receipt wrong: %+v", got)
+				}
+			}
+		})
 	}
 }

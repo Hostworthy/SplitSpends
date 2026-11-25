@@ -238,3 +238,149 @@ func TestUploadUndo(t *testing.T) {
 		})
 	}
 }
+
+func TestUploadRejectsBadFiles(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data []byte
+	}{
+		{"empty", nil},
+		{"too large", jpeg(MaxSize + 1)},
+		{"gif", []byte("GIF89a\x01\x00\x01\x00\x00\x00\x00")},
+		{"svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)},
+		{"html", []byte("<!doctype html><html><body>receipt</body></html>")},
+		{"pdf", []byte("%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, store := &pending{}, &blobs{}
+			s := NewService(repo, store, nil, noTx{}, clock.Fixed{At: time.Now()})
+			_, err := s.Upload(context.Background(), uuid.New(), tc.data)
+			if e, ok := errs.As(err); !ok || e.Kind != errs.KindValidation || e.Field != "file" {
+				t.Fatalf("want a validation error on file, got %v", err)
+			}
+			if store.puts != 0 || len(repo.rows) != 0 {
+				t.Fatalf("a refused upload must store nothing: %d puts, %d rows", store.puts, len(repo.rows))
+			}
+		})
+	}
+}
+
+// shown is a repository whose receipts only their uploader sees.
+type shown struct{ pending }
+
+func (p *shown) Get(_ context.Context, id uuid.UUID) (*Receipt, error) {
+	for _, r := range p.rows {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return nil, errs.NotFound("Receipt")
+}
+
+func (p *shown) Visible(_ context.Context, id, userID uuid.UUID) (bool, error) {
+	r, err := p.Get(context.Background(), id)
+	return err == nil && r.UploadedBy == userID, nil
+}
+
+// reader records the receipts it is asked to read.
+type reader struct {
+	ports.ReceiptReader
+	calls []ports.ReceiptInput
+}
+
+func (r *reader) ReadReceipt(_ context.Context, in ports.ReceiptInput) (ports.ReceiptExtract, error) {
+	r.calls = append(r.calls, in)
+	return ports.ReceiptExtract{Total: "12.50"}, nil
+}
+
+// stored keeps the bytes of every image put into it.
+type stored map[string][]byte
+
+func (b stored) Put(_ context.Context, key string, r io.Reader) error {
+	data, err := io.ReadAll(r)
+	b[key] = data
+	return err
+}
+
+func (b stored) Open(_ context.Context, key string) (io.ReadCloser, error) {
+	data, ok := b[key]
+	if !ok {
+		return nil, errs.NotFound("File")
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (b stored) Delete(_ context.Context, key string) error {
+	delete(b, key)
+	return nil
+}
+
+func TestOpenAndScanNeedAccess(t *testing.T) {
+	ctx := context.Background()
+	ada, mal := uuid.New(), uuid.New()
+	repo, ai := &shown{}, &reader{}
+	s := NewService(repo, stored{}, ai, noTx{}, clock.Fixed{At: time.Now()})
+	r, err := s.Upload(ctx, ada, jpeg(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, body, err := s.Open(ctx, ada, r.ID); err != nil {
+		t.Fatalf("the uploader opens the receipt: %v", err)
+	} else {
+		_ = body.Close()
+	}
+	for name, call := range map[string]func() error{
+		"open":    func() error { _, _, err := s.Open(ctx, mal, r.ID); return err },
+		"scan":    func() error { _, err := s.Scan(ctx, mal, r.ID, ""); return err },
+		"unknown": func() error { _, _, err := s.Open(ctx, ada, uuid.New()); return err },
+	} {
+		if err := call(); !errs.Is(err, errs.KindNotFound) {
+			t.Errorf("%s: want not found, got %v", name, err)
+		}
+	}
+	if len(ai.calls) != 0 {
+		t.Fatalf("nothing may reach the AI reader for someone who cannot see the receipt: %d calls", len(ai.calls))
+	}
+	scan, err := s.Scan(ctx, ada, r.ID, "")
+	if err != nil || scan.Total != 1250 || len(ai.calls) != 1 || len(ai.calls[0].Image) != 100 {
+		t.Fatalf("the uploader scans the receipt: %+v, %v, %d calls", scan, err, len(ai.calls))
+	}
+}
+
+func TestScanWithoutAI(t *testing.T) {
+	ctx := context.Background()
+	ada := uuid.New()
+	s := NewService(&shown{}, stored{}, nil, noTx{}, clock.Fixed{At: time.Now()})
+	r, err := s.Upload(ctx, ada, jpeg(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.AIEnabled() {
+		t.Fatal("AI is off without a reader")
+	}
+	if _, err := s.Scan(ctx, ada, r.ID, "EUR"); !errs.Is(err, errs.KindAIDisabled) {
+		t.Fatalf("want AI disabled, got %v", err)
+	}
+}
+
+func TestToScanCurrencyAndEmptyReceipts(t *testing.T) {
+	for _, tc := range []struct {
+		name, read, fallback, want string
+	}{
+		{"read from the receipt", "jpy", "EUR", "JPY"},
+		{"unknown falls back to the request", "XXX1", "eur", "EUR"},
+		{"then to dollars", "", "nope", "USD"},
+	} {
+		if got := toScan(ports.ReceiptExtract{Currency: tc.read}, tc.fallback).Currency; got != tc.want {
+			t.Errorf("%s: want %s, got %s", tc.name, tc.want, got)
+		}
+	}
+	s := toScan(ports.ReceiptExtract{Currency: "JPY", Subtotal: "1200", Tax: "120", Tip: "80"}, "")
+	if len(s.Items) != 0 || s.Subtotal != 1200 || s.Total != 1400 {
+		t.Fatalf("a receipt without lines totals its parts: %+v", s)
+	}
+	if s := toScan(ports.ReceiptExtract{Total: "-5", Date: "20.11.2026", Category: expense.PaymentCategory}, "EUR"); s.Total != 0 ||
+		s.Date != "" || s.Category != expense.DefaultCategory {
+		t.Fatalf("bad total, date and category are dropped: %+v", s)
+	}
+}
