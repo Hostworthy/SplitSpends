@@ -203,13 +203,17 @@ class LocalGroupsRepository implements GroupsRepository {
       final g = await _ledger.group(id, txn);
       final pid = await _ledger.ensurePerson(txn, email: email, name: name);
       final members = LocalLedger.memberIds(g);
-      if (members.contains(pid)) return;
+      final person = (await _ledger.directory(txn))[pid];
+      if (members.contains(pid)) {
+        throw ApiError.conflict(
+          '${person?['name'] ?? 'This person'} is already in this group.',
+        );
+      }
       await Stores.groups.record(id).put(txn, {
         ...g,
         'memberIds': [...members, pid],
         'updatedAt': _ledger.stamp(),
       });
-      final person = (await _ledger.directory(txn))[pid];
       await _ledger.record(
         txn,
         'group.member-added',
@@ -230,6 +234,9 @@ class LocalGroupsRepository implements GroupsRepository {
     final db = await _ledger.db;
     await db.transaction((txn) async {
       final g = await _ledger.group(id, txn);
+      if (!LocalLedger.memberIds(g).contains(userId)) {
+        throw ApiError.notFound('Member');
+      }
       final entries = LocalLedger.groupEntries(await _ledger.expenses(txn), id);
       if (!(nets(entries)[userId]?.settled ?? true)) {
         throw const ApiError.conflict(

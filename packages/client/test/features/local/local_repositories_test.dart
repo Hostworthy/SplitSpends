@@ -122,6 +122,48 @@ void main() {
     ),
   );
 
+  test('adding someone twice is a conflict, like on the server', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final group = await groups.create(
+      const GroupInput(
+        name: 'Trip',
+        members: [MemberInput(email: 'sam@example.com', name: 'Sam')],
+      ),
+    );
+    await expectLater(
+      groups.addMember(group.id, email: 'sam@example.com'),
+      throwsA(
+        isA<ApiError>()
+            .having((e) => e.status, 'status', 409)
+            .having(
+              (e) => e.message,
+              'message',
+              'Sam is already in this group.',
+            ),
+      ),
+    );
+    expect((await groups.get(group.id)).members, hasLength(2));
+  });
+
+  test('removing someone who is not a member is not found', () async {
+    final groups = LocalGroupsRepository(ledger);
+    final group = await trip(groups);
+    final activity = LocalActivityRepository(ledger);
+    final before = (await activity.list()).total;
+    await expectLater(
+      groups.removeMember(group.id, '00000000-0000-4000-8000-0000000000ff'),
+      throwsA(
+        isA<ApiError>().having(
+          (e) => e.message,
+          'message',
+          'Member not found.',
+        ),
+      ),
+    );
+    expect((await activity.list()).total, before);
+    expect((await groups.get(group.id)).members, hasLength(3));
+  });
+
   test('a group member can record a payment between two others', () async {
     final groups = LocalGroupsRepository(ledger);
     final expenses = LocalExpensesRepository(ledger);
