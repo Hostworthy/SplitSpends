@@ -135,6 +135,14 @@ func (r *Groups) Get(ctx context.Context, id uuid.UUID) (*group.Group, error) {
 	return g, err
 }
 
+func (r *Groups) Lock(ctx context.Context, id uuid.UUID) (*group.Group, error) {
+	g, err := scanGroup(r.db.Q(ctx).QueryRow(ctx, `SELECT `+groupColumns+` FROM groups g WHERE g.id=$1 FOR UPDATE OF g`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, errs.NotFound("Group")
+	}
+	return g, err
+}
+
 func (r *Groups) Update(ctx context.Context, g *group.Group) error {
 	split, err := splitJSON(g.DefaultSplit)
 	if err != nil {

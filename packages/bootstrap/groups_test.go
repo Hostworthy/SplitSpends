@@ -1,0 +1,128 @@
+package bootstrap_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
+	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/packages/database"
+	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
+	"github.com/google/uuid"
+)
+
+// doomed is the group repository with a hook that runs right before a group
+// is deleted.
+type doomed struct {
+	*repositories.Groups
+	before func()
+}
+
+func (d doomed) Delete(ctx context.Context, id uuid.UUID) error {
+	d.before()
+	return d.Groups.Delete(ctx, id)
+}
+
+func TestOnlyCreatorDeletesGroup(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	svc := env.Services
+	if err := svc.Groups.Delete(ctx, ben, g.ID); !errs.Is(err, errs.KindForbidden) {
+		t.Fatalf("only the creator may delete the group, got %v", err)
+	}
+	if _, err := svc.Groups.View(ctx, ada, g.ID); err != nil {
+		t.Fatalf("the refused delete removed the group: %v", err)
+	}
+	if err := svc.Groups.Delete(ctx, ada, g.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Groups.View(ctx, ada, g.ID); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("the group should be gone, got %v", err)
+	}
+	feed, _, err := svc.Activity.List(ctx, activity.Filter{UserID: ben, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, a := range feed {
+		if a.Kind == activity.GroupDeleted {
+			found = true
+			if a.ActorID != ada || a.GroupID != nil || activity.Describe(a, "Ada") != "Ada deleted the group Flat" {
+				t.Fatalf("unexpected entry %+v", a)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Ben's feed should say who deleted the group")
+	}
+}
+
+func TestMembersDeleteGroupWhoseCreatorLeft(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	svc := env.Services
+	if err := svc.Groups.RemoveMember(ctx, ada, g.ID, ada); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Groups.Delete(ctx, ben, g.ID); err != nil {
+		t.Fatalf("once the creator has left, members may delete the group: %v", err)
+	}
+	if !hasKind(feed(t, env, ben), activity.GroupDeleted) {
+		t.Fatal("the delete should be in Ben's feed")
+	}
+}
+
+func feed(t *testing.T, env *bootstraptest.Env, user uuid.UUID) []*activity.Activity {
+	t.Helper()
+	list, _, err := env.Services.Activity.List(context.Background(), activity.Filter{UserID: user, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return list
+}
+
+func TestDeleteGroupKeepsConcurrentExpense(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	created := make(chan error, 1)
+	finished := make(chan struct{})
+	var e *expense.Expense
+	// Right before the group is deleted, Ben books an expense in it. The
+	// delete goes on once the expense is saved or waiting for the delete.
+	repo := doomed{repositories.NewGroups(env.DB), func() {
+		go func() {
+			var err error
+			e, err = env.Services.Expenses.Create(ctx, ben, expense.Input{GroupID: &g.ID, Description: "Pizza", Currency: "EUR",
+				Total: 3000, Method: expense.MethodEqual, Payers: []expense.Payer{{UserID: ben, Amount: 3000}},
+				Splits: []expense.SplitInput{{UserID: ada}, {UserID: ben}}})
+			created <- err
+			close(finished)
+		}()
+		for {
+			select {
+			case <-finished:
+				return
+			default:
+			}
+			if blocked(t, env) {
+				return
+			}
+		}
+	}}
+	svc := group.NewService(repo, env.Services.Users, env.Services.Balances, env.Services.Activity, env.Notifier,
+		repositories.NewQuotas(env.DB), database.NewTx(env.DB), env.Clock, "http://test")
+	deleted := svc.Delete(ctx, ada, g.ID)
+	if err := <-created; err == nil {
+		if !errs.Is(deleted, errs.KindConflict) {
+			t.Fatalf("the group was deleted with an expense booked after the settled check: %v", deleted)
+		}
+		if _, err := env.Services.Expenses.Get(ctx, ben, e.ID); err != nil {
+			t.Fatalf("the booked expense is gone: %v", err)
+		}
+	} else if deleted != nil {
+		t.Fatalf("neither the expense nor the delete went through: %v, %v", err, deleted)
+	}
+}

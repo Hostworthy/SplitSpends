@@ -157,6 +157,9 @@ type Repository interface {
 	Create(ctx context.Context, g *Group) error
 	// Get returns errs.NotFound when missing; Members is filled.
 	Get(ctx context.Context, id uuid.UUID) (*Group, error)
+	// Lock is Get inside the caller's transaction, with the group row locked
+	// until it ends, so nothing can be added to the group meanwhile.
+	Lock(ctx context.Context, id uuid.UUID) (*Group, error)
 	Update(ctx context.Context, g *Group) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	// ForUser lists the user's groups with Members filled.
