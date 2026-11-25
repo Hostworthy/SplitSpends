@@ -18,7 +18,7 @@ make dev     # API on :8080 and the web app on :5173
 
 With `SMTP_HOST` empty, login codes appear in the API log (`notifications.email.logged`). The development `.env` uses `SIGNUP_MODE=open`.
 
-Migrations are embedded in the binary and applied on start.
+Migrations are embedded in the binary and applied on start. They only go forward: a new migration has no `-- +goose Down` section, and nothing runs the Down sections that older migrations still carry, which are not maintained and lose data. To undo a release, restore the backup taken before it (see [Restore](HOSTING.md#restore)); to undo a schema change, add a new migration that reverses it.
 
 ## Make Targets
 

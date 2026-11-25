@@ -256,6 +256,7 @@ class Me extends User {
     String? avatarColor,
     String? timezone,
     NotificationPrefs? notifications,
+    bool? gravatar,
   }) => Me(
     id: id,
     email: email ?? this.email,
@@ -266,7 +267,7 @@ class Me extends User {
     status: status ?? this.status,
     timezone: timezone ?? this.timezone,
     notifications: notifications ?? this.notifications,
-    gravatar: gravatar,
+    gravatar: gravatar ?? this.gravatar,
     role: role,
   );
 }

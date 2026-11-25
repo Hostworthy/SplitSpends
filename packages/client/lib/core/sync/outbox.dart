@@ -95,10 +95,13 @@ class FlushResult {
 /// and signing back in to the same account replays them.
 ///
 /// Replay answers, per write in queue order:
-/// - success: the write is done and removed.
+/// - success: the write is done and removed, and the edits of the same
+///   record queued after it move on to the version it produced.
 /// - the API's own error envelope with a verdict on the request
 ///   (validation, conflict, not found, forbidden, approval): dropped and
-///   reported, the server wins.
+///   reported, the server wins. An edit names the version it was based on,
+///   so one made on a version someone else has changed since is refused
+///   with a conflict rather than replacing their change.
 /// - a server failure inside the API (5xx with the envelope): counted;
 ///   after [stuckAfter] failures the write is marked stuck and replay moves
 ///   past it, holding back only later writes that name the same record
@@ -257,13 +260,16 @@ class Outbox {
     var sent = 0;
     final rejected = <String>[];
     final held = <String>{};
-    for (final op in await pending()) {
+    final ops = await pending();
+    for (var i = 0; i < ops.length; i++) {
+      final op = ops[i];
       if (op.stuck || op.touches(held)) {
         held.add(op.target);
         continue;
       }
       try {
-        await api.send(op.method, op.path, payload: op.body);
+        final answer = await api.send(op.method, op.path, payload: op.body);
+        await _follow(db, answer, ops, i + 1);
         sent++;
       } on ApiError catch (error) {
         if (error.hasEnvelope && _verdicts.contains(error.code)) {
@@ -293,6 +299,45 @@ class Outbox {
       await Stores.outbox.record(op.key).delete(db);
     }
     return FlushResult(sent: sent, rejected: rejected);
+  }
+
+  /// Moves the conditional edits queued after a write that the server just
+  /// took (those naming the `updatedAt` they are based on) on to the version
+  /// it [answer]ed with: they were made on top of that write, so they are
+  /// based on its result, not on whatever the record was before it.
+  Future<void> _follow(
+    Database db,
+    Object? answer,
+    List<OutboxOp> ops,
+    int from,
+  ) async {
+    final data = answer is Map ? answer['data'] : null;
+    if (data is! Map) return;
+    final id = data['id'];
+    final version = data['updatedAt'];
+    if (id is! String || version is! String) return;
+    for (var i = from; i < ops.length; i++) {
+      final op = ops[i];
+      final body = op.body;
+      if (op.method != 'PUT' ||
+          op.path.split('/').last != id ||
+          body is! Map ||
+          !body.containsKey('updatedAt')) {
+        continue;
+      }
+      final next = {...body.cast<String, Object?>(), 'updatedAt': version};
+      await Stores.outbox.record(op.key).update(db, {'body': next});
+      ops[i] = OutboxOp(
+        key: op.key,
+        method: op.method,
+        path: op.path,
+        label: op.label,
+        body: next,
+        attempts: op.attempts,
+        error: op.error,
+        stuck: op.stuck,
+      );
+    }
   }
 
   Stream<List<OutboxOp>> _changes() async* {

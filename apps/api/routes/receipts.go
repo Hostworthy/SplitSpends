@@ -105,7 +105,7 @@ func (a *API) draftExpense(w http.ResponseWriter, r *http.Request) error {
 		out.Payers = append(out.Payers, platform.Payer{UserID: p.UserID.String(), Amount: p.Amount})
 	}
 	for _, s := range d.Splits {
-		out.Splits = append(out.Splits, platform.Split{UserID: s.UserID.String()})
+		out.Splits = append(out.Splits, platform.Split{UserID: s.UserID.String(), Value: number(s.Value)})
 	}
 	for _, it := range d.Items {
 		ids := make([]string, len(it.UserIDs))

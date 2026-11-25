@@ -64,6 +64,10 @@ class ExpenseForm extends ChangeNotifier {
   Recurrence recurrence = Recurrence.none;
   String? receiptId;
 
+  /// The version of the expense being edited, sent back so the server can
+  /// refuse the edit when someone changed it meanwhile.
+  String? updatedAt;
+
   SplitMethod method = SplitMethod.equal;
 
   /// Who takes part in an `equal` split.
@@ -260,6 +264,7 @@ class ExpenseForm extends ChangeNotifier {
     date = DateTime.tryParse(input.date) ?? Dates.today();
     recurrence = input.recurrence;
     receiptId = input.receiptId;
+    updatedAt = input.updatedAt;
     method = input.splitMethod;
     warnings = input.warnings;
 
@@ -337,6 +342,7 @@ class ExpenseForm extends ChangeNotifier {
       tip: tip,
       receiptId: receiptId,
       recurrence: recurrence,
+      updatedAt: updatedAt,
     );
   }
 }

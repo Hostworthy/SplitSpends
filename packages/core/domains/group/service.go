@@ -200,9 +200,7 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		s.users.SendInvite(ctx, u, me)
 	}
 	for _, u := range added {
-		if !ports.IsQuiet(ctx) {
-			s.notifyAdded(ctx, u, me, g)
-		}
+		s.notifyAdded(ctx, u, me, g)
 	}
 	return s.View(ctx, actor, g.ID)
 }
@@ -224,6 +222,9 @@ func full() error {
 }
 
 func (s *Service) notifyAdded(ctx context.Context, u, by *user.User, g *Group) {
+	if ports.IsQuiet(ctx) {
+		return
+	}
 	n, ok := u.Notice(user.AddedToGroup, by.Name+" added you to "+g.Name,
 		[]string{by.Name + " added you to the group “" + g.Name + "”."}, s.baseURL)
 	if !ok {

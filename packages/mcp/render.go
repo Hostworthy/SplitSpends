@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -36,13 +38,7 @@ func (t *tools) balances(ctx context.Context, bs []platform.Balance) string {
 }
 
 func (t *tools) line(ctx context.Context, e platform.Expense, idx people) string {
-	payer := ""
-	var best int64
-	for _, s := range e.Shares {
-		if s.Paid > best {
-			best, payer = s.Paid, s.UserID
-		}
-	}
+	payer := t.names(ctx, e, idx, func(s platform.Share) int64 { return s.Paid })
 	var mine string
 	switch {
 	case e.MyBalance > 0:
@@ -53,15 +49,46 @@ func (t *tools) line(ctx context.Context, e platform.Expense, idx people) string
 		mine = "not involved or even"
 	}
 	if e.Kind == "payment" {
-		to := ""
-		for _, s := range e.Shares {
-			if s.Owed > 0 {
-				to = s.UserID
-			}
-		}
-		return fmt.Sprintf("- %s payment: %s paid %s %s (id %s)\n", e.Date, idx.name(payer), idx.name(to), t.c.format(ctx, e.Total, e.Currency), e.ID)
+		to := t.names(ctx, e, idx, func(s platform.Share) int64 { return s.Owed })
+		return fmt.Sprintf("- %s payment: %s paid %s %s (id %s)\n", e.Date, payer, to, t.c.format(ctx, e.Total, e.Currency), e.ID)
 	}
-	return fmt.Sprintf("- %s %q: %s paid by %s, %s [%s] (id %s)\n", e.Date, e.Description, t.c.format(ctx, e.Total, e.Currency), idx.name(payer), mine, e.Category, e.ID)
+	return fmt.Sprintf("- %s %q: %s paid by %s, %s [%s] (id %s)\n", e.Date, e.Description, t.c.format(ctx, e.Total, e.Currency), payer, mine, e.Category, e.ID)
+}
+
+// names lists the people whose amount in e is not zero. With more than one
+// each carries the amount, so a bill two people paid is not credited to one.
+func (t *tools) names(ctx context.Context, e platform.Expense, idx people, amount func(platform.Share) int64) string {
+	var shares []platform.Share
+	for _, s := range e.Shares {
+		if amount(s) != 0 {
+			shares = append(shares, s)
+		}
+	}
+	if len(shares) == 1 {
+		return idx.name(shares[0].UserID)
+	}
+	parts := make([]string, len(shares))
+	for i, s := range shares {
+		parts[i] = idx.name(s.UserID) + " " + t.c.format(ctx, amount(s), e.Currency)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// page asks a list for limit items starting at offset.
+func page(limit, offset int) url.Values {
+	q := url.Values{"limit": {strconv.Itoa(limit)}}
+	if offset > 0 {
+		q.Set("offset", strconv.Itoa(offset))
+	}
+	return q
+}
+
+// more notes, when a page of n items starting at offset does not reach the
+// end of a list of total, which offset shows the next page.
+func more(b *strings.Builder, offset, n, total int) {
+	if n > 0 && offset+n < total {
+		fmt.Fprintf(b, "Showing %d to %d of %d; pass offset %d to see more.\n", offset+1, offset+n, total, offset+n)
+	}
 }
 
 // day is the date part of an RFC 3339 timestamp, or ts itself when it is

@@ -129,9 +129,11 @@ func editable(actor uuid.UUID, g *group.Group) error {
 // authorize checks that the actor may book an expense with these participants.
 // Inside Tx.Do it holds the group, or the connections between the people
 // outside groups, until the transaction ends, so nobody leaves or stops being
-// a friend between the check and the save; outside one it only checks.
-func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.UUID, shares []Share, receiptID *uuid.UUID) (*group.Group, error) {
-	if receiptID != nil {
+// a friend between the check and the save; outside one it only checks. Only
+// the uploader may attach a receipt, but an edit may keep the one the expense
+// already has (kept is nil for a new expense).
+func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.UUID, shares []Share, receiptID, kept *uuid.UUID) (*group.Group, error) {
+	if receiptID != nil && (kept == nil || *receiptID != *kept) {
 		ok, err := s.receipts.Owned(ctx, *receiptID, actor)
 		if err != nil {
 			return nil, err
@@ -320,7 +322,7 @@ func (s *Service) insert(ctx context.Context, actor uuid.UUID, e *Expense, kind 
 	var g *group.Group
 	err := s.tx.Do(ctx, func(ctx context.Context) error {
 		var err error
-		if g, err = s.authorize(ctx, actor, e.GroupID, e.Shares, e.ReceiptID); err != nil {
+		if g, err = s.authorize(ctx, actor, e.GroupID, e.Shares, e.ReceiptID, nil); err != nil {
 			return err
 		}
 		if err := s.repo.Create(ctx, e); err != nil {
@@ -433,7 +435,7 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		if err := s.category(ctx, actor, n.Category, e.Category); err != nil {
 			return err
 		}
-		if g, err = s.authorize(ctx, actor, e.GroupID, n.Shares, in.ReceiptID); err != nil {
+		if g, err = s.authorize(ctx, actor, e.GroupID, n.Shares, in.ReceiptID, e.ReceiptID); err != nil {
 			return err
 		}
 		s.build(e, n, actor, s.clock.Now())
@@ -540,7 +542,7 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	}
 	// Authorizing first answers an id that does not exist like a stranger's.
 	// insert authorizes again, holding the people until the payment is saved.
-	if _, err := s.authorize(ctx, actor, in.GroupID, n.Shares, nil); err != nil {
+	if _, err := s.authorize(ctx, actor, in.GroupID, n.Shares, nil, nil); err != nil {
 		return nil, err
 	}
 	people, err := s.users.Index(ctx, []uuid.UUID{in.From, in.To})

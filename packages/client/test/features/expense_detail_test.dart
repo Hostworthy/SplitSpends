@@ -18,6 +18,9 @@ import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
 import 'package:splitspends/features/expenses/presentation/providers.dart';
 
+import 'package:splitspends/core/models/user.dart';
+import 'package:splitspends/features/friends/presentation/people.dart';
+
 import '../helpers.dart';
 
 /// Starts the app on the device as Ada.
@@ -175,4 +178,46 @@ void main() {
     expect(find.text('Update the app to edit this expense'), findsOneWidget);
     expect(find.text('Save'), findsNothing);
   });
+
+  for (final (name, edited, want) in [
+    ('a save right after adding is not an edit', 3, 'Added by you Jan 10'),
+    (
+      'a later edit names who made it',
+      600,
+      'Added by you Jan 10 · edited by Ben Jan 10',
+    ),
+  ]) {
+    testWidgets(name, (tester) async {
+      final created = DateTime.utc(2026, 1, 10, 12);
+      final container = await _start(
+        tester,
+        overrides: [
+          expenseProvider.overrideWith(
+            (ref, id) async => Expense.fromJson({
+              'id': id,
+              'description': 'Rent',
+              'currency': 'EUR',
+              'total': 9000,
+              'date': '2026-01-10',
+              'splitMethod': 'equal',
+              'createdBy': ref.read(meProvider)!.id,
+              'updatedBy': 'ben',
+              'createdAt': created.toIso8601String(),
+              'updatedAt': created
+                  .add(Duration(seconds: edited))
+                  .toIso8601String(),
+              'shares': const <Object>[],
+            }),
+          ),
+          peopleProvider.overrideWithValue({
+            'ben': const User(id: 'ben', name: 'Ben Okafor'),
+          }),
+        ],
+      );
+      unawaited(container.read(routerProvider).push(Routes.expense('e1')));
+      await settle(tester);
+
+      expect(find.text(want), findsOneWidget);
+    });
+  }
 }

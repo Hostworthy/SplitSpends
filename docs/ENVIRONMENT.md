@@ -2,20 +2,22 @@
 
 The server reads everything from the environment. Invalid or missing required values stop startup with a dotted error key such as `bootstrap.config.env.required.not-found.DATABASE_URL`.
 
+Switches such as `SERVERLESS` or `GRAVATAR` accept `true`/`false`, `on`/`off`, `yes`/`no` and `1`/`0`, in any case; any other value stops startup.
+
 ## Core
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `DATABASE_URL` | required | PostgreSQL URL, for example `postgres://user:pass@host:5432/splitspends?sslmode=disable` |
+| `DATABASE_URL` | required | PostgreSQL URL, for example `postgres://user:pass@host:5432/splitspends?sslmode=disable`. Use a direct or session-mode connection, not a transaction-mode pooler (PgBouncer in transaction mode, Neon's `-pooler` host, Supabase's port 6543): migrations at start hold a session lock so that instances starting together apply them one at a time |
 | `SECRET_KEY` | required | At least 32 characters; hex is decoded. Signs login codes. Generate with `openssl rand -hex 32` |
-| `BASE_URL` | `http://localhost:8080` | Public URL, used in email links |
+| `BASE_URL` | `http://localhost:8080` | Public URL with its scheme, such as `https://split.example.com`, used in email and push links. The server refuses to start when it is not an `http` or `https` URL, and logs `bootstrap.config.base-url.default` when it is unset |
 | `ADDR` | `:8080` | Listen address |
 | `APP_NAME` | `Split Spends` | Name shown in emails and the app |
 | `WEB_DIR` | empty | Directory with the Flutter web build; the Docker image sets `/srv/web` |
 | `DATA_DIR` | `./data` | Where receipt images are stored |
-| `DATABASE_MAX_CONNS` | `10` | Connection pool size, from 1 to 2147483647 |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `LOG_FORMAT` | `json` | `json` or `text` |
+| `DATABASE_MAX_CONNS` | `10` | Connection pool size, from 1 to 2147483647. Migrations at start open one more connection for their lock and close it when done |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`; anything else stops startup |
+| `LOG_FORMAT` | `json` | `json` or `text`; anything else stops startup |
 | `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API from elsewhere, or `*` |
 | `TRUST_PROXY` | `false` | How many reverse proxies sit in front of the server, each appending the address it was connected from to `X-Forwarded-For`. Rate limits use the entry that many places from the right; entries further left are written by the client and ignored. `true` means `1`, `false` means `0` (use the connecting address). See [Client Addresses](#client-addresses) |
 | `MCP_ENABLED` | `true` | Serve the MCP endpoint at `/mcp` |
@@ -73,7 +75,7 @@ Leave `SMTP_HOST` empty in development: emails, including login codes, are writt
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
 | `SMTP_HOST` | empty | SMTP server |
-| `SMTP_PORT` | `587` | Port |
+| `SMTP_PORT` | `587` | Port, from 1 to 65535 |
 | `SMTP_SECURITY` | `starttls` | `starttls` (port 587), `tls` (implicit TLS, port 465) or `none` (local relays only) |
 | `SMTP_USERNAME` | empty | Login, if the server needs one |
 | `SMTP_PASSWORD` | empty | Password or app password |

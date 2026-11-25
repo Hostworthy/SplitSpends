@@ -56,6 +56,23 @@ final pushSyncProvider = Provider<void>((ref) {
   });
 });
 
+/// Push belongs to a signed-in account, so this device stops receiving it
+/// whenever no account is signed in: after signing out, and when the server
+/// ends the session (expired, revoked or disabled), which leaves no chance
+/// to tell the server first.
+final pushSignOutProvider = Provider<void>((ref) {
+  ref.listen(sessionProvider, (_, next) async {
+    final session = next.value;
+    if (session == null || session.isConnected) return;
+    final platform = ref.read(pushPlatformProvider);
+    try {
+      if (await platform.current() != null) await platform.unsubscribe();
+    } catch (_) {
+      // Tried again on the next start.
+    }
+  }, fireImmediately: true);
+});
+
 final pushActionsProvider = Provider<PushActions>(PushActions.new);
 
 /// Turning push on and off and managing devices.
@@ -82,15 +99,20 @@ class PushActions {
     }
   }
 
-  /// Unsubscribes this device and removes it from the server.
+  /// Unsubscribes this device and removes it from the server. The device
+  /// is unsubscribed even when the server cannot be told: the server drops
+  /// the subscription once the push service reports it gone.
   Future<void> disable() async {
     try {
       final current = await _platform.current();
-      if (current != null) {
-        final devices = await _ref.read(pushRepositoryProvider).list();
+      if (current == null) return;
+      try {
+        final repo = _ref.read(pushRepositoryProvider);
+        final devices = await repo.list();
         for (final d in devices.where((d) => d.endpoint == current.endpoint)) {
-          await _ref.read(pushRepositoryProvider).remove(d.id);
+          await repo.remove(d.id);
         }
+      } finally {
         await _platform.unsubscribe();
       }
     } finally {

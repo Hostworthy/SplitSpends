@@ -132,6 +132,9 @@ class _PayersSheetState extends ConsumerState<_PayersSheet> {
                           child: AmountField(
                             currency: form.currency,
                             initial: _amounts[id],
+                            semanticLabel: id == form.meId
+                                ? 'Paid by you'
+                                : 'Paid by ${widget.people.nameOf(id, full: true)}',
                             onChanged: (v) =>
                                 setState(() => _amounts[id] = v ?? 0),
                           ),

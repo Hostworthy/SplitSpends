@@ -81,6 +81,12 @@ func (a *API) Routes() *http.ServeMux {
 	assisted := func(h handler) http.Handler {
 		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(aiLimit, a.log, byUser, middleware.Bound(aiSlots, a.log, a.wrap(h))))
 	}
+	// Every upload is stored until an expense uses it or the cleanup job
+	// removes it, so each person may upload only so many an hour.
+	uploadLimit := middleware.NewLimiter(60, time.Hour)
+	uploads := func(h handler) http.Handler {
+		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(uploadLimit, a.log, byUser, a.wrap(h)))
+	}
 	p := platform.Prefix
 
 	mux.Handle("GET /health", public(a.health))
@@ -146,7 +152,7 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("GET "+p+"/activity", authed(a.listActivity))
 	mux.Handle("GET "+p+"/stats", authed(a.stats))
 
-	mux.Handle("POST "+p+"/receipts", authed(a.uploadReceipt))
+	mux.Handle("POST "+p+"/receipts", uploads(a.uploadReceipt))
 	mux.Handle("GET "+p+"/receipts/{receiptId}", authed(a.getReceipt))
 	mux.Handle("POST "+p+"/receipts/{receiptId}/scan", assisted(a.scanReceipt))
 	mux.Handle("POST "+p+"/ai/expense-draft", assisted(a.draftExpense))

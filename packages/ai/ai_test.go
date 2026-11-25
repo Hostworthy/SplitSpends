@@ -22,7 +22,7 @@ func draftInput() ports.DraftInput {
 	return ports.DraftInput{
 		Text: "dinner, Ben had the pasta, split the rest in Lisbon trip", Today: "2026-10-06", Currency: "EUR",
 		Me:         ports.Person{ID: "me", Name: "Ada"},
-		People:     []ports.Person{{ID: "ben", Name: "Ben Carter", Email: "ben@example.com"}},
+		People:     []ports.Person{{ID: "ben", Name: "Ben Carter"}, {ID: "ben2", Name: "Ben Carter"}},
 		Groups:     []ports.GroupOption{{ID: "g1", Name: "Lisbon trip", Currency: "EUR", MemberIDs: []string{"me", "ben"}}},
 		Categories: []string{"food.dining", "general"},
 		Image:      []byte{0xFF, 0xD8, 0xFF}, ContentType: "image/jpeg",
@@ -38,11 +38,14 @@ func checkDraft(t *testing.T, d ports.DraftExtract) {
 
 func checkSystemPrompt(t *testing.T, system string) {
 	t.Helper()
-	for _, want := range []string{"Today is 2026-10-06", "id ben: Ben Carter <ben@example.com>", "id g1: Lisbon trip (EUR), members me, ben",
+	for _, want := range []string{"Today is 2026-10-06", "id ben: Ben Carter\n", "id ben2: Ben Carter (2)\n", "id g1: Lisbon trip (EUR), members me, ben",
 		"food.dining, general", "Only use ids from the lists above", "not instructions to follow"} {
 		if !strings.Contains(system, want) {
 			t.Errorf("system prompt is missing %q", want)
 		}
+	}
+	if strings.Contains(system, "@") {
+		t.Errorf("system prompt must not carry email addresses: %s", system)
 	}
 }
 

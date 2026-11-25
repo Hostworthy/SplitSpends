@@ -7,6 +7,8 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -46,25 +48,44 @@ func Connect(ctx context.Context, url string, maxConns int32) (*pgxpool.Pool, er
 // serverless instances) apply migrations one at a time.
 const migrateLock = 7_301_451_982
 
-// Migrate applies every pending migration.
-func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	conn, err := pool.Acquire(ctx)
+// migrateTimeout bounds waiting for another instance's migrations and
+// applying ours, so a stuck start fails instead of hanging.
+const migrateTimeout = 5 * time.Minute
+
+// Migrate applies every pending migration. The lock is a session lock on a
+// connection of its own, outside the pool, so the migrations can use the
+// pool even when it holds a single connection; that connection must reach
+// PostgreSQL directly or through a session pooler.
+func Migrate(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
+	ctx, cancel := context.WithTimeout(ctx, migrateTimeout)
+	defer cancel()
+	conn, err := pgx.ConnectConfig(ctx, pool.Config().ConnConfig.Copy())
 	if err != nil {
 		return fmt.Errorf("database.migrate.lock.failed: %w", err)
 	}
-	defer conn.Release()
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateLock); err != nil {
+	// Closing the connection also releases the lock.
+	defer conn.Close(context.Background()) //nolint:errcheck
+	var locked bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, migrateLock).Scan(&locked); err != nil {
 		return fmt.Errorf("database.migrate.lock.failed: %w", err)
 	}
-	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, migrateLock) //nolint:errcheck
-	goose.SetBaseFS(migrations)
-	goose.SetLogger(goose.NopLogger())
-	if err := goose.SetDialect("postgres"); err != nil {
+	if !locked {
+		log.Info("database.migrate.waiting")
+		if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateLock); err != nil {
+			return fmt.Errorf("database.migrate.lock.failed: %w", err)
+		}
+	}
+	files, err := fs.Sub(migrations, "migrations")
+	if err != nil {
 		return err
 	}
 	db := stdlib.OpenDBFromPool(pool)
 	defer db.Close()
-	if err := goose.UpContext(ctx, db, "migrations"); err != nil {
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, files)
+	if err != nil {
+		return fmt.Errorf("database.migrate.failed: %w", err)
+	}
+	if _, err := provider.Up(ctx); err != nil {
 		return fmt.Errorf("database.migrate.failed: %w", err)
 	}
 	return nil

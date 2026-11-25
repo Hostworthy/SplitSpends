@@ -23,7 +23,7 @@ var version = "dev"
 func main() {
 	base, token := os.Getenv("SPLITSPENDS_URL"), os.Getenv("SPLITSPENDS_TOKEN")
 	if base == "" || token == "" {
-		fmt.Fprintln(os.Stderr, "mcp.config.env.required.not-found: set SPLITSPENDS_URL and SPLITSPENDS_TOKEN (create a token under Settings, API tokens)")
+		fmt.Fprintln(os.Stderr, "mcp.config.env.required.not-found: set SPLITSPENDS_URL and SPLITSPENDS_TOKEN (create a token in the app under Account, API tokens)")
 		os.Exit(2)
 	}
 	origin, insecure, err := mcp.Origin(base)

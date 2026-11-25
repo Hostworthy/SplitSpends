@@ -180,10 +180,18 @@ class _ItemCardState extends State<_ItemCard> {
                 const SizedBox(width: 8),
                 Expanded(
                   flex: 2,
-                  child: AmountField(
-                    currency: form.currency,
-                    initial: item.amount == 0 ? null : item.amount,
-                    onChanged: (v) => form.update(() => item.amount = v ?? 0),
+                  // Follows the name as it is typed, so a screen reader
+                  // says which item the price belongs to.
+                  child: ValueListenableBuilder(
+                    valueListenable: _name,
+                    builder: (_, name, _) => AmountField(
+                      currency: form.currency,
+                      initial: item.amount == 0 ? null : item.amount,
+                      semanticLabel: name.text.trim().isEmpty
+                          ? 'Price of the item'
+                          : 'Price of ${name.text.trim()}',
+                      onChanged: (v) => form.update(() => item.amount = v ?? 0),
+                    ),
                   ),
                 ),
                 IconButton(

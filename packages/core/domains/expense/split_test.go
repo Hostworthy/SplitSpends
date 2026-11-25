@@ -173,11 +173,16 @@ func TestParseDecimal(t *testing.T) {
 		in   string
 		exp  int
 		want int64
-	}{{"12.50", 2, 1250}, {"0.005", 2, 1}, {"1,234.5", 2, 123450}, {"1500", 0, 1500}, {"2.0004", 3, 2000}, {"-1.255", 2, -126}}
+	}{{"12.50", 2, 1250}, {"0.005", 2, 1}, {"1,234.5", 2, 123450}, {"1500", 0, 1500}, {"2.0004", 3, 2000}, {"-1.255", 2, -126}, {"10000000000.00", 2, MaxTotal}}
 	for _, c := range cases {
 		got, ok := ParseDecimal(c.in, c.exp)
 		if !ok || got != c.want {
 			t.Errorf("ParseDecimal(%q,%d) = %d,%v want %d", c.in, c.exp, got, ok, c.want)
+		}
+	}
+	for _, in := range []string{"", "1e3", "1/3", "0x10", "abc", "1.2.3", "10000000000.01", "-10000000000.01"} {
+		if got, ok := ParseDecimal(in, 2); ok {
+			t.Errorf("ParseDecimal(%q,2) = %d, want rejected", in, got)
 		}
 	}
 }

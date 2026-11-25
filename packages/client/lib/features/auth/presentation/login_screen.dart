@@ -51,6 +51,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       setState(() => _error = 'Enter your Split Spends server address.');
       return;
     }
+    if (!_validServer(server)) {
+      setState(() => _error = 'Enter a valid server address.');
+      return;
+    }
     if (!_emailPattern.hasMatch(email)) {
       setState(() => _error = 'Enter a valid email address.');
       return;
@@ -73,7 +77,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           );
       if (!mounted) return;
       context.go('${Routes.verify}?email=${Uri.encodeQueryComponent(email)}');
-    } on ApiError catch (error) {
+    } catch (error) {
+      if (!mounted) return;
       setState(() => _error = describeError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -161,6 +166,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ],
     );
   }
+}
+
+/// True for an http or https address with a host; Uri.tryParse rejects
+/// addresses such as an invalid port.
+bool _validServer(String url) {
+  final uri = Uri.tryParse(url);
+  return uri != null &&
+      (uri.isScheme('http') || uri.isScheme('https')) &&
+      uri.host.isNotEmpty;
 }
 
 /// True for `http://` addresses, which send sign-in codes unencrypted.

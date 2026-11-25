@@ -5,6 +5,7 @@ package bootstrap
 import (
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -79,6 +80,10 @@ type Config struct {
 	S3AccessKey string
 	S3SecretKey string
 	S3Prefix    string
+
+	// baseURLDefault records that BASE_URL was not set, so links in emails
+	// point at localhost.
+	baseURLDefault bool
 }
 
 func env(key, fallback string) string {
@@ -98,19 +103,56 @@ func list(v string) []string {
 	return out
 }
 
+// boolean reads the spellings of a switch people commonly write in
+// environment files: true/false, 1/0, on/off and yes/no, in any case.
+func boolean(v string) (bool, bool) {
+	switch strings.ToLower(v) {
+	case "on", "yes":
+		return true, true
+	case "off", "no":
+		return false, true
+	}
+	b, err := strconv.ParseBool(v)
+	return b, err == nil
+}
+
+// flag reads a boolean variable, refusing values it cannot read instead of
+// treating them as false.
+func flag(key string, fallback bool) (bool, error) {
+	v, ok := os.LookupEnv(key)
+	if !ok || strings.TrimSpace(v) == "" {
+		return fallback, nil
+	}
+	b, ok := boolean(strings.TrimSpace(v))
+	if !ok {
+		return false, fmt.Errorf("bootstrap.config.env.invalid.%s: use true or false (on/off, yes/no and 1/0 also work)", key)
+	}
+	return b, nil
+}
+
 // hops reads TRUST_PROXY: a count of trusted proxies, or a boolean where
 // true means one, as it did before counts were accepted.
 func hops(v string) (int, error) {
 	if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 		return n, nil
 	}
-	if b, err := strconv.ParseBool(v); err == nil {
+	if b, ok := boolean(v); ok {
 		if b {
 			return 1, nil
 		}
 		return 0, nil
 	}
 	return 0, fmt.Errorf("bootstrap.config.env.invalid.TRUST_PROXY: use the number of proxies in front of the server, or false")
+}
+
+// baseURL checks BASE_URL is an absolute http(s) URL, since every link in
+// emails and push messages starts with it.
+func baseURL(v string) (string, error) {
+	u, err := url.Parse(v)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", fmt.Errorf("bootstrap.config.env.invalid.BASE_URL: use the public address with its scheme, for example https://split.example.com")
+	}
+	return strings.TrimRight(v, "/"), nil
 }
 
 // LoadConfig reads configuration from the environment, after filling it
@@ -122,14 +164,13 @@ func LoadConfig() (*Config, error) {
 	c := &Config{
 		AppName:      env("APP_NAME", "Split Spends"),
 		Addr:         env("ADDR", ":8080"),
-		BaseURL:      strings.TrimRight(env("BASE_URL", "http://localhost:8080"), "/"),
 		DatabaseURL:  env("DATABASE_URL", ""),
 		SignupMode:   auth.SignupMode(env("SIGNUP_MODE", string(auth.SignupInvite))),
 		CORSOrigins:  list(env("CORS_ORIGINS", "")),
 		DataDir:      env("DATA_DIR", "./data"),
 		WebDir:       env("WEB_DIR", ""),
-		LogLevel:     env("LOG_LEVEL", "info"),
-		LogFormat:    env("LOG_FORMAT", "json"),
+		LogLevel:     strings.ToLower(env("LOG_LEVEL", "info")),
+		LogFormat:    strings.ToLower(env("LOG_FORMAT", "json")),
 		SMTPHost:     env("SMTP_HOST", ""),
 		SMTPUsername: env("SMTP_USERNAME", ""),
 		SMTPPassword: env("SMTP_PASSWORD", ""),
@@ -145,6 +186,20 @@ func LoadConfig() (*Config, error) {
 	if c.DatabaseURL == "" {
 		return nil, fmt.Errorf("bootstrap.config.env.required.not-found.DATABASE_URL")
 	}
+	c.baseURLDefault = env("BASE_URL", "") == ""
+	if c.BaseURL, err = baseURL(env("BASE_URL", "http://localhost:8080")); err != nil {
+		return nil, err
+	}
+	switch c.LogLevel {
+	case "debug", "info", "warn", "error":
+	default:
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.LOG_LEVEL: use debug, info, warn or error")
+	}
+	switch c.LogFormat {
+	case "json", "text":
+	default:
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.LOG_FORMAT: use json or text")
+	}
 	secret := env("SECRET_KEY", "")
 	if len(secret) < 32 {
 		return nil, fmt.Errorf("bootstrap.config.env.invalid.SECRET_KEY: set at least 32 random characters, for example from `openssl rand -hex 32`")
@@ -157,7 +212,7 @@ func LoadConfig() (*Config, error) {
 	switch c.SignupMode {
 	case auth.SignupOpen, auth.SignupInvite, auth.SignupDomain, auth.SignupApproval, auth.SignupClosed:
 	default:
-		return nil, fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_MODE: use open, invite, approval or closed")
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.SIGNUP_MODE: use open, invite, approval or closed (domain still works, as invite with SIGNUP_ALLOWED_DOMAINS)")
 	}
 	c.AllowedDomains = list(env("SIGNUP_ALLOWED_DOMAINS", ""))
 	if len(c.AllowedDomains) > auth.MaxAllowed {
@@ -186,8 +241,8 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("bootstrap.config.env.invalid.DATABASE_MAX_CONNS: use a whole number from 1 to 2147483647")
 	}
 	c.DatabaseConns = int32(conns)
-	if c.SMTPPort, err = strconv.Atoi(env("SMTP_PORT", "587")); err != nil {
-		return nil, fmt.Errorf("bootstrap.config.env.invalid.SMTP_PORT")
+	if c.SMTPPort, err = strconv.Atoi(env("SMTP_PORT", "587")); err != nil || c.SMTPPort < 1 || c.SMTPPort > 65535 {
+		return nil, fmt.Errorf("bootstrap.config.env.invalid.SMTP_PORT: use a port number from 1 to 65535")
 	}
 	if c.SMTPHost != "" && c.SMTPFrom == "" {
 		c.SMTPFrom = c.SMTPUsername
@@ -198,18 +253,18 @@ func LoadConfig() (*Config, error) {
 	if c.ProxyHops, err = hops(env("TRUST_PROXY", "false")); err != nil {
 		return nil, err
 	}
-	c.MCPEnabled, _ = strconv.ParseBool(env("MCP_ENABLED", "true"))
-	if c.MCPAdminTools, err = strconv.ParseBool(env("MCP_ADMIN_TOOLS", "false")); err != nil {
-		return nil, fmt.Errorf("bootstrap.config.env.invalid.MCP_ADMIN_TOOLS: use true or false")
+	if c.MCPEnabled, err = flag("MCP_ENABLED", true); err != nil {
+		return nil, err
 	}
-	switch strings.ToLower(env("GRAVATAR", "on")) {
-	case "on", "true", "1":
-		c.Gravatar = true
-	case "off", "false", "0":
-	default:
-		return nil, fmt.Errorf("bootstrap.config.env.invalid.GRAVATAR: use on or off")
+	if c.MCPAdminTools, err = flag("MCP_ADMIN_TOOLS", false); err != nil {
+		return nil, err
 	}
-	c.Serverless, _ = strconv.ParseBool(env("SERVERLESS", "false"))
+	if c.Gravatar, err = flag("GRAVATAR", true); err != nil {
+		return nil, err
+	}
+	if c.Serverless, err = flag("SERVERLESS", false); err != nil {
+		return nil, err
+	}
 	if err := c.loadPush(); err != nil {
 		return nil, err
 	}

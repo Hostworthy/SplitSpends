@@ -32,7 +32,7 @@ Split Spends is self-hosted: there is no central Split Spends service. You (or a
 | [Google Cloud Run](#google-cloud-run) | Free tier, plus database | Medium | Low traffic, scales to zero |
 | [AWS Lambda](#aws-lambda) | Free tier, plus database | Medium | You already use AWS |
 
-Free PostgreSQL databases that work with every option: [Neon](https://neon.tech) (free tier, does not expire) and [Supabase](https://supabase.com) (free tier, pauses after a week without traffic). Use the connection string with `sslmode=require`.
+Free PostgreSQL databases that work with every option: [Neon](https://neon.tech) (free tier, does not expire) and [Supabase](https://supabase.com) (free tier, pauses after a week without traffic). Use the direct connection string (on Neon the host without `-pooler`; on Supabase the session connection, not port 6543) with `sslmode=require`.
 
 Every option needs an email account that can send mail over SMTP (for example Gmail with an app password). See [ENVIRONMENT.md](ENVIRONMENT.md#email).
 
@@ -110,7 +110,7 @@ The server creates its push key on first start and keeps it in the database. If 
 - Behind a proxy or CDN, set `TRUST_PROXY` to the number of proxies in front of the server (`1` for a single reverse proxy; the shipped Docker, Cloud Run, Render and AWS setups already set it) so rate limits see real client addresses; leave it `false` when the server is directly exposed. See [Client Addresses](ENVIRONMENT.md#client-addresses).
 - Rate limits on sign-in and invite links are counted in each server instance's memory. Cloud Run and Lambda run several instances and start empty after idling, so there the limits apply per instance and are looser. Each sign-in code still stops working after a few wrong attempts.
 - Back up the database, and the receipts if they are not in it: they live in `DATA_DIR`, S3 or the database, depending on `BLOB_STORE`. The homelab stack backs up both (see [Restore](#restore)). The other setups back up nothing themselves: use your database provider's backups, and back up `DATA_DIR` or the S3 bucket when receipts live there.
-- Update regularly: pull the latest code and rebuild. Migrations run automatically on start.
+- Update regularly: pull the latest code and rebuild. Migrations run automatically on start and only go forward, so back up the database before updating; going back to an older release means restoring that backup.
 - If you enable AI, receipt images and expense text are sent to that provider. Choose one you trust, or run a local model through an OpenAI-compatible server.
 - The web app makes no third-party requests. Its engine, its Latin font and the Noto fallback fonts for emoji and other scripts are all in the repository and served by your own server (see [apps/web/README.md](../apps/web/README.md)).
 - Terraform state contains your secrets. Keep it in an encrypted, private backend: `deploy/aws` and `deploy/gcp` ship a `backend.tf.example` for an S3 or Cloud Storage bucket, and their READMEs set it up before the first apply.

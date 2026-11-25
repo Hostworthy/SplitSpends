@@ -13,7 +13,7 @@ Workflow for `$ARGUMENTS` following [ADR-001](../../../docs/adr/001-domain-drive
 - [ ] 2. Repository interface next to the entity
 - [ ] 3. Service using the interface; errors via errs.Validation/NotFound/Conflict
 - [ ] 4. Unit tests for the rules
-- [ ] 5. Migration 000NN_<name>.sql (new file; never edit applied ones)
+- [ ] 5. Migration 000NN_<name>.sql (new file, Up only; never edit applied ones)
 - [ ] 6. Repository in packages/database/repositories/
 - [ ] 7. Wire in packages/bootstrap/runtime.go (Services + Wire)
 - [ ] 8. Contract types in packages/platform/contract.go and docs/API.md

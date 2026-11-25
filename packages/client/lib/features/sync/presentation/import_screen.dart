@@ -42,11 +42,12 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
           .read(importServiceProvider)
           .upload(serverUrl: server, token: widget.login.token);
       await _finish();
-    } on ApiError catch (error) {
+    } catch (error) {
+      if (!mounted) return;
       setState(
-        () => _error = error.field == null
-            ? describeError(error)
-            : '${describeError(error)} (${error.field})',
+        () => _error = error is ApiError && error.field != null
+            ? '${describeError(error)} (${error.field})'
+            : describeError(error),
       );
     } finally {
       if (mounted) setState(() => _busy = false);

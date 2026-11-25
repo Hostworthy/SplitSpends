@@ -8,7 +8,7 @@ In the app, open **Account → API tokens**, create a token and copy it (it star
 
 ## Option 1: Remote (Streamable HTTP)
 
-Every Split Spends server exposes `POST /mcp`. Send the token as a bearer header. A request without one is answered `401 Unauthorized` with `WWW-Authenticate: Bearer` and the usual error envelope; an invalid or revoked token reaches the tools and comes back as a tool error asking for a new token.
+A Split Spends server serves `POST /mcp` unless it is started with `MCP_ENABLED=false` (see [Environment](ENVIRONMENT.md)); that setting removes the endpoint and leaves the API as it is. Send the token as a bearer header. A request without one is answered `401 Unauthorized` with `WWW-Authenticate: Bearer` and the usual error envelope; an invalid or revoked token reaches the tools and comes back as a tool error asking for a new token.
 
 Claude Code:
 
@@ -75,6 +75,12 @@ Set `SPLITSPENDS_URL` to the exact address the server answers on, usually its `h
 The admin tools are off by default. The tools read text that other people wrote, such as expense descriptions, notes and names, and an assistant can mistake such text for instructions; keeping the admin tools away from everyday sessions means an administrator's token cannot be talked into changing the instance. Turn them on only for a session you use to administer: set `MCP_ADMIN_TOOLS=true` on the server for `/mcp`, or `SPLITSPENDS_ADMIN_TOOLS=true` for the stdio server. Even then the API refuses them unless your role allows it, and `get_overview` shows your role.
 
 Text that people wrote is shown in double quotes, and the server tells the assistant to treat it as data, not instructions. That lowers the risk but does not remove it, so keep tool confirmation on in your assistant for anything that changes data.
+
+## Security
+
+- An API token carries the full rights of the account that created it, through the API as well as through the MCP tools: whoever holds it can read everything that person can see and add, change or delete expenses in their name. It does not expire. Revoke it under **Account → API tokens** when an assistant no longer needs it. A token cannot create or revoke tokens; that takes the app.
+- An administrator's or manager's token keeps those rights even while the admin tools are off: turning them off only keeps the tools away from the assistant. Prefer an assistant token from an account that is not an administrator.
+- The token travels with every request, to `/mcp` and from the stdio server to the API, so use `https://` addresses (see [Option 2](#option-2-local-stdio)). Turn `/mcp` off with `MCP_ENABLED=false` if nobody on your instance uses it.
 
 Example prompts: "How much do I owe in the Lisbon trip?", "Add 84.20 for groceries in Flat, split with everyone", "Ben paid me back 25 euros", "Remind Sam about the Lisbon trip".
 

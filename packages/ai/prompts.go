@@ -59,13 +59,17 @@ func receiptInstructions(in ports.ReceiptInput) string {
 }
 
 func draftInstructions(in ports.DraftInput) string {
+	// People who share a name are numbered so that the model sees they are
+	// different people; nothing else about them is sent.
 	var people strings.Builder
+	seen := map[string]int{}
 	for _, p := range in.People {
-		email := p.Email
-		if email == "" {
-			email = "no email"
+		seen[p.Name]++
+		name := p.Name
+		if n := seen[p.Name]; n > 1 {
+			name = fmt.Sprintf("%s (%d)", p.Name, n)
 		}
-		fmt.Fprintf(&people, "- id %s: %s <%s>\n", p.ID, p.Name, email)
+		fmt.Fprintf(&people, "- id %s: %s\n", p.ID, name)
 	}
 	if people.Len() == 0 {
 		people.WriteString("- (nobody yet)\n")

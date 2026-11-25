@@ -1,6 +1,8 @@
 package assist
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +106,24 @@ func TestReceiptTotalReconciles(t *testing.T) {
 	}
 }
 
+func TestTipAboveTotalWarns(t *testing.T) {
+	d, err := build(world(), Request{GroupID: &trip}, ports.DraftExtract{
+		Amount: "1.00", Tip: "5", Tax: "-2",
+		Items: []ports.DraftItem{{Name: "A", Amount: "10.00"}, {Name: "B", Amount: "-4.00"}},
+	}, "2026-10-06", "USD", noRates)
+	must(t, err)
+	var items int64
+	for _, it := range d.Items {
+		items += it.Amount
+	}
+	if len(d.Items) != 1 || items != 1000 || d.Tax != 0 || d.Tip != 500 || d.Total != 1500 || d.Payers[0].Amount != 1500 {
+		t.Fatalf("lines must stay as read when they cannot reach the total: %+v", d)
+	}
+	if !strings.Contains(strings.Join(d.Warnings, " "), "The receipt total did not match its lines") {
+		t.Fatalf("a total the lines cannot reach must be reported: %v", d.Warnings)
+	}
+}
+
 func eurTable() *rates.Table {
 	t, _ := rates.New("USD", map[string]string{"EUR": "0.8", "JPY": "150"})
 	t.Published = time.Date(2026, 11, 24, 0, 0, 0, 0, time.UTC)
@@ -133,6 +153,53 @@ func TestReceiptInAnotherCurrencyIsConverted(t *testing.T) {
 	}
 }
 
+func TestDraftUsesGroupDefaultSplit(t *testing.T) {
+	split := func(method group.SplitMethod, values map[uuid.UUID]string) *group.DefaultSplit {
+		return &group.DefaultSplit{Method: method, Values: values}
+	}
+	cases := []struct {
+		name   string
+		preset *group.DefaultSplit
+		ext    ports.DraftExtract
+		method expense.Method
+		splits []expense.SplitInput
+		warn   string
+	}{
+		{"shares", split(group.SplitShares, map[uuid.UUID]string{ada: "2", ben: "1"}), ports.DraftExtract{Amount: "30"},
+			expense.MethodShares, []expense.SplitInput{{UserID: ada, Value: "2"}, {UserID: ben, Value: "1"}}, ""},
+		{"a member at zero takes no part", split(group.SplitPercent, map[uuid.UUID]string{ada: "100", ben: "0.00"}), ports.DraftExtract{Amount: "30"},
+			expense.MethodPercent, []expense.SplitInput{{UserID: ada, Value: "100"}}, ""},
+		{"no items read", split(group.SplitPercent, map[uuid.UUID]string{ada: "60", ben: "40"}),
+			ports.DraftExtract{Amount: "30", Items: []ports.DraftItem{{Name: "A", Amount: "-1"}}},
+			expense.MethodPercent, []expense.SplitInput{{UserID: ada, Value: "60"}, {UserID: ben, Value: "40"}}, "so the group's default split is used"},
+		{"people named in the instructions", split(group.SplitShares, map[uuid.UUID]string{ada: "2", ben: "1"}),
+			ports.DraftExtract{Amount: "30", ParticipantIDs: []string{ben.String()}},
+			expense.MethodEqual, []expense.SplitInput{{UserID: ben}}, ""},
+		{"stale default", split(group.SplitShares, map[uuid.UUID]string{ada: "2", cleo: "1"}), ports.DraftExtract{Amount: "30"},
+			expense.MethodEqual, []expense.SplitInput{{UserID: ada}, {UserID: ben}}, ""},
+		{"equal default", split(group.SplitEqual, nil), ports.DraftExtract{Amount: "30"},
+			expense.MethodEqual, []expense.SplitInput{{UserID: ada}, {UserID: ben}}, ""},
+	}
+	for _, c := range cases {
+		k := world()
+		k.groups[trip].DefaultSplit = c.preset
+		d, err := build(k, Request{GroupID: &trip}, c.ext, "2026-10-06", "USD", noRates)
+		must(t, err)
+		if d.Method != c.method || !slices.Equal(d.Splits, c.splits) {
+			t.Errorf("%s: got %s %+v, want %s %+v", c.name, d.Method, d.Splits, c.method, c.splits)
+			continue
+		}
+		if c.warn != "" && !strings.Contains(strings.Join(d.Warnings, " "), c.warn) {
+			t.Errorf("%s: warnings %v do not say %q", c.name, d.Warnings, c.warn)
+		}
+		in := expense.Input{GroupID: d.GroupID, Description: d.Description, Currency: d.Currency, Total: d.Total, Method: d.Method,
+			Date: d.Date, Payers: d.Payers, Splits: d.Splits}
+		if _, err := expense.Normalize(in, time.Now()); err != nil {
+			t.Errorf("%s: draft does not validate: %v", c.name, err)
+		}
+	}
+}
+
 func TestOwnCurrencyOutsideGroups(t *testing.T) {
 	d, err := build(world(), Request{}, ports.DraftExtract{Amount: "10", Currency: "EUR", ParticipantIDs: []string{ben.String()}},
 		"2026-10-06", "USD", eurTable)
@@ -146,5 +213,21 @@ func TestNoRatesNoGuessing(t *testing.T) {
 	_, err := build(world(), Request{GroupID: &trip}, ports.DraftExtract{Amount: "10", Currency: "USD"}, "2026-10-06", "USD", noRates)
 	if !errs.Is(err, errs.KindNoRates) {
 		t.Fatalf("without rates the draft must not silently keep another currency: %v", err)
+	}
+}
+
+// TestInputCarriesNoEmails checks that the people sent to the AI provider are
+// ids and names only.
+func TestInputCarriesNoEmails(t *testing.T) {
+	k := world()
+	k.me.Email = "ada@example.com"
+	k.people[ben].Email = "ben@example.com"
+	k.people[cleo].Email = "cleo@example.com"
+	in := k.input("dinner with Ben", "2026-10-06", "USD")
+	if len(in.People) != 2 || in.Me.Name != "Ada" {
+		t.Fatalf("people missing: %+v", in)
+	}
+	if sent := fmt.Sprintf("%+v", in); strings.Contains(sent, "@") {
+		t.Fatalf("the draft input must not carry email addresses: %s", sent)
 	}
 }
