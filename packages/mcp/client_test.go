@@ -326,3 +326,37 @@ func TestDoSendsToken(t *testing.T) {
 		t.Fatalf("a client without a token must send no Authorization header, sent %q", got.Get("Authorization"))
 	}
 }
+
+func TestOrigin(t *testing.T) {
+	cases := []struct {
+		raw, want string
+		insecure  bool
+		ok        bool
+	}{
+		{"https://split.example.com", "https://split.example.com", false, true},
+		{"https://split.example.com/", "https://split.example.com", false, true},
+		{" https://split.example.com// ", "https://split.example.com", false, true},
+		{"https://example.com/split", "https://example.com/split", false, true},
+		{"http://localhost:8080", "http://localhost:8080", false, true},
+		{"http://127.0.0.1:8080", "http://127.0.0.1:8080", false, true},
+		{"http://[::1]:8080", "http://[::1]:8080", false, true},
+		{"http://split.example.com", "http://split.example.com", true, true},
+		{"http://192.168.1.20:8080", "http://192.168.1.20:8080", true, true},
+		{"split.example.com", "", false, false},
+		{"split.example.com:8080", "", false, false},
+		{"ftp://split.example.com", "", false, false},
+		{"https://", "", false, false},
+		{"https://split.example.com/api/v1", "", false, false},
+		{"https://example.com/split/api/v1/", "", false, false},
+		{"https://user:pw@split.example.com", "", false, false},
+		{"https://split.example.com?x=1", "", false, false},
+		{"https://split.example.com/#top", "", false, false},
+		{"", "", false, false},
+	}
+	for _, tc := range cases {
+		got, insecure, err := Origin(tc.raw)
+		if (err == nil) != tc.ok || got != tc.want || insecure != tc.insecure {
+			t.Errorf("Origin(%q) = %q, %v, %v; want %q, %v, ok %v", tc.raw, got, insecure, err, tc.want, tc.insecure, tc.ok)
+		}
+	}
+}
