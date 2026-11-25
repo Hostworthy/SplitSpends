@@ -2,8 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/session.dart';
+import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/features/auth/domain/auth_repository.dart';
 import 'package:splitspends/features/auth/presentation/auth_layout.dart';
 import 'package:splitspends/features/sync/domain/import_payload.dart';
@@ -57,6 +59,12 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
   @override
   Widget build(BuildContext context) {
     final summary = ref.watch(_summaryProvider).value;
+    final server = ref.watch(sessionProvider).value?.serverUrl ?? '';
+    final uploaded = summary?.uploaded;
+    // Uploading to the same server again is safe but rarely wanted.
+    final again =
+        uploaded != null &&
+        normalizeServerUrl(uploaded.server) == normalizeServerUrl(server);
     final scheme = Theme.of(context).colorScheme;
     String count(int n, String one, String many) => '$n ${n == 1 ? one : many}';
     final what = summary == null
@@ -64,6 +72,14 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         : '${count(summary.groups, 'group', 'groups')}, '
               '${count(summary.expenses, 'expense', 'expenses')} and '
               '${count(summary.people, 'person', 'people')}';
+    final uploadIcon = _busy
+        ? const SizedBox.square(
+            dimension: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : const Icon(Icons.cloud_upload_rounded);
+    final skip = _busy ? null : _finish;
+    const skipLabel = Text('Start fresh (keep local copy)');
     return AuthLayout(
       title: 'Bring your data along?',
       subtitle:
@@ -71,27 +87,49 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
           'with an email are matched to their accounts; the rest are added '
           'by name. Nothing is emailed during the upload.',
       children: [
+        if (uploaded != null) ...[
+          Text(
+            again
+                ? 'You already uploaded this data to this server on '
+                      '${Dates.short(uploaded.at.toLocal())}.'
+                : 'You uploaded this data to '
+                      '${Uri.tryParse(uploaded.server)?.host ?? uploaded.server}'
+                      ' on ${Dates.short(uploaded.at.toLocal())}.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 16),
+        ],
         if (_error != null) ...[
           Text(_error!, style: TextStyle(color: scheme.error)),
           const SizedBox(height: 16),
         ],
-        FilledButton.icon(
-          key: const Key('import-upload'),
-          onPressed: _busy ? null : _upload,
-          icon: _busy
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.cloud_upload_rounded),
-          label: const Text('Upload'),
-        ),
-        const SizedBox(height: 12),
-        OutlinedButton(
-          key: const Key('import-skip'),
-          onPressed: _busy ? null : _finish,
-          child: const Text('Start fresh (keep local copy)'),
-        ),
+        if (again) ...[
+          FilledButton(
+            key: const Key('import-skip'),
+            onPressed: skip,
+            child: skipLabel,
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            key: const Key('import-upload'),
+            onPressed: _busy ? null : _upload,
+            icon: uploadIcon,
+            label: const Text('Upload again'),
+          ),
+        ] else ...[
+          FilledButton.icon(
+            key: const Key('import-upload'),
+            onPressed: _busy ? null : _upload,
+            icon: uploadIcon,
+            label: const Text('Upload'),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            key: const Key('import-skip'),
+            onPressed: skip,
+            child: skipLabel,
+          ),
+        ],
         const SizedBox(height: 16),
         Text(
           'Either way, the on-device copy stays here until you remove it '
