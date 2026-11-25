@@ -51,7 +51,13 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
 // avatarUrl is set only when the person turned on Gravatar (and the host allows it).
 // It answers 404 when they have no Gravatar, so clients keep the initials as a fallback.
 // An account an administrator disabled shows as "active" to everyone except
-// administrators (/admin/accounts), whose Account shape has "status": "disabled".
+// administrators: only the Account shape below says "disabled".
+
+// Account (a person as administrators see them, GET /admin/accounts)
+{ ...User, "status": "active" | "invited" | "disabled", "role": "user" | "manager" | "admin",
+  "createdAt": "RFC3339" }
+// "invited" with a null email is an account an administrator enabled again
+// that has not signed in since (see Administration).
 
 // Me (User plus private settings). In notifications the top-level switches
 // are email (as before push existed); push has the same keys.
@@ -94,6 +100,7 @@ Dates are `YYYY-MM-DD`; timestamps are RFC 3339 UTC.
   "items": [{ "name": "Pizza", "amount": 2400, "userIds": ["uuid"] }],   // itemized only
   "tax": 0, "tip": 0,                                                    // itemized only
   "receiptId": "uuid" | null, "recurrence": "none" | "weekly" | "biweekly" | "monthly" | "yearly",
+  "nextDate": "2026-12-20" | null /* recurring only: the date the next copy is booked */,
   "createdBy": "uuid", "updatedBy": "uuid", "createdAt": "...", "updatedAt": "...",
   "deleted": false, "commentCount": 2,
   "myBalance": -3000 /* caller's paid - owed in this expense */ }
