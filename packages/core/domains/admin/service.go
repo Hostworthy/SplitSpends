@@ -80,16 +80,25 @@ func (s *Service) Request(ctx context.Context, email, name string) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	latest, pending, err := s.d.Requests.List(ctx, StatusPending, 1, 0)
-	if err != nil {
-		return false, err
-	}
-	if pending >= MaxPending {
-		return false, errs.RateLimited("Too many people are waiting to join right now. Try again in a few days.")
-	}
 	now := s.d.Clock.Now()
 	r = &Request{ID: uuid.New(), Email: email, Name: name, Status: StatusPending, RequestedAt: now}
-	if err := s.d.Requests.Save(ctx, r); err != nil {
+	// Counted and filed under the queue's lock, so requests at the same time
+	// cannot both take the last place.
+	var latest []*Request
+	err = s.d.Tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.d.Requests.Lock(ctx); err != nil {
+			return err
+		}
+		var pending int
+		if latest, pending, err = s.d.Requests.List(ctx, StatusPending, 1, 0); err != nil {
+			return err
+		}
+		if pending >= MaxPending {
+			return errs.RateLimited("Too many people are waiting to join right now. Try again in a few days.")
+		}
+		return s.d.Requests.Save(ctx, r)
+	})
+	if err != nil {
 		return false, err
 	}
 	if len(latest) == 0 || !now.Before(latest[0].RequestedAt.Add(announceEvery)) {

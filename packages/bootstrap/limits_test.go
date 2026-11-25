@@ -3,7 +3,9 @@ package bootstrap_test
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +17,8 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/transfer"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/packages/database"
+	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/google/uuid"
 )
 
@@ -196,6 +200,53 @@ func TestPlaceholderLimit(t *testing.T) {
 	}
 }
 
+// naming is the user repository with a hook that runs right before a user
+// is saved.
+type naming struct {
+	*repositories.Users
+	before func()
+}
+
+func (n naming) Create(ctx context.Context, u *user.User) error {
+	n.before()
+	return n.Users.Create(ctx, u)
+}
+
+// TestPlaceholderLimitIsAtomic checks that people added by name at the same
+// time cannot take an account past user.MaxPlaceholders.
+func TestPlaceholderLimitIsAtomic(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	bundle := transfer.Bundle{Me: uuid.New()}
+	for i := range user.MaxPlaceholders - 1 {
+		bundle.People = append(bundle.People, transfer.Person{ID: uuid.New(), Name: fmt.Sprintf("Person %d", i)})
+	}
+	if _, err := env.Services.Transfer.Import(ctx, ada, bundle); err != nil {
+		t.Fatal(err)
+	}
+	// One place is left. Right before it is taken, someone else is added.
+	other := make(chan error, 1)
+	var once sync.Once
+	repo := naming{repositories.NewUsers(env.DB), func() {
+		once.Do(func() {
+			meanwhile(t, env, func() {
+				_, err := env.Services.Users.Placeholder(ctx, nil, "Late", ada)
+				other <- err
+			})
+		})
+	}}
+	svc := user.NewService(repo, nil, repositories.NewQuotas(env.DB), database.NewTx(env.DB), env.Clock, slog.New(slog.DiscardHandler), user.Settings{})
+	_, err := svc.Placeholder(ctx, nil, "Last", ada)
+	late := <-other
+	if (err == nil) == (late == nil) {
+		t.Fatalf("exactly one person may take the last place, got %v and %v", err, late)
+	}
+	if n, err := repositories.NewUsers(env.DB).Placeholders(ctx, ada); err != nil || n != user.MaxPlaceholders {
+		t.Fatalf("want %d people added by name, got %d, %v", user.MaxPlaceholders, n, err)
+	}
+}
+
 // TestCommentLimit checks that an expense holds at most expense.MaxComments
 // comments, also when people post at the same time, and that comments come
 // a page at a time, oldest first.
@@ -323,5 +374,63 @@ func TestGroupLimit(t *testing.T) {
 	}
 	if mine, err := svc.Groups.Mine(ctx, ben); err != nil || len(mine) != 1 {
 		t.Fatalf("the refused group must not be saved: %d groups, %v", len(mine), err)
+	}
+}
+
+// joining is the group repository with a hook that runs right before
+// someone is added to a group.
+type joining struct {
+	*repositories.Groups
+	before func()
+}
+
+func (j joining) AddMember(ctx context.Context, groupID, userID uuid.UUID, at time.Time) error {
+	j.before()
+	return j.Groups.AddMember(ctx, groupID, userID, at)
+}
+
+// TestGroupLimitIsAtomic checks that groups made and joined at the same time
+// cannot take someone past group.MaxPerUser.
+func TestGroupLimitIsAtomic(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
+	_, err := env.DB.Pool.Exec(ctx, `WITH made AS (
+			INSERT INTO groups (id, created_by, created_at, updated_at, name, kind, default_currency)
+			SELECT gen_random_uuid(), $1, $2, $2, 'Group ' || n, 'other', 'EUR' FROM generate_series(1, $3::int) n RETURNING id)
+		INSERT INTO group_members (group_id, user_id, joined_at) SELECT id, $1, $2 FROM made`,
+		ada, env.Clock.Now(), group.MaxPerUser-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "Bens"
+	bens, err := env.Services.Groups.Create(ctx, ben, group.CreateInput{Patch: group.Patch{Name: &name}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One place is left. Right before Ada takes it with a new group, she
+	// joins Ben's.
+	other := make(chan error, 1)
+	var once sync.Once
+	repo := joining{repositories.NewGroups(env.DB), func() {
+		once.Do(func() {
+			meanwhile(t, env, func() {
+				_, err := env.Services.Groups.Join(ctx, ada, bens.ID)
+				other <- err
+			})
+		})
+	}}
+	svc := group.NewService(group.Deps{Repo: repo, Users: env.Services.Users, Balances: env.Services.Balances,
+		Activity: env.Services.Activity, Notifier: env.Notifier, Quota: repositories.NewQuotas(env.DB), Tx: database.NewTx(env.DB),
+		Clock: env.Clock, BaseURL: "http://test"})
+	name = "Last one"
+	_, err = svc.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name}})
+	late := <-other
+	if (err == nil) == (late == nil) {
+		t.Fatalf("exactly one group may take the last place, got %v and %v", err, late)
+	}
+	if n, err := repositories.NewGroups(env.DB).Joined(ctx, ada); err != nil || n != group.MaxPerUser {
+		t.Fatalf("want Ada in %d groups, got %d, %v", group.MaxPerUser, n, err)
 	}
 }

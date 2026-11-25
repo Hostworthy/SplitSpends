@@ -90,6 +90,15 @@ func (r *SignupRequests) Save(ctx context.Context, req *admin.Request) error {
 	return err
 }
 
+// requestLock is the first key of the transaction advisory lock on the
+// queue of requests to join.
+const requestLock = 1_384_205
+
+func (r *SignupRequests) Lock(ctx context.Context) error {
+	_, err := r.db.Q(ctx).Exec(ctx, `SELECT pg_advisory_xact_lock($1, 0)`, requestLock)
+	return err
+}
+
 func (r *SignupRequests) List(ctx context.Context, status admin.Status, limit, offset int) ([]*admin.Request, int, error) {
 	var total int
 	if err := r.db.Q(ctx).QueryRow(ctx, `SELECT count(*) FROM signup_requests WHERE status = $1`, status).Scan(&total); err != nil {

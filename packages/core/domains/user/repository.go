@@ -21,6 +21,8 @@ type Repository interface {
 	// transaction in ctx ends, so the first account and changes to
 	// administrators happen one at a time. It must be called inside Tx.Do.
 	Lock(ctx context.Context) error
-	// Placeholders counts the people createdBy added by name only.
+	// Placeholders counts the people createdBy added by name only. Inside a
+	// transaction it holds createdBy's count until the transaction ends, so
+	// people added at the same time count each other.
 	Placeholders(ctx context.Context, createdBy uuid.UUID) (int, error)
 }
