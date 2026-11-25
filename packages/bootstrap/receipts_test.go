@@ -9,11 +9,15 @@ import (
 	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap"
+	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/assist"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/expense"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/group"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/receipt"
+	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
+	"github.com/Hostworthy/SplitSpends/packages/storage/storagetest"
 	"github.com/google/uuid"
 )
 
@@ -123,5 +127,151 @@ func TestReceiptAttach(t *testing.T) {
 	}
 	if updated.ReceiptID == nil || *updated.ReceiptID != r.ID {
 		t.Fatalf("the receipt must stay on the expense, got %v", updated.ReceiptID)
+	}
+}
+
+// TestReceiptAccess checks who may open a receipt on an expense: its
+// uploader, the group's current members and the people sharing the expense,
+// also after it was deleted (it can be restored), but not a member who left
+// without a share, a friend outside the group or someone who knows nobody.
+func TestReceiptAccess(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	svc := env.Services
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+	v, err := svc.Groups.AddMember(ctx, ada, g.ID, group.Invitee{Email: "cy@example.com", Name: "Cy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cy uuid.UUID
+	for _, m := range v.Members {
+		if m != ada && m != ben {
+			cy = m
+		}
+	}
+	zoe := env.SignIn(t, "zoe@example.com", "Zoe").User.ID
+	mal := env.SignIn(t, "mal@example.com", "Mal").User.ID
+	if _, err := svc.Friends.Add(ctx, ada, "zoe@example.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	book := func(groupID *uuid.UUID, other uuid.UUID) (*receipt.Receipt, *expense.Expense) {
+		t.Helper()
+		r, err := svc.Receipts.Upload(ctx, ada, png)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, err := svc.Expenses.Create(ctx, ada, expense.Input{GroupID: groupID, Description: "Bread", Currency: "EUR",
+			Total: 300, Date: "2026-03-15", Method: expense.MethodEqual, ReceiptID: &r.ID,
+			Payers: []expense.Payer{{UserID: ada, Amount: 300}}, Splits: []expense.SplitInput{{UserID: ada}, {UserID: other}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r, e
+	}
+	check := func(step string, r *receipt.Receipt, who map[string]uuid.UUID, visible bool) {
+		t.Helper()
+		for name, id := range who {
+			_, body, err := svc.Receipts.Open(ctx, id, r.ID)
+			if err == nil {
+				_ = body.Close()
+			}
+			if visible && err != nil {
+				t.Errorf("%s: %s must see the receipt, got %v", step, name, err)
+			}
+			if !visible && !errs.Is(err, errs.KindNotFound) {
+				t.Errorf("%s: %s must not see the receipt, got %v", step, name, err)
+			}
+		}
+	}
+
+	shared, bread := book(&g.ID, ben)
+	dinner, _ := book(nil, zoe)
+	check("group expense", shared, map[string]uuid.UUID{"Ada": ada, "Ben": ben, "Cy": cy}, true)
+	check("group expense", shared, map[string]uuid.UUID{"Zoe": zoe, "Mal": mal}, false)
+	check("expense outside groups", dinner, map[string]uuid.UUID{"Ada": ada, "Zoe": zoe}, true)
+	check("expense outside groups", dinner, map[string]uuid.UUID{"Ben": ben, "Cy": cy, "Mal": mal}, false)
+
+	if err := svc.Groups.RemoveMember(ctx, cy, g.ID, cy); err != nil {
+		t.Fatal(err)
+	}
+	check("after Cy left", shared, map[string]uuid.UUID{"Cy": cy}, false)
+
+	if err := svc.Expenses.Delete(ctx, ada, bread.ID); err != nil {
+		t.Fatal(err)
+	}
+	check("deleted expense", shared, map[string]uuid.UUID{"Ada": ada, "Ben": ben}, true)
+	check("deleted expense", shared, map[string]uuid.UUID{"Cy": cy, "Mal": mal}, false)
+}
+
+// TestBlobs checks the PostgreSQL blob store keeps the blob store contract.
+func TestBlobs(t *testing.T) {
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	storagetest.Run(t, repositories.NewBlobs(env.DB))
+}
+
+// drafts is an AI reader that counts the drafts it is asked for.
+type drafts struct {
+	ports.ReceiptReader
+	calls int
+}
+
+func (d *drafts) DraftExpense(context.Context, ports.DraftInput) (ports.DraftExtract, error) {
+	d.calls++
+	return ports.DraftExtract{Description: "Bread", Amount: "3"}, nil
+}
+
+// TestDraftNeedsMembership checks that a draft in a group the user is not
+// in, or with a receipt they cannot see, fails before anything about the
+// group or the receipt reaches the AI provider.
+func TestDraftNeedsMembership(t *testing.T) {
+	ctx := context.Background()
+	reader := &drafts{}
+	env := bootstraptest.Open(t, bootstraptest.Options{Reader: reader})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	mal := env.SignIn(t, "mal@example.com", "Mal").User.ID
+	name := "Flat"
+	g, err := env.Services.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := env.Services.Receipts.Upload(ctx, ada, append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, req := range []assist.Request{
+		{Text: "bread 3", GroupID: &g.ID},
+		{Text: "bread 3", ReceiptID: &r.ID},
+	} {
+		if _, err := env.Services.Assist.Draft(ctx, mal, req); !errs.Is(err, errs.KindNotFound) {
+			t.Errorf("%+v: want not found, got %v", req, err)
+		}
+	}
+	if reader.calls != 0 {
+		t.Fatalf("nothing may reach the AI provider: %d drafts", reader.calls)
+	}
+	if _, err := env.Services.Assist.Draft(ctx, ada, assist.Request{Text: "bread 3", GroupID: &g.ID, ReceiptID: &r.ID}); err != nil || reader.calls != 1 {
+		t.Fatalf("Ada drafts in her own group with her receipt: %v, %d drafts", err, reader.calls)
+	}
+}
+
+// TestDraftNeedsReadableImage checks that a draft from a HEIC receipt, which
+// is stored but which AI providers cannot read, is refused before the
+// provider is asked.
+func TestDraftNeedsReadableImage(t *testing.T) {
+	ctx := context.Background()
+	reader := &drafts{}
+	env := bootstraptest.Open(t, bootstraptest.Options{Reader: reader})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	heic := append([]byte("\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic"), make([]byte, 64)...)
+	r, err := env.Services.Receipts.Upload(ctx, ada, heic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = env.Services.Assist.Draft(ctx, ada, assist.Request{ReceiptID: &r.ID})
+	if e, ok := errs.As(err); !ok || e.Kind != errs.KindValidation || e.Field != "file" {
+		t.Fatalf("want a validation error on file, got %v", err)
+	}
+	if reader.calls != 0 {
+		t.Fatalf("a HEIC receipt must not reach the AI provider: %d drafts", reader.calls)
 	}
 }

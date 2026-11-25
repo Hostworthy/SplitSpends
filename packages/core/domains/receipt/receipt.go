@@ -5,8 +5,10 @@ package receipt
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
+	"io/fs"
 	"math/big"
 	"slices"
 	"strings"
@@ -40,8 +42,14 @@ var allowedTypes = map[string]string{
 	"image/png":  "png",
 	"image/webp": "webp",
 	"image/heic": "heic",
-	"image/heif": "heif",
 }
+
+// readable are the types AI providers accept. HEIC is stored so that it can
+// be shown, but no provider reads it.
+var readable = map[string]bool{"image/jpeg": true, "image/png": true, "image/webp": true}
+
+// heicBrands are the ISO media brands of HEIC still images and sequences.
+var heicBrands = map[string]bool{"heic": true, "heix": true, "hevc": true, "hevx": true, "heim": true, "heis": true}
 
 // Receipt is an uploaded image.
 type Receipt struct {
@@ -105,6 +113,15 @@ type Service struct {
 // NewService builds a Service. reader may be nil when AI is disabled.
 func NewService(repo Repository, blobs ports.BlobStore, reader ports.ReceiptReader, tx ports.Tx, c clock.Clock) *Service {
 	return &Service{repo: repo, blobs: blobs, reader: reader, tx: tx, clock: c}
+}
+
+// Readable returns a validation error unless AI providers can read the
+// receipt's image.
+func (r *Receipt) Readable() error {
+	if !readable[r.ContentType] {
+		return errs.Validation("file", "AI can read JPEG, PNG and WebP photos.")
+	}
+	return nil
 }
 
 // AIEnabled reports whether scanning is available.
@@ -210,6 +227,11 @@ func (s *Service) Open(ctx context.Context, actor, id uuid.UUID) (*Receipt, io.R
 		return nil, nil, err
 	}
 	body, err := s.blobs.Open(ctx, r.StorageKey)
+	if errors.Is(err, fs.ErrNotExist) {
+		// The image was lost, for example with a restored database
+		// whose files were not restored. Like the row, it is gone.
+		return nil, nil, errs.NotFound("Receipt")
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -221,11 +243,23 @@ func (s *Service) Scan(ctx context.Context, actor, id uuid.UUID, currency string
 	if s.reader == nil {
 		return nil, errs.AIDisabled("AI features are not enabled on this server.")
 	}
+	// The hint goes into the provider's instructions, so only a known code
+	// may reach them.
+	if currency != "" {
+		cur, ok := money.Lookup(currency)
+		if !ok {
+			return nil, errs.Validation("currency", "Unsupported currency.")
+		}
+		currency = cur.Code
+	}
 	r, body, err := s.Open(ctx, actor, id)
 	if err != nil {
 		return nil, err
 	}
 	defer body.Close()
+	if err := r.Readable(); err != nil {
+		return nil, err
+	}
 	data, err := io.ReadAll(io.LimitReader(body, MaxSize+1))
 	if err != nil {
 		return nil, err
@@ -354,11 +388,31 @@ func sniff(data []byte) string {
 		return "image/png"
 	case len(data) > 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP":
 		return "image/webp"
-	case len(data) > 12 && string(data[4:8]) == "ftyp":
-		brand := string(data[8:12])
-		if strings.HasPrefix(brand, "hei") || strings.HasPrefix(brand, "hev") || brand == "mif1" || brand == "msf1" {
-			return "image/heic"
-		}
+	case len(data) > 12 && string(data[4:8]) == "ftyp" && heic(data):
+		return "image/heic"
 	}
 	return ""
+}
+
+// heic reports whether an ISO media file is a HEIC image: its major brand
+// is a HEIC brand, or it is a generic HEIF file listing one as compatible.
+// AVIF files are HEIF too but carry AV1 instead.
+func heic(data []byte) bool {
+	major := string(data[8:12])
+	if heicBrands[major] {
+		return true
+	}
+	if major != "mif1" && major != "msf1" {
+		return false
+	}
+	size := int(binary.BigEndian.Uint32(data[0:4]))
+	if size > len(data) {
+		return false
+	}
+	for i := 16; i+4 <= size; i += 4 {
+		if heicBrands[string(data[i:i+4])] {
+			return true
+		}
+	}
+	return false
 }

@@ -291,10 +291,10 @@ Deleting hides a category from listings and from new expenses but never rewrites
 
 | Method | Path | Body | Response |
 | ------ | ---- | ---- | -------- |
-| POST | `/receipts` | `multipart/form-data` field `file` (jpeg, png, webp, heic; max 10 MB) | 201 `{ data: { id, contentType, size, createdAt } }`; 409 `CONFLICT` when you already hold 50 receipts, or 200 MB, that no expense uses; 429 `RATE_LIMITED` after 60 uploads in an hour |
+| POST | `/receipts` | `multipart/form-data` field `file` (jpeg, png, webp, heic; max 10 MB; AI reads jpeg, png and webp only) | 201 `{ data: { id, contentType, size, createdAt } }`; 409 `CONFLICT` when you already hold 50 receipts, or 200 MB, that no expense uses; 429 `RATE_LIMITED` after 60 uploads in an hour |
 | GET | `/receipts/{receiptId}` | | the image bytes |
-| POST | `/receipts/{receiptId}/scan` | `{ currency? }` | `{ data: ReceiptScan }`; 503 `AI_DISABLED` when the host did not configure AI |
-| POST | `/ai/expense-draft` | `{ text?, groupId?, receiptId? }` | `{ data: ExpenseDraft }` in the group's (or your) currency, converted when the receipt is in another one; 503 `AI_DISABLED` when the host did not configure AI, 503 `RATES_UNAVAILABLE` when a conversion is needed but no rate is available |
+| POST | `/receipts/{receiptId}/scan` | `{ currency? }` (ISO 4217 code used when the receipt shows none) | `{ data: ReceiptScan }`; 422 `VALIDATION_ERROR` on `currency` for an unknown code, or on `file` for a HEIC receipt; 503 `AI_DISABLED` when the host did not configure AI |
+| POST | `/ai/expense-draft` | `{ text?, groupId?, receiptId? }` | `{ data: ExpenseDraft }` in the group's (or your) currency, converted when the receipt is in another one; 422 `VALIDATION_ERROR` on `file` for a HEIC receipt; 503 `AI_DISABLED` when the host did not configure AI, 503 `RATES_UNAVAILABLE` when a conversion is needed but no rate is available |
 
 A receipt that no expense uses (deleted expenses count, since they can be restored) is removed by the cleanup job a day after its upload, image and all; attach it to an expense before then.
 

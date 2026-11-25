@@ -60,10 +60,16 @@ type Notification struct {
 	Link    string
 }
 
-// BlobStore persists binary objects such as receipt images.
+// BlobStore persists binary objects such as receipt images. Adapters stay
+// free of the domain, so a missing key is reported with the standard
+// library's fs.ErrNotExist.
 type BlobStore interface {
 	Put(ctx context.Context, key string, r io.Reader) error
+	// Open fails with an error matching fs.ErrNotExist when nothing is
+	// stored under key. It finds that out itself, so that the first read
+	// of a returned body does not.
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
+	// Delete succeeds when nothing is stored under key.
 	Delete(ctx context.Context, key string) error
 }
 
