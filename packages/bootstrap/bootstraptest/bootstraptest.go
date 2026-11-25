@@ -20,6 +20,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/database"
+	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/Hostworthy/SplitSpends/packages/storage"
 )
 
@@ -40,6 +41,9 @@ type Options struct {
 	// Blobs wraps the store images are kept in, which is on disk; nil
 	// keeps it as it is.
 	Blobs func(ports.BlobStore) ports.BlobStore
+	// Subscriptions wraps the database's store of push devices; nil keeps
+	// it as it is.
+	Subscriptions func(push.Repository) push.Repository
 }
 
 // Env is a wired set of services on a fresh schema.
@@ -116,8 +120,12 @@ func Open(t testing.TB, o Options) *Env {
 		now = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	}
 	env := &Env{Config: cfg, DB: &database.DB{Pool: pool}, Blobs: blobs, Notifier: NewNotifier(), Clock: NewClock(now)}
+	var subscriptions push.Repository = repositories.NewPushSubscriptions(env.DB)
+	if o.Subscriptions != nil {
+		subscriptions = o.Subscriptions(subscriptions)
+	}
 	env.Services = bootstrap.Wire(cfg, bootstrap.Adapters{DB: env.DB, Email: env.Notifier, Blobs: blobs, Reader: o.Reader,
-		Push: o.Sender, Clock: env.Clock})
+		Push: o.Sender, Subscriptions: subscriptions, Clock: env.Clock})
 	return env
 }
 

@@ -146,8 +146,10 @@ type Adapters struct {
 	Blobs  ports.BlobStore
 	Reader ports.Assistant
 	// Push delivers Web Push and knows its VAPID key; nil disables push.
-	Push  push.Sender
-	Clock clock.Clock
+	Push push.Sender
+	// Subscriptions stores push devices; nil keeps them in DB.
+	Subscriptions push.Repository
+	Clock         clock.Clock
 	// Log is where services log; nil discards.
 	Log *slog.Logger
 }
@@ -159,7 +161,11 @@ func Wire(cfg *Config, a Adapters) *Services {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	pushes := push.NewService(repositories.NewPushSubscriptions(db), a.Push, c,
+	subscriptions := a.Subscriptions
+	if subscriptions == nil {
+		subscriptions = repositories.NewPushSubscriptions(db)
+	}
+	pushes := push.NewService(subscriptions, a.Push, c,
 		push.Settings{AppName: cfg.AppName, Link: cfg.BaseURL, AllowPrivate: cfg.PushAllowPrivate})
 	var p pusher
 	if pushes.Enabled() {

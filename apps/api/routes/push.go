@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/push"
+	"github.com/Hostworthy/SplitSpends/packages/middleware"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
 )
 
@@ -56,6 +57,9 @@ func (a *API) testPush(w http.ResponseWriter, r *http.Request) error {
 	report, err := a.svc.Push.Test(r.Context(), me(r))
 	if err != nil {
 		return err
+	}
+	if report.Store != nil {
+		a.log.Error("push.test.store-failed", "requestId", middleware.RequestID(r.Context()), "error", report.Store)
 	}
 	return details(w, http.StatusOK, platform.PushTest{Sent: report.Sent, Failed: report.Failed, Removed: report.Removed})
 }
