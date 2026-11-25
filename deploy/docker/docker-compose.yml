@@ -62,8 +62,8 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     # Each file is written under a temporary name and renamed only when it is
     # complete, so a failed run never leaves a broken file that looks like a
-    # backup. Pruning runs only after a good dump, so a database that stays
-    # down does not age every good backup out.
+    # backup. Each kind is pruned only after a good run of that kind, so a
+    # database that stays down does not age every good backup out.
     command:
       - |
         umask 077
@@ -74,7 +74,7 @@ services:
           if pg_dump -h db -U splitspends -Fc -f "$$dump.tmp" splitspends; then
             mv "$$dump.tmp" "$$dump"
             echo "backup.dump.saved file=$$dump"
-            find /backups -maxdepth 1 -type f \( -name '*.dump' -o -name '*.tar.gz' -o -name '*.tmp' \) -mtime +"$$BACKUP_KEEP_DAYS" -delete
+            find /backups -maxdepth 1 -type f -name 'splitspends-*' -mtime +"$$BACKUP_KEEP_DAYS" -delete
           else
             rm -f "$$dump.tmp"
             echo "backup.dump.failed file=$$dump" >&2
@@ -82,6 +82,7 @@ services:
           if tar -czf "$$receipts.tmp" -C /data .; then
             mv "$$receipts.tmp" "$$receipts"
             echo "backup.receipts.saved file=$$receipts"
+            find /backups -maxdepth 1 -type f -name 'receipts-*' -mtime +"$$BACKUP_KEEP_DAYS" -delete
           else
             rm -f "$$receipts.tmp"
             echo "backup.receipts.failed file=$$receipts" >&2

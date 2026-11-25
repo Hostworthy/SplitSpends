@@ -184,6 +184,8 @@ resource "aws_lambda_function" "app" {
   memory_size      = 512
   timeout          = 30
   layers           = [local.adapter_layer]
+  # Every execution environment holds its own connection pool.
+  reserved_concurrent_executions = var.max_concurrency
 
   environment {
     variables = {
