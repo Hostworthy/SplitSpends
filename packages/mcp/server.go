@@ -53,7 +53,7 @@ func (t *tools) overview(ctx context.Context, _ *sdk.CallToolRequest, _ empty) (
 	fmt.Fprintf(&b, "You are %q <%s> (id %s), default currency %s, role %s.\n", me.Name, email(me.Email), me.ID, me.DefaultCurrency, me.Role)
 	fmt.Fprintf(&b, "Net balance: %s. Owed to you: %s. You owe: %s.\n\nGroups:\n", t.balances(ctx, totals.Balances), t.balances(ctx, totals.Owed), t.balances(ctx, totals.Owing))
 	for _, g := range groups.Items {
-		fmt.Fprintf(&b, "- %s %q (id %s, %d members): %s\n", g.Emoji, g.Name, g.ID, len(g.Members), t.balances(ctx, g.Balances))
+		fmt.Fprintf(&b, "- %q %q (id %s, %d members): %s\n", g.Emoji, g.Name, g.ID, len(g.Members), t.balances(ctx, g.Balances))
 	}
 	b.WriteString("\nFriends:\n")
 	for _, f := range friends.Items {
@@ -73,7 +73,7 @@ func (t *tools) listGroups(ctx context.Context, _ *sdk.CallToolRequest, _ empty)
 		for _, m := range g.Members {
 			names = append(names, strconv.Quote(m.Name)+" ("+m.ID+")")
 		}
-		fmt.Fprintf(&b, "%s %q\n  id: %s, currency %s, simplify debts %v\n  members: %s\n  your balance: %s\n",
+		fmt.Fprintf(&b, "%q %q\n  id: %s, currency %s, simplify debts %v\n  members: %s\n  your balance: %s\n",
 			g.Emoji, g.Name, g.ID, g.DefaultCurrency, g.SimplifyDebts, strings.Join(names, ", "), t.balances(ctx, g.Balances))
 	}
 	if b.Len() == 0 {
@@ -105,7 +105,7 @@ func (t *tools) getGroup(ctx context.Context, _ *sdk.CallToolRequest, in groupAr
 		idx[m.ID] = strconv.Quote(m.Name)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s %q (id %s), default currency %s, simplify debts %v\n\nBalances:\n", g.Emoji, g.Name, g.ID, g.DefaultCurrency, g.SimplifyDebts)
+	fmt.Fprintf(&b, "%q %q (id %s), default currency %s, simplify debts %v\n\nBalances:\n", g.Emoji, g.Name, g.ID, g.DefaultCurrency, g.SimplifyDebts)
 	for _, m := range sheet.Members {
 		fmt.Fprintf(&b, "- %s (%s): %s\n", idx.name(m.UserID), m.UserID, t.balances(ctx, m.Balances))
 	}

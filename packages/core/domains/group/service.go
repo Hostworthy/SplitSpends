@@ -458,6 +458,12 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 	var added *user.User
 	var invited bool
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		if g, err = s.locked(ctx, actor, id); err != nil {
+			return err
+		}
+		if len(g.Members) >= MaxMembers {
+			return full()
+		}
 		u, created, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
 		if err != nil {
 			return err
@@ -494,20 +500,31 @@ func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) 
 	if g.HasMember(actor) {
 		return s.view(ctx, actor, g)
 	}
-	if g.ArchivedAt != nil {
-		return nil, errs.Conflict(g.Name + " is archived, so nobody new can join it.")
-	}
-	if len(g.Members) >= MaxMembers {
-		return nil, errs.Conflict(fmt.Sprintf("This group already has %d members, the most a group can have.", MaxMembers))
-	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.room(ctx, actor, me); err != nil {
-		return nil, err
-	}
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		// Locked and read again so two people joining at once cannot both
+		// take the last place.
+		if _, err := s.repo.Lock(ctx, id); err != nil {
+			return err
+		}
+		if g, err = s.repo.Get(ctx, id); err != nil {
+			return err
+		}
+		if g.HasMember(actor) {
+			return nil
+		}
+		if g.ArchivedAt != nil {
+			return errs.Conflict(g.Name + " is archived, so nobody new can join it.")
+		}
+		if len(g.Members) >= MaxMembers {
+			return errs.Conflict(fmt.Sprintf("This group already has %d members, the most a group can have.", MaxMembers))
+		}
+		if err := s.room(ctx, actor, me); err != nil {
+			return err
+		}
 		if err := s.repo.AddMember(ctx, g.ID, actor, s.clock.Now()); err != nil {
 			return err
 		}
@@ -537,17 +554,10 @@ func (s *Service) RemoveMember(ctx context.Context, actor, id, member uuid.UUID)
 	return s.tx.Do(ctx, func(ctx context.Context) error {
 		// Locked so two members leaving at once cannot both pass the check,
 		// and so an expense booked meanwhile either counts in the balance or
-		// waits and is refused. The members are read again after the lock:
-		// the locking statement sees them as they were before it waited.
-		if _, err := s.repo.Lock(ctx, g.ID); err != nil {
-			return err
-		}
-		g, err := s.repo.Get(ctx, g.ID)
+		// waits and is refused.
+		g, err := s.locked(ctx, actor, g.ID)
 		if err != nil {
 			return err
-		}
-		if !g.HasMember(actor) {
-			return errs.NotFound("Group")
 		}
 		if !g.HasMember(member) {
 			return errs.NotFound("Member")
@@ -568,6 +578,24 @@ func (s *Service) RemoveMember(ctx context.Context, actor, id, member uuid.UUID)
 		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: &g.ID, Kind: activity.GroupMemberRemoved,
 			Involved: g.Members, Data: map[string]any{"groupName": g.Name, "targetName": target.Name, "targetId": target.ID.String()}})
 	})
+}
+
+// locked locks the group for the rest of the transaction in ctx and returns
+// it as it is once the lock is held, if actor is still a member. The locking
+// statement sees the members as they were before it waited, so they are read
+// again.
+func (s *Service) locked(ctx context.Context, actor, id uuid.UUID) (*Group, error) {
+	if _, err := s.repo.Lock(ctx, id); err != nil {
+		return nil, err
+	}
+	g, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !g.HasMember(actor) {
+		return nil, errs.NotFound("Group")
+	}
+	return g, nil
 }
 
 // keepsReachable refuses to remove the last member who can sign in: nobody

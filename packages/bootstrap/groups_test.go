@@ -2,6 +2,7 @@ package bootstrap_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -291,5 +292,73 @@ func TestRemoveMemberChecksBalanceAfterLock(t *testing.T) {
 		Clock: env.Clock, BaseURL: "http://test"})
 	if err := svc.RemoveMember(ctx, ada, g.ID, ben); !errs.Is(err, errs.KindConflict) {
 		t.Fatalf("Ben was removed while owing for an expense booked before the lock: %v", err)
+	}
+}
+
+// enrolling is the group repository with a hook that runs right before a
+// member is added.
+type enrolling struct {
+	*repositories.Groups
+	before func()
+}
+
+func (e enrolling) AddMember(ctx context.Context, groupID, userID uuid.UUID, at time.Time) error {
+	e.before()
+	return e.Groups.AddMember(ctx, groupID, userID, at)
+}
+
+func TestLastPlaceGoesOnce(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		take func(ctx context.Context, svc *group.Service, ada, cara, id uuid.UUID) error
+	}{
+		{"join", func(ctx context.Context, svc *group.Service, _, cara, id uuid.UUID) error {
+			_, err := svc.Join(ctx, cara, id)
+			return err
+		}},
+		{"add", func(ctx context.Context, svc *group.Service, ada, _, id uuid.UUID) error {
+			_, err := svc.AddMember(ctx, ada, id, group.Invitee{Name: "Eve"})
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := bootstraptest.Open(t, bootstraptest.Options{})
+			ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+			cara := env.SignIn(t, "cara@example.com", "Cara").User.ID
+			dan := env.SignIn(t, "dan@example.com", "Dan").User.ID
+			crowd := make([]group.Invitee, group.MaxMembers-2)
+			for i := range crowd {
+				crowd[i] = group.Invitee{Name: fmt.Sprintf("Person %d", i)}
+			}
+			name := "Crowd"
+			v, err := env.Services.Groups.Create(ctx, ada, group.CreateInput{Patch: group.Patch{Name: &name}, Members: crowd})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// One place is left. Right before it is taken, Dan joins too.
+			joined := make(chan error, 1)
+			repo := enrolling{repositories.NewGroups(env.DB), func() {
+				meanwhile(t, env, func() {
+					_, err := env.Services.Groups.Join(ctx, dan, v.ID)
+					joined <- err
+				})
+			}}
+			svc := group.NewService(group.Deps{Repo: repo, Users: env.Services.Users, Balances: env.Services.Balances,
+				Activity: env.Services.Activity, Notifier: env.Notifier, Quota: repositories.NewQuotas(env.DB), Tx: database.NewTx(env.DB),
+				Clock: env.Clock, BaseURL: "http://test"})
+			taken := tc.take(ctx, svc, ada, cara, v.ID)
+			late := <-joined
+			if (taken == nil) == (late == nil) {
+				t.Fatalf("exactly one person may take the last place, got %v and %v", taken, late)
+			}
+			got, err := env.Services.Groups.View(ctx, ada, v.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Members) != group.MaxMembers {
+				t.Fatalf("want a full group of %d, got %d", group.MaxMembers, len(got.Members))
+			}
+		})
 	}
 }
