@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:splitspends_ledger/rational.dart';
 
+import 'package:splitspends/core/money/money.dart';
 import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/domain/split_calculator.dart';
@@ -104,6 +105,50 @@ class ExpenseForm extends ChangeNotifier {
       item.userIds.removeWhere((id) => !next.contains(id));
     }
     notifyListeners();
+  }
+
+  /// Changes the currency, whose minor units have [to] decimals instead of
+  /// [from]. Every amount is rescaled exactly so the text a person typed
+  /// keeps its meaning; when that would drop digits (12.50 into a currency
+  /// without decimals) all amounts are cleared instead, and this returns
+  /// true so the caller can ask for them again.
+  bool setCurrency(String code, {required int from, required int to}) {
+    currency = code;
+    final exact =
+        method == SplitMethod.exact || method == SplitMethod.adjustment;
+    final splitAmounts = {
+      if (exact)
+        for (final e in values.entries) e.key: int.tryParse(e.value),
+    };
+    final up = Money.pow10(to > from ? to - from : 0);
+    final down = Money.pow10(from > to ? from - to : 0);
+    final amounts = [
+      ?total,
+      ...payers.values,
+      ...splitAmounts.values.nonNulls,
+      for (final i in items) i.amount,
+      tax,
+      tip,
+    ];
+    final cleared = amounts.any((a) => a % down != 0);
+    int scale(int amount) => cleared ? 0 : amount * up ~/ down;
+
+    total = cleared || total == null ? null : scale(total!);
+    payers.updateAll((_, amount) => scale(amount));
+    if (cleared && exact) {
+      values.clear();
+    } else {
+      for (final e in splitAmounts.entries) {
+        if (e.value != null) values[e.key] = '${scale(e.value!)}';
+      }
+    }
+    for (final item in items) {
+      item.amount = scale(item.amount);
+    }
+    tax = scale(tax);
+    tip = scale(tip);
+    notifyListeners();
+    return cleared;
   }
 
   void setSinglePayer(String id) {

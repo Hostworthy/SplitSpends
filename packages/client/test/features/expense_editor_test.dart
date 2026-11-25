@@ -16,6 +16,7 @@ import 'package:splitspends/features/expenses/data/local_expenses_repository.dar
 import 'package:splitspends/features/expenses/domain/expense.dart';
 import 'package:splitspends/features/expenses/domain/expenses_repository.dart';
 import 'package:splitspends/features/groups/domain/group.dart';
+import 'package:splitspends/features/groups/presentation/providers.dart';
 
 import '../helpers.dart';
 
@@ -156,5 +157,50 @@ void main() {
     );
     expect(chip.onPressed, isNull);
     expect(chip.tooltip, 'The group of an expense cannot change');
+  });
+
+  testWidgets('picking a group in another currency does not keep the amount', (
+    tester,
+  ) async {
+    final (container, _) = await _start(tester);
+    await pumpFuture(
+      tester,
+      container
+          .read(groupsRepositoryProvider)
+          .create(
+            const GroupInput(
+              name: 'Tokyo',
+              defaultCurrency: 'JPY',
+              members: [MemberInput(name: 'Kei')],
+            ),
+          ),
+    );
+    container.invalidate(groupsProvider);
+    unawaited(container.read(routerProvider).push('/expenses/new'));
+    await settle(tester);
+    await tester.enterText(
+      find.byKey(const Key('expense-description')),
+      'Sushi',
+    );
+    final total = find.descendant(
+      of: find.byType(AmountField).first,
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(total, '12.50');
+    await settle(tester);
+
+    await tester.tap(find.widgetWithText(ActionChip, 'No group'));
+    await settle(tester);
+    await tester.tap(find.text('Tokyo'));
+    await settle(tester);
+
+    expect(
+      find.text('Amounts are now in JPY. Please enter them again.'),
+      findsOneWidget,
+    );
+    expect(find.text('Enter an amount'), findsOneWidget);
+    await tester.enterText(total, '1250');
+    await settle(tester);
+    expect(find.text('Enter an amount'), findsNothing);
   });
 }
