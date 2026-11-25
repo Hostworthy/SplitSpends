@@ -67,6 +67,9 @@ func (r *PushSubscriptions) Save(ctx context.Context, s *push.Subscription, limi
 			s.ID, s.UserID, optional(s.SessionID), s.CreatedAt, s.UpdatedAt, s.Platform, s.Endpoint, s.P256dh, s.Auth, s.Label,
 		).Scan(&s.ID, &s.CreatedAt, &s.LastSuccessAt, &s.Failures, &created)
 	})
+	if database.IsForeignKeyViolation(err, "push_subscriptions_session_id_fkey") {
+		return false, push.ErrSignedOut
+	}
 	return created, err
 }
 

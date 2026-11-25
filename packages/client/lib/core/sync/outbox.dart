@@ -46,7 +46,10 @@ class OutboxOp {
     if (payload is Map && payload['id'] is String) {
       return payload['id'] as String;
     }
-    return path.split('/').last;
+    // The segment after the collection, also for actions on a record such
+    // as /expenses/{id}/restore.
+    final parts = path.split('/');
+    return parts.length > 2 ? parts[2] : parts.last;
   }
 
   /// True when this write names one of [ids] (all client-made UUIDs), in its

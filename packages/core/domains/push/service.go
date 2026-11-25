@@ -109,6 +109,9 @@ func (s *Service) Register(ctx context.Context, actor, session uuid.UUID, in Inp
 	if errors.Is(err, ErrFull) {
 		return nil, false, errs.Conflict("You have too many devices registered for push notifications. Remove one first.")
 	}
+	if errors.Is(err, ErrSignedOut) {
+		return nil, false, errs.Unauthorized("Sign in to continue.")
+	}
 	if err != nil {
 		return nil, false, err
 	}

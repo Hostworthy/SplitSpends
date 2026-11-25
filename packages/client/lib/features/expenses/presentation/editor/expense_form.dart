@@ -104,7 +104,11 @@ class ExpenseForm extends ChangeNotifier {
       ..addAll(next.where((id) => !included.contains(id)));
     values.removeWhere((id, _) => !next.contains(id));
     payers.removeWhere((id, _) => !next.contains(id));
-    if (payers.isEmpty) payers[meId] = 0;
+    if (payers.isEmpty) {
+      // Nobody who paid is left: back to the default of me paying it all.
+      multiplePayers = false;
+      payers[meId] = 0;
+    }
     for (final item in items) {
       item.userIds.removeWhere((id) => !next.contains(id));
     }

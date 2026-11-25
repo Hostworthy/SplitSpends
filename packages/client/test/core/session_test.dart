@@ -128,6 +128,21 @@ void main() {
     expect((await outbox(_bob).pending()).single.label, 'B');
   });
 
+  test('a profile answer for another account is not shown', () async {
+    final container = start();
+    await container.read(sessionProvider.future);
+    final session = container.read(sessionProvider.notifier);
+    await signIn(container, _ada, 'first');
+
+    await session.signOut();
+    await session.updateMe(_ada.copyWith(name: 'Ada L.'));
+    expect(container.read(meProvider), isNull);
+
+    await signIn(container, _bob, 'second');
+    await session.updateMe(_ada.copyWith(name: 'Ada L.'));
+    expect(container.read(meProvider)?.id, _bob.id);
+  });
+
   test('signing in and out clears the offline copies', () async {
     final container = start();
     await container.read(sessionProvider.future);

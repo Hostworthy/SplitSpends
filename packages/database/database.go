@@ -141,6 +141,13 @@ func (t *Tx) TryLock(ctx context.Context, key string) (bool, error) {
 	return got, err
 }
 
+// IsForeignKeyViolation reports an error from the foreign key constraint
+// named constraint.
+func IsForeignKeyViolation(err error, constraint string) bool {
+	var pg *pgconn.PgError
+	return errors.As(err, &pg) && pg.Code == "23503" && pg.ConstraintName == constraint
+}
+
 // IsUniqueViolation reports a unique constraint error.
 func IsUniqueViolation(err error) bool {
 	var pg *pgconn.PgError

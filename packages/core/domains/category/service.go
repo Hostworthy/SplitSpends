@@ -91,8 +91,11 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Categ
 	}
 	if restore {
 		err = s.repo.Update(ctx, c)
-	} else {
-		err = s.repo.Create(ctx, c)
+	} else if err = s.repo.Create(ctx, c); errs.Is(err, errs.KindConflict) {
+		// A request with the same id may have saved its category first.
+		if got, gerr := s.repo.Get(ctx, c.ID); gerr == nil && got.OwnerID == actor && got.DeletedAt == nil {
+			return got, nil
+		}
 	}
 	if err != nil {
 		return nil, err
