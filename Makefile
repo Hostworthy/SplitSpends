@@ -39,7 +39,7 @@ help:
 	@echo "  lambda            Build the arm64 Lambda bundle for deploy/aws"
 
 setup:
-	cp -n apps/api/.env.example apps/api/.env 2>/dev/null || true
+	test -f apps/api/.env || sed "s/^SECRET_KEY=$$/SECRET_KEY=$$(openssl rand -hex 32)/" apps/api/.env.example > apps/api/.env
 	docker compose up -d --wait
 	docker compose exec -T postgres psql -U splitspends -tc "SELECT 1 FROM pg_database WHERE datname='splitspends_test'" | grep -q 1 \
 		|| docker compose exec -T postgres createdb -U splitspends splitspends_test

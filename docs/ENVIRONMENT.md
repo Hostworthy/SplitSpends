@@ -9,7 +9,7 @@ Switches such as `SERVERLESS` or `GRAVATAR` accept `true`/`false`, `on`/`off`, `
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
 | `DATABASE_URL` | required | PostgreSQL URL, for example `postgres://user:pass@host:5432/splitspends?sslmode=disable`. Use a direct or session-mode connection, not a transaction-mode pooler (PgBouncer in transaction mode, Neon's `-pooler` host, Supabase's port 6543): migrations at start hold a session lock so that instances starting together apply them one at a time |
-| `SECRET_KEY` | required | At least 32 characters; hex is decoded. Signs login codes. Generate with `openssl rand -hex 32` |
+| `SECRET_KEY` | required | At least 32 random characters; hex is decoded. Keys the hashes of login codes. Generate with `openssl rand -hex 32`. The server refuses to start with a value containing `change-me`, as example values do, or made of fewer than 10 different characters. `make setup` writes a random one to `apps/api/.env` |
 | `BASE_URL` | `http://localhost:8080` | Public URL with its scheme, such as `https://split.example.com`, used in email and push links. The server refuses to start when it is not an `http` or `https` URL, and logs `bootstrap.config.base-url.default` when it is unset |
 | `ADDR` | `:8080` | Listen address |
 | `APP_NAME` | `Split Spends` | Name shown in emails and the app |

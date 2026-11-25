@@ -67,7 +67,7 @@ func secretString(t *testing.T, values map[string]string) string {
 func TestSecrets(t *testing.T) {
 	secretsManager(t, http.StatusOK, secretString(t, map[string]string{
 		"DATABASE_URL":  "postgres://app:pw@db.example.com/splitspends?sslmode=require",
-		"SECRET_KEY":    strings.Repeat("k", 64),
+		"SECRET_KEY":    "secret from the secrets manager, not hex",
 		"JOBS_SECRET":   strings.Repeat("c", 48),
 		"SMTP_PASSWORD": "from-secret",
 		"AI_API_KEY":    "",
@@ -86,7 +86,7 @@ func TestSecrets(t *testing.T) {
 	if c.DatabaseURL != "postgres://app:pw@db.example.com/splitspends?sslmode=require" {
 		t.Errorf("want DATABASE_URL from the secret, got %q", c.DatabaseURL)
 	}
-	if string(c.Secret) != strings.Repeat("k", 64) {
+	if string(c.Secret) != "secret from the secrets manager, not hex" {
 		t.Errorf("want SECRET_KEY from the secret, got %q", c.Secret)
 	}
 	if c.JobsSecret != strings.Repeat("c", 48) {
@@ -118,7 +118,7 @@ func TestSecretsFailures(t *testing.T) {
 			secretsManager(t, tc.status, tc.body)
 			t.Setenv("SECRETS_ARN", tc.arn)
 			t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
-			t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+			t.Setenv("SECRET_KEY", secretKey)
 			_, err := bootstrap.LoadConfig()
 			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "SECRETS_ARN") {
 				t.Errorf("want an error with %q naming SECRETS_ARN, got %v", tc.want, err)
