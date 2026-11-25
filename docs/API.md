@@ -174,6 +174,8 @@ Delivery: the server encrypts each message (RFC 8291, `aes128gcm`) and signs it 
 | GET | `/friends/{userId}` | | `{ data: { user, balances, groups: [{ groupId, groupName, balances }], nonGroup: [Balance] } }` |
 | DELETE | `/friends/{userId}` | | 204; 409 when balances are not settled |
 
+Adding people sends email, so it is limited. `POST /friends`, `PATCH /friends/{userId}`, `POST /groups`, `POST /groups/{groupId}/members` and `POST /reminders` share a budget of 20 requests a minute per account (429 `RATE_LIMITED`). Each account may invite 20 new email addresses a day, counting every address that gets an invitation from these routes; a request that would go over answers 429 `RATE_LIMITED` and adds nobody. The invitation email is sent once the request has succeeded. Someone added to groups by the same person is emailed about it at most 3 times a day; later additions still reach their devices.
+
 ### Groups
 
 | Method | Path | Body | Response |
@@ -232,7 +234,7 @@ People without an account follow the link, request a login code with `inviteToke
 | ------ | ---- | ---- | -------- |
 | POST | `/reminders` | `{ userId, groupId? }` | 201 `{ data: { id, userId, groupId, balances: [Balance], emailed, sentAt } }` |
 
-Asks someone who owes you money to settle up: in one group when `groupId` is set, otherwise across everything you share. `balances` is what they owe you (positive amounts only, per currency). The reminder is emailed unless they turned the `reminders` notification off (`emailed: false`), and recorded as `reminder.sent` in both people's activity. Errors: 409 `CONFLICT` when they owe you nothing in that scope, or have no email address (people added by name only); 429 `RATE_LIMITED` when you already reminded them in the same scope in the last 24 hours (enforced in the database); 422 when `groupId` is not one of your groups.
+Asks someone who owes you money to settle up: in one group when `groupId` is set, otherwise across everything you share. `balances` is what they owe you (positive amounts only, per currency). The reminder is emailed unless they turned the `reminders` notification off (`emailed: false`), and recorded as `reminder.sent` in both people's activity. Errors: 409 `CONFLICT` when they owe you nothing in that scope, or have no email address (people added by name only); 429 `RATE_LIMITED` when you already reminded them in the same scope in the last 24 hours, or sent them 3 reminders across all scopes in that time (enforced in the database); 422 when `groupId` is not one of your groups.
 
 ### Categories
 

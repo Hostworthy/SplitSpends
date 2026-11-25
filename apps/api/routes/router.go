@@ -55,6 +55,12 @@ func (a *API) Routes() *http.ServeMux {
 	imports := func(h handler) http.Handler {
 		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(importLimit, a.log, byUser, a.wrap(h)))
 	}
+	// Adding people and reminding them can send email, so these routes share
+	// one budget per signed-in person.
+	socialLimit := middleware.NewLimiter(20, time.Minute)
+	social := func(h handler) http.Handler {
+		return middleware.RequireAuth(a.svc.Auth, a.log, middleware.Limit(socialLimit, a.log, byUser, a.wrap(h)))
+	}
 	p := platform.Prefix
 
 	mux.Handle("GET /health", public(a.health))
@@ -79,18 +85,18 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("DELETE "+p+"/me/push-subscriptions/{subscriptionId}", authed(a.deletePushSubscription))
 
 	mux.Handle("GET "+p+"/friends", authed(a.listFriends))
-	mux.Handle("POST "+p+"/friends", authed(a.addFriend))
+	mux.Handle("POST "+p+"/friends", social(a.addFriend))
 	mux.Handle("GET "+p+"/friends/{userId}", authed(a.getFriend))
-	mux.Handle("PATCH "+p+"/friends/{userId}", authed(a.inviteFriend))
+	mux.Handle("PATCH "+p+"/friends/{userId}", social(a.inviteFriend))
 	mux.Handle("DELETE "+p+"/friends/{userId}", authed(a.removeFriend))
 	mux.Handle("POST "+p+"/import", imports(a.importBundle))
 
 	mux.Handle("GET "+p+"/groups", authed(a.listGroups))
-	mux.Handle("POST "+p+"/groups", authed(a.createGroup))
+	mux.Handle("POST "+p+"/groups", social(a.createGroup))
 	mux.Handle("GET "+p+"/groups/{groupId}", authed(a.getGroup))
 	mux.Handle("PATCH "+p+"/groups/{groupId}", authed(a.patchGroup))
 	mux.Handle("DELETE "+p+"/groups/{groupId}", authed(a.deleteGroup))
-	mux.Handle("POST "+p+"/groups/{groupId}/members", authed(a.addMember))
+	mux.Handle("POST "+p+"/groups/{groupId}/members", social(a.addMember))
 	mux.Handle("DELETE "+p+"/groups/{groupId}/members/{userId}", authed(a.removeMember))
 	mux.Handle("GET "+p+"/groups/{groupId}/balances", authed(a.groupBalances))
 	mux.Handle("GET "+p+"/groups/{groupId}/export", authed(a.exportGroup))
@@ -110,7 +116,7 @@ func (a *API) Routes() *http.ServeMux {
 	mux.Handle("POST "+p+"/expenses/{expenseId}/comments", authed(a.addComment))
 	mux.Handle("DELETE "+p+"/comments/{commentId}", authed(a.deleteComment))
 	mux.Handle("POST "+p+"/payments", authed(a.createPayment))
-	mux.Handle("POST "+p+"/reminders", authed(a.sendReminder))
+	mux.Handle("POST "+p+"/reminders", social(a.sendReminder))
 
 	mux.Handle("GET "+p+"/categories", authed(a.listCategories))
 	mux.Handle("POST "+p+"/categories", authed(a.createCategory))

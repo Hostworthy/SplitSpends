@@ -2,6 +2,7 @@ package reminder
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/balance"
@@ -33,6 +34,7 @@ type Deps struct {
 	Balances    *balance.Service
 	Activity    *activity.Service
 	Notifier    ports.Notifier
+	Quota       ports.Quota
 	Tx          ports.Tx
 	Clock       clock.Clock
 	BaseURL     string
@@ -47,6 +49,7 @@ type Service struct {
 	balances    *balance.Service
 	activity    *activity.Service
 	notifier    ports.Notifier
+	quota       ports.Quota
 	tx          ports.Tx
 	clock       clock.Clock
 	baseURL     string
@@ -55,13 +58,14 @@ type Service struct {
 // NewService builds a Service.
 func NewService(d Deps) *Service {
 	return &Service{repo: d.Repo, groups: d.Groups, connections: d.Connections, users: d.Users, balances: d.Balances,
-		activity: d.Activity, notifier: d.Notifier, tx: d.Tx, clock: d.Clock, baseURL: d.BaseURL}
+		activity: d.Activity, notifier: d.Notifier, quota: d.Quota, tx: d.Tx, clock: d.Clock, baseURL: d.BaseURL}
 }
 
 // Send reminds to that they owe actor money, in one group when groupID is
 // set or across everything otherwise. The recipient must owe the actor
 // something in that scope and have an email address; one reminder per
-// sender, recipient and scope is allowed every Window.
+// sender, recipient and scope is allowed every Window, and at most
+// MaxPerPerson per sender and recipient across scopes.
 func (s *Service) Send(ctx context.Context, actor, to uuid.UUID, groupID *uuid.UUID) (*Reminder, error) {
 	if to == actor {
 		return nil, errs.Validation("userId", "You cannot remind yourself.")
@@ -131,6 +135,13 @@ func (s *Service) Send(ctx context.Context, actor, to uuid.UUID, groupID *uuid.U
 		}
 		if !ok {
 			return errs.RateLimited("You already reminded " + target.Name + in + " in the last 24 hours. Try again tomorrow.")
+		}
+		ok, err = s.quota.Take(ctx, "remind:"+actor.String()+":"+to.String(), MaxPerPerson, Window, now)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errs.RateLimited(fmt.Sprintf("You already sent %s %d reminders in the last 24 hours. Try again tomorrow.", target.Name, MaxPerPerson))
 		}
 		data := map[string]any{"targetName": target.Name, "targetId": target.ID.String(), "balances": toData(owed)}
 		if groupName != "" {

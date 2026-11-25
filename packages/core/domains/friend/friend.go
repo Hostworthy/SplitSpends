@@ -111,8 +111,9 @@ func (s *Service) Add(ctx context.Context, me uuid.UUID, email, name string) (*S
 		return nil, err
 	}
 	var friend *user.User
+	var invited bool
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
-		u, _, err := s.users.Ensure(ctx, email, name, actor)
+		u, created, err := s.users.Ensure(ctx, email, name, actor)
 		if err != nil {
 			return err
 		}
@@ -122,12 +123,15 @@ func (s *Service) Add(ctx context.Context, me uuid.UUID, email, name string) (*S
 		if err := s.repo.Add(ctx, me, u.ID); err != nil {
 			return err
 		}
-		friend = u
+		friend, invited = u, created
 		return s.activity.Record(ctx, activity.Activity{ActorID: me, Kind: activity.FriendAdded,
 			Involved: []uuid.UUID{u.ID}, Data: map[string]any{"targetName": u.Name, "targetId": u.ID.String()}})
 	})
 	if err != nil {
 		return nil, err
+	}
+	if invited {
+		s.users.SendInvite(ctx, friend, actor)
 	}
 	d, err := s.Detail(ctx, me, friend.ID)
 	if err != nil {

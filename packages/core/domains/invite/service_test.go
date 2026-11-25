@@ -104,7 +104,7 @@ func setup(t *testing.T) (*Service, *groups, *user.User, *clockAt) {
 	}
 	g := &groups{g: &group.Group{ID: uuid.New(), Name: "Flat", Emoji: "🏠", Members: []uuid.UUID{ada.ID}}}
 	c := &clockAt{at: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)}
-	svc := NewService(&memInvites{}, g, g, user.NewService(users{ada.ID: ada}, nil, c), c, "https://split.test")
+	svc := NewService(&memInvites{}, g, g, user.NewService(users{ada.ID: ada}, nil, nil, c), c, "https://split.test")
 	return svc, g, ada, c
 }
 

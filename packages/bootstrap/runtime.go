@@ -149,10 +149,11 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 		policy.SessionTTL = cfg.SessionTTL
 	}
 
-	users := user.NewService(userRepo, notifier, c)
+	quotas := repositories.NewQuotas(db)
+	users := user.NewService(userRepo, notifier, quotas, c)
 	act := activity.NewService(repositories.NewActivities(db), c)
 	balances := balance.NewService(expenseRepo)
-	groups := group.NewService(groupRepo, users, balances, act, notifier, tx, c, cfg.BaseURL)
+	groups := group.NewService(groupRepo, users, balances, act, notifier, quotas, tx, c, cfg.BaseURL)
 	friends := friend.NewService(friendRepo, users, balances, act, tx, c)
 	receipts := receipt.NewService(receiptRepo, blobs, reader, c)
 	categories := category.NewService(repositories.NewCategories(db), c)
@@ -167,7 +168,7 @@ func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, 
 	fx := rates.NewService(repositories.NewRates(db), source, c)
 	invites := invite.NewService(repositories.NewInvites(db), groups, groupRepo, users, c, cfg.BaseURL)
 	reminders := reminder.NewService(reminder.Deps{Repo: repositories.NewReminders(db), Groups: groups, Connections: friends,
-		Users: users, Balances: balances, Activity: act, Notifier: notifier, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
+		Users: users, Balances: balances, Activity: act, Notifier: notifier, Quota: quotas, Tx: tx, Clock: c, BaseURL: cfg.BaseURL})
 	administration := admin.NewService(admin.Deps{Settings: repositories.NewSignupSettings(db), Requests: repositories.NewSignupRequests(db),
 		Users: userRepo, Accounts: userRepo, Credentials: repositories.NewCredentials(db), Notifier: notifier, Tx: tx, Clock: c,
 		Defaults: policy.Signup(), BaseURL: cfg.BaseURL, AppName: cfg.AppName})
