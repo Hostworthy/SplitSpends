@@ -49,6 +49,8 @@ Build or download `splitspends-mcp` (`make build` writes `bin/splitspends-mcp`; 
 }
 ```
 
+Set `SPLITSPENDS_URL` to the exact address the server answers on, usually its `https://` origin. The MCP server does not follow redirects, because following one can turn a write into a read: when the server redirects, the tool fails with an error that names the address to use instead.
+
 ## Tools
 
 | Tool | What it does |
