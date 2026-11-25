@@ -3,7 +3,6 @@ package expense
 import (
 	"context"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -372,9 +371,6 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		if in.UpdatedAt != nil && !e.UpdatedAt.Truncate(time.Second).Equal(in.UpdatedAt.Truncate(time.Second)) {
 			return errs.Conflict("Someone else changed this expense. Reload it and try again.")
 		}
-		if e.Kind == KindPayment {
-			in.Method, in.Category = MethodExact, PaymentCategory
-		}
 		in.GroupID = e.GroupID
 		if in.Currency == "" {
 			in.Currency = e.Currency
@@ -382,8 +378,17 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*E
 		if in.Date == "" {
 			in.Date = e.Date.Format(time.DateOnly)
 		}
-		n, err := Normalize(in, clock.Today(s.clock))
-		if err != nil {
+		var n *Normalized
+		if e.Kind == KindPayment {
+			p, err := repayment(in)
+			if err != nil {
+				return err
+			}
+			n, err = payment(p, clock.Today(s.clock))
+			if err != nil {
+				return err
+			}
+		} else if n, err = Normalize(in, clock.Today(s.clock)); err != nil {
 			return err
 		}
 		if err := s.category(ctx, actor, n.Category, e.Category); err != nil {
@@ -478,25 +483,18 @@ func (s *Service) Restore(ctx context.Context, actor, id uuid.UUID) (*Expense, e
 	return s.setDeleted(ctx, actor, id, false)
 }
 
-// PaymentInput records money changing hands.
-type PaymentInput struct {
-	ID       *uuid.UUID
-	GroupID  *uuid.UUID
-	From     uuid.UUID
-	To       uuid.UUID
-	Amount   int64
-	Currency string
-	Date     string
-	Notes    string
-}
-
 // RecordPayment books a settle-up payment.
 func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in PaymentInput) (*Expense, error) {
 	if e, err := s.existing(ctx, actor, in.ID, KindPayment, in.GroupID); e != nil || err != nil {
 		return e, err
 	}
-	if in.From == in.To || in.From == uuid.Nil || in.To == uuid.Nil {
-		return nil, errs.Validation("toUserId", "Choose two different people.")
+	var err error
+	if in.Currency, err = s.currency(ctx, actor, in.GroupID, in.Currency); err != nil {
+		return nil, err
+	}
+	n, err := payment(in, clock.Today(s.clock))
+	if err != nil {
+		return nil, err
 	}
 	if in.GroupID == nil && actor != in.From && actor != in.To {
 		return nil, errs.Validation("fromUserId", "You must be part of a payment outside a group.")
@@ -507,21 +505,6 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	}
 	if people[in.From] == nil || people[in.To] == nil {
 		return nil, errs.Validation("toUserId", "Unknown person.")
-	}
-	if in.Currency, err = s.currency(ctx, actor, in.GroupID, in.Currency); err != nil {
-		return nil, err
-	}
-	n, err := Normalize(Input{
-		GroupID: in.GroupID, Description: "Payment", Currency: in.Currency, Total: in.Amount, Date: in.Date,
-		Category: PaymentCategory, Notes: in.Notes, Method: MethodExact,
-		Payers: []Payer{{UserID: in.From, Amount: in.Amount}},
-		Splits: []SplitInput{{UserID: in.To, Value: strconv.FormatInt(in.Amount, 10)}},
-	}, clock.Today(s.clock))
-	if err != nil {
-		if de, ok := errs.As(err); ok && de.Field == "total" {
-			de.Field = "amount"
-		}
-		return nil, err
 	}
 	g, err := s.authorize(ctx, actor, in.GroupID, n.Shares, nil)
 	if err != nil {
