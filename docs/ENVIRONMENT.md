@@ -66,7 +66,7 @@ Buckets stay private: the API checks access and streams receipts itself.
 | `SIGNUP_ALLOWED_DOMAINS` | empty | Comma-separated domains (`example.com` or `@example.com`) that start out on the allowed list. The server refuses to start when an entry is not a domain, or when it is empty with `SIGNUP_MODE=domain` |
 | `SESSION_TTL_DAYS` | `90` | How long app sessions last. API tokens do not expire until revoked |
 
-Login codes are 6 digits, valid for 10 minutes, allow 5 attempts, and at most 5 codes per email per hour from one network and 10 per email per hour in total. Requests for unknown emails in `invite` mode get the same response as real ones and send nothing.
+Login codes are 6 digits, valid for 10 minutes, allow 5 attempts, and at most 5 codes per email per hour from one network and 10 per email per hour in total. In every sign-up mode, a request for an email that may not sign up gets the same response as one that may, counts toward the same limits and sends nothing. With `SERVERLESS=true` emails are sent before the response, so there the time taken still differs.
 
 ## Email
 
