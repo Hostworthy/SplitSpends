@@ -33,7 +33,7 @@ func TestDomain(t *testing.T) {
 		" @work.org ":     "@work.org",
 		"sub.example.com": "@sub.example.com",
 		"not a domain":    "",
-		"exmaple com":     "",
+		"example org":     "",
 		"@nodot":          "",
 		"ada@example.com": "",
 		".example.com":    "",

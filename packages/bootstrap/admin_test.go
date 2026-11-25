@@ -460,7 +460,7 @@ func TestDisableRevokesTokensAndPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	p256dh, keys := deviceKeys(t)
-	if _, _, err := svc.Push.Register(ctx, ben.ID, push.Input{Endpoint: "https://push.example.com/ben", P256dh: p256dh, Auth: keys}); err != nil {
+	if _, _, err := svc.Push.Register(ctx, ben.ID, p.SessionID, push.Input{Endpoint: "https://push.example.com/ben", P256dh: p256dh, Auth: keys}); err != nil {
 		t.Fatal(err)
 	}
 

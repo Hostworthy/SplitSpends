@@ -132,7 +132,7 @@ func TestAllowedDomains(t *testing.T) {
 	if _, err := bootstrap.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	for _, value := range []string{"not a domain", "family.com,exmaple com", "ada@example.com", "@nodot"} {
+	for _, value := range []string{"not a domain", "family.com,example org", "ada@example.com", "@nodot"} {
 		t.Setenv("SIGNUP_ALLOWED_DOMAINS", value)
 		if _, err := bootstrap.LoadConfig(); err == nil || !strings.Contains(err.Error(), "invalid.SIGNUP_ALLOWED_DOMAINS") {
 			t.Errorf("%q: want a SIGNUP_ALLOWED_DOMAINS error, got %v", value, err)
