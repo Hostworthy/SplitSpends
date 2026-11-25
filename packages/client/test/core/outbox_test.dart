@@ -220,6 +220,71 @@ void main() {
     expect((await repo.get('e0')).deleted, isFalse);
   });
 
+  test('queued update replays before a later delete', () async {
+    final client = ApiClient(
+      serverUrl: 'http://server.test',
+      token: 't',
+      cache: _Cache(),
+      httpClient: MockClient((request) async {
+        if (!online) throw http.ClientException('offline');
+        seen.add('${request.method} ${request.url.path}');
+        if (request.method == 'DELETE') return http.Response('', 204);
+        return http.Response(
+          jsonEncode({
+            'data': {
+              'id': 'e0',
+              'description': 'Rent',
+              'currency': 'EUR',
+              'total': 1000,
+              'date': '2026-11-01',
+            },
+          }),
+          200,
+        );
+      }),
+    );
+    final repo = OfflineExpensesRepository(
+      RemoteExpensesRepository(client),
+      outbox,
+      meId: () => 'me',
+    );
+    online = true;
+    await repo.get('e0');
+    seen.clear();
+
+    online = false;
+    final edited = await repo.update(
+      'e0',
+      const ExpenseInput(
+        description: 'Rent (November)',
+        currency: 'EUR',
+        total: 1200,
+        date: '2026-11-01',
+        payers: [Payer(userId: 'me', amount: 1200)],
+        splits: [
+          SplitEntry(userId: 'me'),
+          SplitEntry(userId: 'sam'),
+        ],
+      ),
+    );
+    expect(edited.pending, isTrue);
+    expect(edited.total, 1200);
+    await repo.delete('e0');
+
+    final shown = await repo.get('e0');
+    expect((shown.description, shown.deleted), ('Rent (November)', true));
+    expect(
+      [for (final op in await outbox.pending()) '${op.method} ${op.path}'],
+      ['PUT /expenses/e0', 'DELETE /expenses/e0'],
+    );
+
+    online = true;
+    final result = await outbox.flush(client);
+    expect(result.sent, 2);
+    expect(seen, ['PUT /api/v1/expenses/e0', 'DELETE /api/v1/expenses/e0']);
+    expect(await outbox.pending(), isEmpty);
+  });
+
   group('offline reads show queued writes', () {
     late _Cache cache;
     late ApiClient client;
