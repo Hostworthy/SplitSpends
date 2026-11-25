@@ -138,6 +138,64 @@ void main() {
     expect(await outbox.pending(), isEmpty);
   });
 
+  test('undo after a queued delete keeps the expense', () async {
+    var deleted = false;
+    final client = ApiClient(
+      serverUrl: 'http://server.test',
+      token: 't',
+      cache: _Cache(),
+      httpClient: MockClient((request) async {
+        if (!online) throw http.ClientException('offline');
+        final path = request.url.path;
+        if (request.method == 'DELETE') deleted = true;
+        if (path.endsWith('/restore')) deleted = false;
+        return http.Response(
+          jsonEncode({
+            'data': {
+              'id': 'e0',
+              'description': 'Rent',
+              'currency': 'EUR',
+              'total': 1000,
+              'date': '2026-11-01',
+              'deleted': deleted,
+            },
+          }),
+          request.method == 'DELETE' ? 204 : 200,
+        );
+      }),
+    );
+    final repo = OfflineExpensesRepository(
+      RemoteExpensesRepository(client),
+      outbox,
+      meId: () => 'me',
+      onQueued: () {},
+    );
+    online = true;
+    await repo.get('e0');
+
+    online = false;
+    await repo.delete('e0');
+    online = true;
+    final restored = await repo.restore('e0');
+    expect(restored.deleted, isFalse);
+    expect(deleted, isFalse, reason: 'the delete has not been sent yet');
+
+    final result = await outbox.flush(client);
+    expect(result.sent, 2);
+    expect(deleted, isFalse);
+    expect(await outbox.pending(), isEmpty);
+
+    // Offline, Undo is queued too, behind the delete.
+    online = false;
+    await repo.delete('e0');
+    expect((await repo.restore('e0')).deleted, isFalse);
+    expect(
+      [for (final op in await outbox.pending()) op.method],
+      ['DELETE', 'POST'],
+    );
+    expect((await repo.get('e0')).deleted, isFalse);
+  });
+
   group('offline reads show queued writes', () {
     late _Cache cache;
     late ApiClient client;

@@ -224,8 +224,19 @@ class OfflineExpensesRepository implements ExpensesRepository {
     label: 'Delete an expense',
   );
 
+  /// Queued like [delete] when writes wait, so it replays after a queued
+  /// delete of the same expense instead of before it.
   @override
-  Future<Expense> restore(String id) => _remote.restore(id);
+  Future<Expense> restore(String id) async {
+    final known = await get(id);
+    return _write(
+      online: () => _remote.restore(id),
+      offline: () => known.copyWith(deleted: false, pending: true),
+      method: 'POST',
+      path: '/expenses/$id/restore',
+      label: 'Restore an expense',
+    );
+  }
 
   @override
   Future<List<Comment>> comments(String id) => _remote.comments(id);
