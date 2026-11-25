@@ -18,7 +18,8 @@ type Repository interface {
 	// whether a new row was created. When s.UserID already has limit other
 	// subscriptions it stores nothing and returns ErrFull; the check and
 	// the write are atomic, so concurrent calls cannot pass the limit. A
-	// subscription is deleted together with its session (s.SessionID).
+	// subscription is deleted together with its session (s.SessionID);
+	// when that session has already ended Save returns ErrSignedOut.
 	Save(ctx context.Context, s *Subscription, limit int) (created bool, err error)
 	// List returns userID's subscriptions, newest first.
 	List(ctx context.Context, userID uuid.UUID) ([]*Subscription, error)
@@ -36,6 +37,10 @@ type Repository interface {
 // ErrFull is returned by Repository.Save when the user has as many
 // subscriptions as allowed.
 var ErrFull = errors.New("push.subscriptions.full")
+
+// ErrSignedOut is returned by Repository.Save when the subscription's
+// session ended before it was stored.
+var ErrSignedOut = errors.New("push.session.ended")
 
 // ErrGone is returned by a Sender when the push service answers 404 or 410:
 // the subscription expired or the user revoked it.
