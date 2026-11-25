@@ -82,3 +82,11 @@ run "secrets" {
     error_message = "The app secret must hold the database URL."
   }
 }
+
+run "signup_mode_checked" {
+  command = plan
+  variables {
+    signup_mode = "opne"
+  }
+  expect_failures = [var.signup_mode]
+}
