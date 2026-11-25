@@ -94,8 +94,15 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 	var blobs ports.BlobStore
 	switch cfg.BlobStore {
 	case "s3":
-		blobs, err = storage.NewS3(storage.S3Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, Endpoint: cfg.S3Endpoint,
+		var s3 *storage.S3
+		s3, err = storage.NewS3(storage.S3Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, Endpoint: cfg.S3Endpoint,
 			AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey, Prefix: cfg.S3Prefix})
+		if err == nil {
+			blobs = s3
+			if !s3.Secure() {
+				log.Warn("bootstrap.storage.insecure", "endpoint", cfg.S3Endpoint)
+			}
+		}
 	case "postgres":
 		blobs = repositories.NewBlobs(db)
 	default:
@@ -107,7 +114,7 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 	}
 	log.Info("bootstrap.storage.ready", "store", cfg.BlobStore)
 
-	var reader ports.ReceiptReader
+	var reader ports.Assistant
 	switch cfg.AIProvider {
 	case "anthropic":
 		reader = ai.NewAnthropic(cfg.AIAPIKey, cfg.AIBaseURL, cfg.AIModel, cfg.AIEffort)
@@ -128,13 +135,13 @@ func Load(ctx context.Context, cfg *Config, log *slog.Logger) (*Runtime, error) 
 
 // Wire builds services from adapters, without push. Tests call it with
 // fakes.
-func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reader ports.ReceiptReader, c clock.Clock, cfg *Config) *Services {
+func Wire(db *database.DB, notifier ports.Notifier, blobs ports.BlobStore, reader ports.Assistant, c clock.Clock, cfg *Config) *Services {
 	return WireWithPush(db, notifier, blobs, reader, nil, c, cfg, slog.New(slog.DiscardHandler))
 }
 
 // WireWithPush builds services and sends notifications by email (notifier)
 // and Web Push (sender, nil to disable push).
-func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, reader ports.ReceiptReader, sender push.Sender,
+func WireWithPush(db *database.DB, email ports.Notifier, blobs ports.BlobStore, reader ports.Assistant, sender push.Sender,
 	c clock.Clock, cfg *Config, log *slog.Logger) *Services {
 	pushes := push.NewService(repositories.NewPushSubscriptions(db), sender, c,
 		push.Settings{PublicKey: cfg.VAPIDPublicKey, AppName: cfg.AppName, Link: cfg.BaseURL, AllowPrivate: cfg.PushAllowPrivate})

@@ -9,6 +9,7 @@ class ImportSummary {
     this.expenses = 0,
     this.people = 0,
     this.categories = 0,
+    this.uploaded,
   });
 
   final int groups;
@@ -17,6 +18,9 @@ class ImportSummary {
 
   /// Custom categories that are not deleted.
   final int categories;
+
+  /// Where and when this data was last uploaded, if it was.
+  final ({String server, DateTime at})? uploaded;
 
   bool get isEmpty =>
       groups == 0 && expenses == 0 && people == 0 && categories == 0;

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"strings"
 
 	"github.com/minio/minio-go/v7"
@@ -16,11 +17,10 @@ import (
 type S3Config struct {
 	Bucket    string
 	Region    string
-	Endpoint  string // host[:port]; defaults to AWS for Region
+	Endpoint  string // [https://|http://]host[:port]; defaults to AWS for Region
 	AccessKey string // optional; falls back to AWS_* env and instance roles
 	SecretKey string
 	Prefix    string
-	Insecure  bool // plain HTTP, for a local MinIO only
 }
 
 // S3 stores blobs in a bucket. Objects stay private; the API streams them
@@ -40,7 +40,12 @@ func NewS3(cfg S3Config) (*S3, error) {
 			endpoint = "s3." + cfg.Region + ".amazonaws.com"
 		}
 	}
-	endpoint = strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
+	// Only an explicit http:// turns TLS off, for a MinIO on a local network.
+	secure := true
+	if scheme, host, ok := strings.Cut(endpoint, "://"); ok {
+		secure = !strings.EqualFold(scheme, "http")
+		endpoint = host
+	}
 	var creds *credentials.Credentials
 	if cfg.AccessKey != "" {
 		creds = credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, "")
@@ -49,7 +54,7 @@ func NewS3(cfg S3Config) (*S3, error) {
 		// or the instance metadata endpoint.
 		creds = credentials.NewChainCredentials([]credentials.Provider{&credentials.EnvAWS{}, &credentials.IAM{}})
 	}
-	client, err := minio.New(endpoint, &minio.Options{Creds: creds, Secure: !cfg.Insecure, Region: cfg.Region})
+	client, err := minio.New(endpoint, &minio.Options{Creds: creds, Secure: secure, Region: cfg.Region})
 	if err != nil {
 		return nil, fmt.Errorf("storage.s3.config.invalid: %w", err)
 	}
@@ -60,13 +65,12 @@ func NewS3(cfg S3Config) (*S3, error) {
 	return &S3{client: client, bucket: cfg.Bucket, prefix: prefix}, nil
 }
 
-func (s *S3) Put(ctx context.Context, key string, r io.Reader) error {
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return err
-	}
-	_, err = s.client.PutObject(ctx, s.bucket, s.prefix+key, bytes.NewReader(data), int64(len(data)),
-		minio.PutObjectOptions{ContentType: "application/octet-stream"})
+// Secure reports whether the store talks to its endpoint over TLS.
+func (s *S3) Secure() bool { return s.client.EndpointURL().Scheme == "https" }
+
+func (s *S3) Put(ctx context.Context, key string, data []byte, contentType string) error {
+	_, err := s.client.PutObject(ctx, s.bucket, s.prefix+key, bytes.NewReader(data), int64(len(data)),
+		minio.PutObjectOptions{ContentType: contentType})
 	if err != nil {
 		return fmt.Errorf("storage.s3.put.failed: %w", err)
 	}
@@ -76,6 +80,16 @@ func (s *S3) Put(ctx context.Context, key string, r io.Reader) error {
 func (s *S3) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 	obj, err := s.client.GetObject(ctx, s.bucket, s.prefix+key, minio.GetObjectOptions{})
 	if err != nil {
+		return nil, fmt.Errorf("storage.s3.get.failed: %w", err)
+	}
+	// GetObject only connects on the first read; asking for the object's
+	// details now lets a missing object fail here, before a caller has
+	// started its response.
+	if _, err := obj.Stat(); err != nil {
+		_ = obj.Close()
+		if minio.ToErrorResponse(err).Code == minio.NoSuchKey {
+			return nil, &fs.PathError{Op: "open", Path: key, Err: fs.ErrNotExist}
+		}
 		return nil, fmt.Errorf("storage.s3.get.failed: %w", err)
 	}
 	return obj, nil

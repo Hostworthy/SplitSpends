@@ -1,9 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sembast/sembast.dart';
 
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/config_provider.dart';
+import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/features/push/domain/push_device.dart';
+import 'package:splitspends/features/push/domain/push_repository.dart';
 import 'package:splitspends/features/push/platform/push_platform.dart';
 import 'package:splitspends/features/push/presentation/push_view.dart';
 
@@ -41,19 +44,56 @@ final pushViewProvider = FutureProvider<PushView>((ref) async {
   );
 });
 
-/// Keeps the server's copy of this phone's endpoint current when the
-/// UnifiedPush distributor hands out a new one while the app runs.
-final pushSyncProvider = Provider<void>((ref) {
+/// The subscription this device last sent to the server.
+const _sentKey = 'pushSent';
+
+/// Registers [keys] with the server and remembers them as sent.
+Future<void> _register(
+  PushRepository repo,
+  Future<Database> database,
+  PushKeys keys,
+) async {
+  await repo.register(keys);
+  await Stores.meta.record(_sentKey).put(await database, keys.toJson());
+}
+
+/// Whether [keys] are the ones this device last sent to the server.
+Future<bool> _sent(Future<Database> database, PushKeys keys) async {
+  final raw = await Stores.meta.record(_sentKey).get(await database);
+  if (raw is! Map) return false;
+  final sent = PushKeys.fromJson(raw.cast<String, Object?>());
+  return sent.endpoint == keys.endpoint &&
+      sent.p256dh == keys.p256dh &&
+      sent.auth == keys.auth;
+}
+
+/// Keeps the server's copy of this device's subscription current: when the
+/// UnifiedPush distributor hands out a new endpoint while the app runs, and
+/// on start when the push service replaced the subscription while the app
+/// was closed (browsers tell only the service worker). An unchanged
+/// subscription is not sent again, so a device removed from another device
+/// is not added back.
+final pushSyncProvider = FutureProvider<void>((ref) async {
   if (!_connected(ref)) return;
   final repo = ref.watch(pushRepositoryProvider);
-  ref.watch(pushPlatformProvider).watch((keys) async {
+  final database = ref.watch(databaseProvider.future);
+  final platform = ref.watch(pushPlatformProvider);
+  Future<void> send(PushKeys keys) async {
     try {
-      await repo.register(keys);
-      ref.invalidate(pushDevicesProvider);
+      await _register(repo, database, keys);
+      if (ref.mounted) ref.invalidate(pushDevicesProvider);
     } catch (_) {
-      // Retried when the distributor reports the endpoint again.
+      // Retried on the next start or when the endpoint changes again.
     }
-  });
+  }
+
+  platform.watch(send);
+  try {
+    final keys = await platform.current();
+    if (keys != null && !await _sent(database, keys)) await send(keys);
+  } catch (_) {
+    // Tried again on the next start.
+  }
 });
 
 /// Push belongs to a signed-in account, so this device stops receiving it
@@ -93,7 +133,11 @@ class PushActions {
     final key = _ref.read(configValueProvider).vapidPublicKey;
     final keys = await _platform.subscribe(vapidKey: key, via: via);
     try {
-      await _ref.read(pushRepositoryProvider).register(keys);
+      await _register(
+        _ref.read(pushRepositoryProvider),
+        _ref.read(databaseProvider.future),
+        keys,
+      );
     } finally {
       _refresh();
     }

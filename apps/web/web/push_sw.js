@@ -2,9 +2,11 @@
 //
 // The app registers this worker with the scope "push/" when you tap
 // "Enable push notifications" in Account, so it never controls pages and
-// stays out of the way of Flutter's own service worker. It does two things:
-// show each push message the server sends ({ title, body, url }) as a
-// notification, and focus the app (or open it at url) when you click one.
+// stays out of the way of Flutter's own service worker. It shows each push
+// message the server sends ({ title, body, url }) as a notification, focuses
+// the app (or opens it at url) when you click one, and subscribes again when
+// the browser replaces or drops the subscription. It has no sign-in token,
+// so the app sends the new subscription to the server when it next starts.
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
@@ -24,6 +26,19 @@ self.addEventListener('push', (event) => {
       badge: new URL('../icons/badge-96.png', self.registration.scope).href,
       data: { url: message.url || new URL('..', self.registration.scope).href },
     }),
+  );
+});
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  // Some browsers hand over the new subscription; others only the old one,
+  // whose options (the server's key) subscribe again.
+  if (event.newSubscription || !event.oldSubscription) return;
+  event.waitUntil(
+    self.registration.pushManager
+      .subscribe(event.oldSubscription.options)
+      .catch(() => {
+        // Push stays off until it is enabled again in Account.
+      }),
   );
 });
 

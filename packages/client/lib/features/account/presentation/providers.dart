@@ -53,7 +53,16 @@ class ProfileEdits {
       notifications: notifications?.call(me.notifications),
     );
     if (_ref.read(sessionProvider).value?.isLocal ?? false) {
-      await session.updateMe(edited);
+      final saved = await _ref
+          .read(accountRepositoryProvider)
+          .update(
+            name: name,
+            defaultCurrency: defaultCurrency,
+            avatarColor: avatarColor,
+            gravatar: gravatar,
+            notifications: edited.notifications,
+          );
+      await session.updateMe(saved);
       return;
     }
     if (_waiting == 0) _saved = me;

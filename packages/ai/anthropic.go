@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/ports"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
@@ -24,24 +25,29 @@ var fallbackModels = map[string]bool{
 
 // Anthropic reads receipts with Claude.
 type Anthropic struct {
-	client anthropic.Client
-	model  string
-	effort string
+	client  anthropic.Client
+	model   string
+	effort  string
+	timeout time.Duration
 }
 
 // NewAnthropic builds an Anthropic reader. effort may be empty.
 func NewAnthropic(apiKey, baseURL, model, effort string) *Anthropic {
-	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	// The SDK otherwise allows each attempt up to ten minutes and retries
+	// twice; ask bounds the whole call instead.
+	opts := []option.RequestOption{option.WithAPIKey(apiKey), option.WithMaxRetries(retries)}
 	if baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
 	if model == "" {
 		model = DefaultAnthropicModel
 	}
-	return &Anthropic{client: anthropic.NewClient(opts...), model: model, effort: effort}
+	return &Anthropic{client: anthropic.NewClient(opts...), model: model, effort: effort, timeout: requestTimeout}
 }
 
 func (a *Anthropic) ask(ctx context.Context, system string, content []anthropic.BetaContentBlockParamUnion, schema map[string]any) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, a.timeout)
+	defer cancel()
 	params := anthropic.BetaMessageNewParams{
 		Model:     a.model,
 		MaxTokens: 16000,
@@ -64,10 +70,13 @@ func (a *Anthropic) ask(ctx context.Context, system string, content []anthropic.
 		if errors.As(err, &apiErr) {
 			switch apiErr.StatusCode {
 			case http.StatusUnauthorized, http.StatusForbidden:
-				return "", fmt.Errorf("ai.anthropic.auth.failed: %w", err)
+				return "", &rejection{key: "ai.anthropic.auth.failed", Status: apiErr.StatusCode}
 			case http.StatusTooManyRequests:
 				return "", errs.RateLimited("The AI provider is busy. Try again in a minute.")
 			}
+			// The SDK's message carries the provider's answer, which can
+			// echo the request.
+			return "", &rejection{key: "ai.anthropic.request.rejected", Status: apiErr.StatusCode}
 		}
 		return "", fmt.Errorf("ai.anthropic.request.failed: %w", err)
 	}
@@ -83,7 +92,7 @@ func (a *Anthropic) ask(ctx context.Context, system string, content []anthropic.
 	return text.String(), nil
 }
 
-// ReadReceipt implements ports.ReceiptReader.
+// ReadReceipt implements ports.Assistant.
 func (a *Anthropic) ReadReceipt(ctx context.Context, in ports.ReceiptInput) (ports.ReceiptExtract, error) {
 	if err := imageSupported(in.ContentType); err != nil {
 		return ports.ReceiptExtract{}, err
@@ -99,7 +108,7 @@ func (a *Anthropic) ReadReceipt(ctx context.Context, in ports.ReceiptInput) (por
 	return parseReceipt(raw)
 }
 
-// DraftExpense implements ports.ReceiptReader.
+// DraftExpense implements ports.Assistant.
 func (a *Anthropic) DraftExpense(ctx context.Context, in ports.DraftInput) (ports.DraftExtract, error) {
 	content := []anthropic.BetaContentBlockParamUnion{}
 	if len(in.Image) > 0 {

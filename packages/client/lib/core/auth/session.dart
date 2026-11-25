@@ -9,6 +9,7 @@ import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/models/user.dart';
 import 'package:splitspends/core/storage/local_db.dart';
+import 'package:splitspends/core/storage/local_ledger.dart';
 import 'package:splitspends/core/storage/response_cache.dart';
 import 'package:splitspends/core/sync/outbox.dart';
 import 'package:splitspends/core/sync/reachability.dart';
@@ -189,7 +190,7 @@ class SessionController extends AsyncNotifier<Session> {
   Future<void> _remember(Me me) async {
     final db = await ref.read(databaseProvider.future);
     await Stores.meta.record(_accountKey).put(db, me.id);
-    await Stores.meta.record(_profileKey).put(db, _profileJson(me));
+    await Stores.meta.record(_profileKey).put(db, profileRecord(me));
   }
 
   Outbox _outbox(Session session) =>
@@ -239,9 +240,9 @@ class SessionController extends AsyncNotifier<Session> {
     );
   }
 
-  /// Saves profile changes (locally, or after the server accepted them).
+  /// Shows profile changes. The account repository saves them; in
+  /// connected mode they are also kept for offline starts.
   Future<void> updateMe(Me me) async {
-    if (_current.isLocal) await _saveLocalProfile(me);
     if (_current.isConnected) await _remember(me);
     state = AsyncData(_current.copyWith(me: me));
   }
@@ -307,14 +308,8 @@ class SessionController extends AsyncNotifier<Session> {
 
   Future<void> _saveLocalProfile(Me me) async {
     final db = await ref.read(databaseProvider.future);
-    await Stores.meta.record('profile').put(db, _profileJson(me));
+    await Stores.meta.record('profile').put(db, profileRecord(me));
   }
-
-  static JsonMap _profileJson(Me me) => {
-    ...me.toJson(),
-    'timezone': me.timezone,
-    'notifications': me.notifications.toJson(),
-  };
 }
 
 /// API client bound to the current server and token. Rebuilds only when the

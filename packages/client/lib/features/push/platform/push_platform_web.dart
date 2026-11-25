@@ -120,8 +120,9 @@ class WebPushPlatform implements PushPlatform {
 
   @override
   void watch(void Function(PushKeys keys) onChange) {
-    // Browsers report subscription changes to the service worker only, and
-    // the app re-registers its current subscription each time it starts.
+    // Browsers report subscription changes to the service worker only. The
+    // worker subscribes again, and the app sends a changed subscription to
+    // the server when it starts (pushSyncProvider).
   }
 
   /// Waits until the worker is active; subscribing needs an active worker.

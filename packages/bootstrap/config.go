@@ -155,6 +155,26 @@ func baseURL(v string) (string, error) {
 	return strings.TrimRight(v, "/"), nil
 }
 
+// checkSecret refuses a SECRET_KEY that is short, a published example value
+// or too uniform to be random. It keys the hashes of login codes, so a key
+// someone can guess lets anyone who reads the stored hashes find the codes.
+func checkSecret(secret string) error {
+	if len(secret) < 32 {
+		return fmt.Errorf("bootstrap.config.env.invalid.SECRET_KEY: set at least 32 random characters, for example from `openssl rand -hex 32`")
+	}
+	if strings.Contains(strings.ToLower(secret), "change-me") {
+		return fmt.Errorf("bootstrap.config.env.invalid.SECRET_KEY: replace the example value with 32 random characters, for example from `openssl rand -hex 32`")
+	}
+	distinct := map[byte]bool{}
+	for i := range len(secret) {
+		distinct[secret[i]] = true
+	}
+	if len(distinct) < 10 {
+		return fmt.Errorf("bootstrap.config.env.invalid.SECRET_KEY: use random characters, for example from `openssl rand -hex 32`; this value repeats too few of them")
+	}
+	return nil
+}
+
 // LoadConfig reads configuration from the environment, after filling it
 // from the secret named by SECRETS_ARN when that is set.
 func LoadConfig() (*Config, error) {
@@ -201,8 +221,8 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("bootstrap.config.env.invalid.LOG_FORMAT: use json or text")
 	}
 	secret := env("SECRET_KEY", "")
-	if len(secret) < 32 {
-		return nil, fmt.Errorf("bootstrap.config.env.invalid.SECRET_KEY: set at least 32 random characters, for example from `openssl rand -hex 32`")
+	if err := checkSecret(secret); err != nil {
+		return nil, err
 	}
 	if b, err := hex.DecodeString(secret); err == nil && len(b) >= 16 {
 		c.Secret = b

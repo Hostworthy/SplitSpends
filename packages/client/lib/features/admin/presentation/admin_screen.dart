@@ -352,8 +352,8 @@ class _PeopleState extends ConsumerState<_People> {
               onRetry: () => ref.invalidate(accountsProvider),
             ),
           ],
-          data: (list) => [
-            for (final a in list)
+          data: (page) => [
+            for (final a in page.items)
               MaxWidth(
                 child: ListTile(
                   key: Key('account-${a.user.id}'),
@@ -375,6 +375,17 @@ class _PeopleState extends ConsumerState<_People> {
                           visualDensity: VisualDensity.compact,
                         ),
                   onTap: () => _manage(a),
+                ),
+              ),
+            if (page.hasMore)
+              MaxWidth(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Showing ${page.items.length} of ${page.total}. '
+                    'Search to narrow the list.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
               ),
           ],
@@ -423,6 +434,7 @@ class _SignupState extends ConsumerState<_Signup> {
             SignupSettings(
               mode: _mode ?? current.mode,
               allowed: _allowed ?? current.allowed,
+              unknownMode: _mode == null ? current.unknownMode : null,
             ),
           );
       ref.invalidate(signupSettingsProvider);
@@ -462,6 +474,17 @@ class _SignupState extends ConsumerState<_Signup> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SectionHeader('Who can sign up'),
+                  if (mode == null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(
+                        'This server uses a sign-up mode this app does not '
+                        'know (${current.unknownMode ?? 'none'}). Saving the '
+                        'allowed list keeps it; choose a mode below to '
+                        'replace it, or update the app.',
+                        style: text.bodyMedium,
+                      ),
+                    ),
                   for (final m in SignupMode.values)
                     RadioListTile<SignupMode>(
                       key: Key('mode-${m.name}'),

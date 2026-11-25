@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:sembast/sembast_memory.dart';
 
 import 'package:splitspends/app/app.dart';
 import 'package:splitspends/app/repositories.dart';
@@ -14,6 +15,7 @@ import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/config/app_config.dart';
 import 'package:splitspends/core/config/config_provider.dart';
 import 'package:splitspends/core/models/user.dart';
+import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/features/push/domain/push_device.dart';
 import 'package:splitspends/features/push/domain/push_repository.dart';
 import 'package:splitspends/features/push/platform/push_platform.dart';
@@ -331,6 +333,147 @@ void main() {
       expect(platform.subscribed, isNull);
     },
   );
+
+  group('PushActions', () {
+    ProviderContainer actions(_FakePlatform platform, _FakeRepository repo) {
+      final container = ProviderContainer(
+        overrides: [
+          sessionProvider.overrideWith(_ConnectedSession.new),
+          pushPlatformProvider.overrideWithValue(platform),
+          pushRepositoryProvider.overrideWithValue(repo),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('disable removes only this device and unsubscribes', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final repo = _FakeRepository()
+        ..devices.addAll([
+          _device('d1', 'https://push.example.com/other'),
+          _device('d2', _keys.endpoint),
+        ]);
+
+      await actions(platform, repo).read(pushActionsProvider).disable();
+
+      expect(repo.devices.map((d) => d.id), ['d1']);
+      expect(platform.subscribed, isNull);
+    });
+
+    test('disable without a subscription leaves the server alone', () async {
+      final platform = _FakePlatform();
+      final repo = _FakeRepository()
+        ..devices.add(_device('d1', 'https://push.example.com/other'));
+
+      await actions(platform, repo).read(pushActionsProvider).disable();
+
+      expect(repo.devices, hasLength(1));
+    });
+
+    test('removing another device keeps push on here', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final other = _device('d1', 'https://push.example.com/other');
+      final repo = _FakeRepository()..devices.add(other);
+
+      await actions(
+        platform,
+        repo,
+      ).read(pushActionsProvider).remove(other, here: false);
+
+      expect(repo.devices, isEmpty);
+      expect(platform.subscribed, isNotNull);
+    });
+
+    test('removing this device turns push off here', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final mine = _device('d1', _keys.endpoint);
+      final repo = _FakeRepository()..devices.add(mine);
+
+      await actions(
+        platform,
+        repo,
+      ).read(pushActionsProvider).remove(mine, here: true);
+
+      expect(repo.devices, isEmpty);
+      expect(platform.subscribed, isNull);
+    });
+
+    test('forget removes this device and never throws', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final repo = _FakeRepository()
+        ..devices.add(_device('d1', _keys.endpoint));
+
+      await actions(platform, repo).read(pushActionsProvider).forget();
+
+      expect(repo.devices, isEmpty);
+      expect(platform.subscribed, isNull);
+    });
+  });
+
+  group('start-up sync', () {
+    late Database db;
+    setUp(() async {
+      db = await databaseFactoryMemory.openDatabase(
+        'test-${DateTime.now().microsecondsSinceEpoch}',
+      );
+    });
+
+    /// Starts the app's providers once, as each app start does.
+    Future<void> start(_FakePlatform platform, _FakeRepository repo) async {
+      final container = ProviderContainer(
+        overrides: [
+          databaseProvider.overrideWith((ref) async => db),
+          sessionProvider.overrideWith(_ConnectedSession.new),
+          pushPlatformProvider.overrideWithValue(platform),
+          pushRepositoryProvider.overrideWithValue(repo),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(sessionProvider.future);
+      await container.read(pushSyncProvider.future);
+    }
+
+    test('sends a subscription the server has not had, once', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final repo = _FakeRepository();
+
+      await start(platform, repo);
+      expect(repo.devices.map((d) => d.endpoint), [_keys.endpoint]);
+
+      await start(platform, repo);
+      expect(repo.devices, hasLength(1));
+
+      platform.subscribed = const PushKeys(
+        endpoint: 'https://push.example.com/new',
+        p256dh: 'BPn',
+        auth: 'an',
+        platform: 'web',
+      );
+      await start(platform, repo);
+      expect(repo.devices.map((d) => d.endpoint), [
+        _keys.endpoint,
+        'https://push.example.com/new',
+      ]);
+    });
+
+    test('a device removed elsewhere is not added back', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final repo = _FakeRepository();
+      await start(platform, repo);
+      repo.devices.clear();
+
+      await start(platform, repo);
+
+      expect(repo.devices, isEmpty);
+    });
+
+    test('sends nothing without a subscription', () async {
+      final repo = _FakeRepository();
+      await start(_FakePlatform(), repo);
+      expect(repo.devices, isEmpty);
+    });
+  });
 
   testWidgets('a 401 sign-out unsubscribes this device', (tester) async {
     tester.view.physicalSize = const Size(420, 2000);

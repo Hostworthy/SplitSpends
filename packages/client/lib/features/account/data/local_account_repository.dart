@@ -30,13 +30,10 @@ class LocalAccountRepository implements AccountRepository {
       defaultCurrency: defaultCurrency,
       timezone: timezone,
       avatarColor: avatarColor,
+      gravatar: gravatar,
       notifications: notifications,
     );
-    await Stores.meta.record('profile').put(db, {
-      ...next.toJson(),
-      'timezone': next.timezone,
-      'notifications': next.notifications.toJson(),
-    });
+    await Stores.meta.record('profile').put(db, profileRecord(next));
     return next;
   }
 }
