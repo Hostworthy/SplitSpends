@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:sembast/sembast_memory.dart';
 
+import 'package:splitspends/core/api/api_client.dart';
 import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';
@@ -198,6 +199,33 @@ void main() {
       expect(await queue.pending(), isEmpty);
     });
 
+    test('a pass that fails unexpectedly does not stop later passes', () async {
+      final failing = _Failing(
+        () async => db,
+        owner: (server: _server, user: _ada.id),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          localStoreProvider.overrideWithValue(store),
+          httpClientProvider.overrideWithValue(server.client()),
+          databaseProvider.overrideWith((ref) async => db),
+          outboxProvider.overrideWithValue(failing),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(outboxSyncProvider, (_, _) {});
+      await container.read(sessionProvider.future);
+      await failing.add('POST', '/expenses', body: {'id': 'e1'}, label: '1');
+      await pumpEventQueue();
+      failing.passes = 0;
+
+      final sync = container.read(outboxSyncProvider.notifier);
+      await expectLater(sync.flush(), throwsStateError);
+      expect(container.read(outboxSyncProvider).syncing, isFalse);
+      await expectLater(sync.flush(), throwsStateError);
+      expect(failing.passes, 2, reason: 'the second pass ran');
+    });
+
     test('Retry-After pauses automatic replay; Retry overrides it', () async {
       var limited = true;
       final container = ProviderContainer(
@@ -242,4 +270,17 @@ void main() {
       expect(server.writes, ['POST /api/v1/expenses']);
     });
   });
+}
+
+/// An outbox whose replay fails with something other than an [ApiError].
+class _Failing extends Outbox {
+  _Failing(super.open, {required super.owner});
+
+  var passes = 0;
+
+  @override
+  Future<FlushResult> flush(ApiClient api) async {
+    passes++;
+    throw StateError('The local database is closed.');
+  }
 }

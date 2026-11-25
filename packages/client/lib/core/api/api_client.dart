@@ -151,8 +151,9 @@ class ApiClient {
           contentType: _mediaType(contentType),
         ),
       );
-    final streamed = await _guard(() => _http.send(request));
-    final response = await http.Response.fromStream(streamed);
+    final response = await _guard(
+      () async => http.Response.fromStream(await _http.send(request)),
+    );
     _check(response);
     return parse((jsonDecode(response.body) as JsonMap)['data']);
   }
@@ -170,8 +171,11 @@ class ApiClient {
     if (payload != null) request.body = jsonEncode(payload);
     http.Response response;
     try {
-      final streamed = await _guard(() => _http.send(request));
-      response = await http.Response.fromStream(streamed);
+      // The body is read inside the guard too: a connection that drops or
+      // stalls mid-body is a network failure like any other.
+      response = await _guard(
+        () async => http.Response.fromStream(await _http.send(request)),
+      );
     } on ApiError catch (error) {
       if (error.isNetwork) {
         onReachability?.call(false);
