@@ -7,6 +7,9 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap"
 )
 
+// secretKey is a SECRET_KEY as `openssl rand -hex 32` prints one.
+const secretKey = "3f9c2a7e1b04d8c56e2f9a1370b4c8d2e5a6f1093c7b8d4e2a1f6c0b9e3d7a45"
+
 // TestTrustProxy reads TRUST_PROXY as a hop count and keeps the boolean
 // values deployments already use working.
 func TestTrustProxy(t *testing.T) {
@@ -25,7 +28,7 @@ func TestTrustProxy(t *testing.T) {
 		{"off", 0},
 	} {
 		t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
-		t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+		t.Setenv("SECRET_KEY", secretKey)
 		t.Setenv("TRUST_PROXY", tc.value)
 		c, err := bootstrap.LoadConfig()
 		if err != nil {
@@ -47,7 +50,7 @@ func TestTrustProxy(t *testing.T) {
 // instead of letting them wrap around.
 func TestDatabaseConns(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
-	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	t.Setenv("SECRET_KEY", secretKey)
 	for _, tc := range []struct {
 		value string
 		want  int32
@@ -77,7 +80,7 @@ func TestDatabaseConns(t *testing.T) {
 // values that are not one.
 func TestAdminEmail(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
-	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	t.Setenv("SECRET_KEY", secretKey)
 	for _, tc := range []struct{ value, want string }{
 		{"", ""},
 		{" Owner@Example.com ", "owner@example.com"},
@@ -103,7 +106,7 @@ func TestAdminEmail(t *testing.T) {
 // in-process jobs, only a scheduler calling /internal/jobs runs them.
 func TestServerlessJobs(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
-	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	t.Setenv("SECRET_KEY", secretKey)
 	for _, tc := range []struct {
 		serverless, secret string
 		ok                 bool
@@ -129,7 +132,7 @@ func TestServerlessJobs(t *testing.T) {
 // matches nobody.
 func TestAllowedDomains(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
-	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	t.Setenv("SECRET_KEY", secretKey)
 	t.Setenv("SIGNUP_ALLOWED_DOMAINS", "Family.com, @work.org")
 	if _, err := bootstrap.LoadConfig(); err != nil {
 		t.Fatal(err)
@@ -144,7 +147,7 @@ func TestAllowedDomains(t *testing.T) {
 
 func TestMCPAdminTools(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
-	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	t.Setenv("SECRET_KEY", secretKey)
 	for _, tc := range []struct {
 		value string
 		want  bool
@@ -168,7 +171,7 @@ func TestMCPAdminTools(t *testing.T) {
 // that would turn AI off or are not counts.
 func TestAIRateLimit(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
-	t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+	t.Setenv("SECRET_KEY", secretKey)
 	for _, tc := range []struct {
 		value string
 		want  int
@@ -206,6 +209,12 @@ func TestLoadConfig(t *testing.T) {
 	}{
 		{name: "missing DATABASE_URL", env: map[string]string{"DATABASE_URL": ""}, want: "required.not-found.DATABASE_URL"},
 		{name: "short SECRET_KEY", env: map[string]string{"SECRET_KEY": strings.Repeat("a", 31)}, want: "invalid.SECRET_KEY"},
+		{name: "SECRET_KEY from the development example", env: map[string]string{"SECRET_KEY": "dev-only-secret-key-change-me-0123456789abcdef"},
+			want: "invalid.SECRET_KEY"},
+		{name: "SECRET_KEY of one repeated character", env: map[string]string{"SECRET_KEY": strings.Repeat("a", 32)}, want: "invalid.SECRET_KEY"},
+		{name: "SECRET_KEY of few characters", env: map[string]string{"SECRET_KEY": strings.Repeat("abcdefgh", 4)}, want: "invalid.SECRET_KEY"},
+		{name: "SECRET_KEY from openssl", env: map[string]string{"SECRET_KEY": secretKey},
+			check: func(c *bootstrap.Config) bool { return len(c.Secret) == 32 }},
 		{name: "unknown SIGNUP_MODE", env: map[string]string{"SIGNUP_MODE": "bogus"}, want: "invalid.SIGNUP_MODE"},
 		{name: "domain mode without domains", env: map[string]string{"SIGNUP_MODE": "domain"}, want: "required.not-found.SIGNUP_ALLOWED_DOMAINS"},
 		{name: "unreadable SERVERLESS", env: map[string]string{"SERVERLESS": "maybe"}, want: "invalid.SERVERLESS"},
@@ -239,7 +248,7 @@ func TestLoadConfig(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DATABASE_URL", "postgres://localhost/splitspends")
-			t.Setenv("SECRET_KEY", strings.Repeat("a", 32))
+			t.Setenv("SECRET_KEY", secretKey)
 			for key, value := range tc.env {
 				t.Setenv(key, value)
 			}
