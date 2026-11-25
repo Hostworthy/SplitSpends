@@ -29,6 +29,7 @@ type Service struct {
 	repo     Repository
 	notifier ports.Notifier
 	quota    ports.Quota
+	tx       ports.Tx
 	clock    clock.Clock
 	log      *slog.Logger
 	settings Settings
@@ -42,8 +43,8 @@ type Settings struct {
 }
 
 // NewService builds a Service.
-func NewService(repo Repository, notifier ports.Notifier, quota ports.Quota, c clock.Clock, log *slog.Logger, settings Settings) *Service {
-	return &Service{repo: repo, notifier: notifier, quota: quota, clock: c, log: log, settings: settings}
+func NewService(repo Repository, notifier ports.Notifier, quota ports.Quota, tx ports.Tx, c clock.Clock, log *slog.Logger, settings Settings) *Service {
+	return &Service{repo: repo, notifier: notifier, quota: quota, tx: tx, clock: c, log: log, settings: settings}
 }
 
 // Picture is the Gravatar image URL to show for u at size pixels, or ""
@@ -188,17 +189,25 @@ func (s *Service) Placeholder(ctx context.Context, id *uuid.UUID, name string, c
 	if err != nil {
 		return nil, err
 	}
-	n, err := s.repo.Placeholders(ctx, createdBy)
-	if err != nil {
-		return nil, err
-	}
-	if n >= MaxPlaceholders {
-		return nil, errs.Conflict(fmt.Sprintf("You have added %d people by name, the most you can. Give some of them an email, or remove ones you no longer need.", MaxPlaceholders))
-	}
 	if inviter, err := s.repo.Get(ctx, createdBy); err == nil {
 		u.DefaultCurrency = inviter.DefaultCurrency
 	}
-	return u, s.repo.Create(ctx, u)
+	// Counted and saved in one transaction, so people added at the same
+	// time cannot both take the last place.
+	err = s.tx.Do(ctx, func(ctx context.Context) error {
+		n, err := s.repo.Placeholders(ctx, createdBy)
+		if err != nil {
+			return err
+		}
+		if n >= MaxPlaceholders {
+			return errs.Conflict(fmt.Sprintf("You have added %d people by name, the most you can. Give some of them an email, or remove ones you no longer need.", MaxPlaceholders))
+		}
+		return s.repo.Create(ctx, u)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
 }
 
 // Invite attaches an email to a placeholder the actor created, turning it

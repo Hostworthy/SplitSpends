@@ -3,7 +3,9 @@ package bootstrap_test
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +17,8 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/transfer"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/Hostworthy/SplitSpends/packages/database"
+	"github.com/Hostworthy/SplitSpends/packages/database/repositories"
 	"github.com/google/uuid"
 )
 
@@ -193,6 +197,53 @@ func TestPlaceholderLimit(t *testing.T) {
 	}
 	if _, err := svc.Friends.Add(ctx, ben, "", "Sam"); err != nil {
 		t.Fatalf("the limit is per account: %v", err)
+	}
+}
+
+// naming is the user repository with a hook that runs right before a user
+// is saved.
+type naming struct {
+	*repositories.Users
+	before func()
+}
+
+func (n naming) Create(ctx context.Context, u *user.User) error {
+	n.before()
+	return n.Users.Create(ctx, u)
+}
+
+// TestPlaceholderLimitIsAtomic checks that people added by name at the same
+// time cannot take an account past user.MaxPlaceholders.
+func TestPlaceholderLimitIsAtomic(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	bundle := transfer.Bundle{Me: uuid.New()}
+	for i := range user.MaxPlaceholders - 1 {
+		bundle.People = append(bundle.People, transfer.Person{ID: uuid.New(), Name: fmt.Sprintf("Person %d", i)})
+	}
+	if _, err := env.Services.Transfer.Import(ctx, ada, bundle); err != nil {
+		t.Fatal(err)
+	}
+	// One place is left. Right before it is taken, someone else is added.
+	other := make(chan error, 1)
+	var once sync.Once
+	repo := naming{repositories.NewUsers(env.DB), func() {
+		once.Do(func() {
+			meanwhile(t, env, func() {
+				_, err := env.Services.Users.Placeholder(ctx, nil, "Late", ada)
+				other <- err
+			})
+		})
+	}}
+	svc := user.NewService(repo, nil, repositories.NewQuotas(env.DB), database.NewTx(env.DB), env.Clock, slog.New(slog.DiscardHandler), user.Settings{})
+	_, err := svc.Placeholder(ctx, nil, "Last", ada)
+	late := <-other
+	if (err == nil) == (late == nil) {
+		t.Fatalf("exactly one person may take the last place, got %v and %v", err, late)
+	}
+	if n, err := repositories.NewUsers(env.DB).Placeholders(ctx, ada); err != nil || n != user.MaxPlaceholders {
+		t.Fatalf("want %d people added by name, got %d, %v", user.MaxPlaceholders, n, err)
 	}
 }
 

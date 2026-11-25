@@ -185,7 +185,7 @@ func Wire(cfg *Config, a Adapters) *Services {
 	}
 
 	quotas := repositories.NewQuotas(db)
-	users := user.NewService(store.users, notifier, quotas, c, log, user.Settings{Gravatar: cfg.Gravatar})
+	users := user.NewService(store.users, notifier, quotas, tx, c, log, user.Settings{Gravatar: cfg.Gravatar})
 	act := activity.NewService(repositories.NewActivities(db), c)
 	balances := balance.NewService(store.expenses)
 	groups := group.NewService(group.Deps{Repo: store.groups, Users: users, Balances: balances, Activity: act, Notifier: notifier,

@@ -61,6 +61,10 @@ type RequestRepository interface {
 	// Save updates the request with r.ID, or files r as a new one. A new
 	// request for an email that already has one is ignored.
 	Save(ctx context.Context, r *Request) error
+	// Lock waits for the lock on the queue of requests and holds it until
+	// the transaction in ctx ends, so requests filed at the same time count
+	// each other. It must be called inside Tx.Do.
+	Lock(ctx context.Context) error
 	// List returns a page of requests with status, newest first, and how
 	// many there are in all.
 	List(ctx context.Context, status Status, limit, offset int) ([]*Request, int, error)
