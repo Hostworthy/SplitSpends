@@ -2,6 +2,8 @@ package activity
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -26,6 +28,39 @@ func TestDescribeLeftAfterRename(t *testing.T) {
 	got := Describe(removed(ben, ben, "Ben"), "Benjamin")
 	if want := "Benjamin left Flat"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// TestDescribeVectors runs the activity cases of spec/vectors.json; the
+// client writes the same summaries for on-device events from that file.
+func TestDescribeVectors(t *testing.T) {
+	raw, err := os.ReadFile("../../../../spec/vectors.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Activity []struct {
+			Name    string
+			Kind    Kind
+			Actor   string
+			ActorID uuid.UUID
+			Data    map[string]any
+			Summary string
+		}
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Activity) == 0 {
+		t.Fatal("spec/vectors.json has no activity cases")
+	}
+	for _, c := range doc.Activity {
+		t.Run(c.Name, func(t *testing.T) {
+			got := Describe(&Activity{ActorID: c.ActorID, Kind: c.Kind, Data: c.Data}, c.Actor)
+			if got != c.Summary {
+				t.Errorf("got %q, want %q", got, c.Summary)
+			}
+		})
 	}
 }
 

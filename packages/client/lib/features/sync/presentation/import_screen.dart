@@ -66,10 +66,13 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     final summary = ref.watch(_summaryProvider).value;
     final server = ref.watch(sessionProvider).value?.serverUrl ?? '';
     final uploaded = summary?.uploaded;
-    // Uploading to the same server again is safe but rarely wanted.
-    final again =
+    final sameServer =
         uploaded != null &&
         normalizeServerUrl(uploaded.server) == normalizeServerUrl(server);
+    final otherAccount =
+        uploaded?.user != null && uploaded?.user != widget.login.me.id;
+    // Uploading to the same account again is safe but rarely wanted.
+    final again = sameServer && !otherAccount;
     final scheme = Theme.of(context).colorScheme;
     String count(int n, String one, String many) => '$n ${n == 1 ? one : many}';
     final what = summary == null
@@ -97,6 +100,9 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             again
                 ? 'You already uploaded this data to this server on '
                       '${Dates.short(uploaded.at.toLocal())}.'
+                : sameServer
+                ? 'You uploaded this data to another account on this server '
+                      'on ${Dates.short(uploaded.at.toLocal())}.'
                 : 'You uploaded this data to '
                       '${Uri.tryParse(uploaded.server)?.host ?? uploaded.server}'
                       ' on ${Dates.short(uploaded.at.toLocal())}.',

@@ -60,7 +60,8 @@ class LocalActivityRepository implements ActivityRepository {
       (person?['name'] as String?)?.split(' ').first ?? 'Someone';
 }
 
-/// Port of the server's `activity.Describe`.
+/// Port of the server's `activity.Describe`; the activity cases of
+/// spec/vectors.json run against both.
 String describe(String kind, JsonMap data, String actor, {String? actorId}) {
   String str(String k) => (data[k] as String?) ?? '';
   final group = str('groupName');
@@ -86,7 +87,10 @@ String describe(String kind, JsonMap data, String actor, {String? actorId}) {
       actorId != null && str('targetId') == actorId
           ? '$actor left $group'
           : '$actor removed ${str('targetName')} from $group',
+    'group.member-joined' => '$actor joined $group with an invite link',
     'friend.added' => '$actor added ${str('targetName')} as a friend',
+    'reminder.sent' =>
+      '$actor reminded ${str('targetName')} to settle up$inGroup',
     _ => '$actor did something',
   };
 }
