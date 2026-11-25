@@ -110,15 +110,38 @@ func pathID(r *http.Request, name, entity string) (uuid.UUID, error) {
 	return id, nil
 }
 
+// requiredID parses an id sent in field of a request body.
+func requiredID(raw, field string) (uuid.UUID, error) {
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return uuid.Nil, errs.Validation(field, "Invalid id.")
+	}
+	return id, nil
+}
+
 func optionalID(raw *string, field string) (*uuid.UUID, error) {
 	if raw == nil || *raw == "" {
 		return nil, nil
 	}
-	id, err := uuid.Parse(*raw)
+	id, err := requiredID(*raw, field)
 	if err != nil {
-		return nil, errs.Validation(field, "Invalid id.")
+		return nil, err
 	}
 	return &id, nil
+}
+
+// nest puts the field of a validation error under path, so an error in one
+// entry of a list names that entry, as in expenses[3].total.
+func nest(err error, path string) error {
+	de, ok := errs.As(err)
+	if !ok {
+		return err
+	}
+	field := path
+	if de.Field != "" {
+		field += "." + de.Field
+	}
+	return &errs.Error{Kind: de.Kind, Field: field, Message: de.Message, Cause: de.Cause}
 }
 
 func queryID(r *http.Request, name string) (*uuid.UUID, error) {

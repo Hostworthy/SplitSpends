@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/category"
@@ -8,7 +9,6 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/transfer"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 	"github.com/Hostworthy/SplitSpends/packages/platform"
-	"github.com/google/uuid"
 )
 
 const maxImport = 16 << 20
@@ -19,55 +19,60 @@ func (a *API) importBundle(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	b := transfer.Bundle{}
-	if b.Me, err = uuid.Parse(in.MeID); err != nil {
-		return errs.Validation("meId", "Invalid id.")
+	if b.Me, err = requiredID(in.MeID, "meId"); err != nil {
+		return err
 	}
-	for _, p := range in.People {
-		id, err := uuid.Parse(p.ID)
+	for i, p := range in.People {
+		id, err := requiredID(p.ID, fmt.Sprintf("people[%d].id", i))
 		if err != nil {
-			return errs.Validation("people", "Invalid person id.")
+			return err
 		}
 		b.People = append(b.People, transfer.Person{ID: id, Name: p.Name, Email: p.Email})
 	}
-	for _, c := range in.Categories {
+	for i, c := range in.Categories {
 		if c.ID == "" {
-			return errs.Validation("categories", "Every imported category needs its id.")
+			return errs.Validation(fmt.Sprintf("categories[%d].id", i), "Every imported category needs its id.")
 		}
 		b.Categories = append(b.Categories, transfer.Category{
 			Input:   category.Input{ID: &c.ID, Name: &c.Name, Icon: &c.Icon, Group: &c.Group},
 			Deleted: c.Deleted,
 		})
 	}
-	for _, g := range in.Groups {
-		id, err := uuid.Parse(g.ID)
-		if err != nil {
-			return errs.Validation("groups", "Invalid group id.")
-		}
-		patch, err := toPatch(g.GroupPatch)
+	for i, g := range in.Groups {
+		at := fmt.Sprintf("groups[%d]", i)
+		id, err := requiredID(g.ID, at+".id")
 		if err != nil {
 			return err
 		}
+		patch, err := toPatch(g.GroupPatch)
+		if err != nil {
+			return nest(err, at)
+		}
 		group := transfer.Group{ID: id, Patch: patch}
-		for _, m := range g.MemberIDs {
-			mid, err := uuid.Parse(m)
+		for j, m := range g.MemberIDs {
+			mid, err := requiredID(m, fmt.Sprintf("%s.memberIds[%d]", at, j))
 			if err != nil {
-				return errs.Validation("groups", "Invalid member id.")
+				return err
 			}
 			group.Members = append(group.Members, mid)
 		}
 		b.Groups = append(b.Groups, group)
 	}
-	for _, e := range in.Expenses {
+	for i, e := range in.Expenses {
+		at := fmt.Sprintf("expenses[%d]", i)
 		if e.ID == nil {
-			return errs.Validation("expenses", "Every imported expense needs its id.")
+			return errs.Validation(at+".id", "Every imported expense needs its id.")
 		}
 		input, err := toInput(e.ExpenseInput)
 		if err != nil {
-			return err
+			return nest(err, at)
 		}
-		kind := expense.KindExpense
-		if e.Kind == string(expense.KindPayment) {
-			kind = expense.KindPayment
+		kind := expense.Kind(e.Kind)
+		if kind == "" {
+			kind = expense.KindExpense
+		}
+		if kind != expense.KindExpense && kind != expense.KindPayment {
+			return errs.Validation(at+".kind", "Kind is expense or payment.")
 		}
 		b.Expenses = append(b.Expenses, transfer.Expense{Kind: kind, Input: input})
 	}
