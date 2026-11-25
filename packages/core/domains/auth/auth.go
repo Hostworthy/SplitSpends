@@ -36,6 +36,8 @@ type Challenge struct {
 	ExpiresAt  time.Time
 	ConsumedAt *time.Time
 	CreatedAt  time.Time
+	// Client is a keyed hash of the network the code was requested from.
+	Client string
 	// Pending marks a code sent to someone who still needs approval.
 	Pending bool
 }
@@ -121,17 +123,24 @@ type Policy struct {
 	CodeTTL        time.Duration
 	SessionTTL     time.Duration
 	MaxAttempts    int
-	MaxCodesHour   int
+	// MaxCodesHour is how many codes one network may request for an email
+	// in an hour, and MaxCodesEmail how many all networks may together.
+	// Someone who knows an address can use up only their own network's
+	// share, so its owner can still get a code; the total keeps the number
+	// of guesses per address bounded.
+	MaxCodesHour  int
+	MaxCodesEmail int
 }
 
 // DefaultPolicy returns sensible defaults; Secret must still be set.
 func DefaultPolicy() Policy {
 	return Policy{
-		Mode:         SignupInvite,
-		CodeTTL:      10 * time.Minute,
-		SessionTTL:   90 * 24 * time.Hour,
-		MaxAttempts:  5,
-		MaxCodesHour: 5,
+		Mode:          SignupInvite,
+		CodeTTL:       10 * time.Minute,
+		SessionTTL:    90 * 24 * time.Hour,
+		MaxAttempts:   5,
+		MaxCodesHour:  5,
+		MaxCodesEmail: 10,
 	}
 }
 
@@ -164,6 +173,14 @@ func newCode() (string, error) {
 func hashCode(secret []byte, id uuid.UUID, email, code string) string {
 	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(id.String() + "|" + email + "|" + code))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// hashClient keys a client address with the server secret, so stored codes
+// do not reveal where people sign in from.
+func hashClient(secret []byte, client string) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte("client|" + client))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 

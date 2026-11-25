@@ -124,7 +124,7 @@ func (e *Env) Join(t testing.TB, email, name, invite string) *auth.Login {
 	t.Helper()
 	ctx := context.Background()
 	e.Notifier.Forget(email)
-	if err := e.Services.Auth.RequestCode(ctx, email, invite); err != nil {
+	if err := e.Services.Auth.RequestCode(ctx, email, invite, ""); err != nil {
 		t.Fatalf("request a code for %s: %v", email, err)
 	}
 	code := e.Notifier.Code(email)

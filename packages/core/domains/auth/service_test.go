@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -19,32 +20,38 @@ func (m *memChallenges) Create(_ context.Context, c *Challenge) error {
 	m.list = append(m.list, &cp)
 	return nil
 }
-func (m *memChallenges) Latest(_ context.Context, email string) (*Challenge, error) {
-	for i := len(m.list) - 1; i >= 0; i-- {
-		if m.list[i].Email == email {
-			cp := *m.list[i]
-			return &cp, nil
-		}
-	}
-	return nil, nil
-}
-func (m *memChallenges) Update(_ context.Context, c *Challenge) error {
-	for i, x := range m.list {
-		if x.ID == c.ID {
-			cp := *c
-			m.list[i] = &cp
-		}
-	}
-	return nil
-}
-func (m *memChallenges) CountSince(_ context.Context, email string, since time.Time) (int, error) {
-	n := 0
+func (m *memChallenges) Lock(context.Context, string) error { return nil }
+func (m *memChallenges) CountSince(_ context.Context, email, client string, since time.Time) (int, int, error) {
+	total, own := 0, 0
 	for _, c := range m.list {
 		if c.Email == email && !c.CreatedAt.Before(since) {
-			n++
+			total++
+			if c.Client == client {
+				own++
+			}
 		}
 	}
-	return n, nil
+	return total, own, nil
+}
+func (m *memChallenges) Attempt(_ context.Context, email string, now time.Time, limit int) ([]*Challenge, error) {
+	var live []*Challenge
+	for _, c := range m.list {
+		if c.Email == email && c.Usable(now, limit) {
+			c.Attempts++
+			cp := *c
+			live = append(live, &cp)
+		}
+	}
+	return live, nil
+}
+func (m *memChallenges) Consume(_ context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	for _, c := range m.list {
+		if c.ID == id && c.ConsumedAt == nil {
+			c.ConsumedAt = &at
+			return true, nil
+		}
+	}
+	return false, nil
 }
 func (m *memChallenges) DeleteBefore(context.Context, time.Time) error { return nil }
 
@@ -129,7 +136,7 @@ func service(mode SignupMode) (*Service, *memUsers, codes) {
 func TestLoginFlow(t *testing.T) {
 	ctx := context.Background()
 	s, _, sent := service(SignupInvite)
-	if err := s.RequestCode(ctx, " Ada@Example.com ", ""); err != nil {
+	if err := s.RequestCode(ctx, " Ada@Example.com ", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	code := sent["ada@example.com"]
@@ -160,7 +167,7 @@ func TestInviteModeIgnoresStrangers(t *testing.T) {
 	s, users, sent := service(SignupInvite)
 	first, _ := user.New("first@example.com", "First", user.StatusActive, time.Now())
 	_ = users.Create(ctx, first)
-	if err := s.RequestCode(ctx, "stranger@example.com", ""); err != nil {
+	if err := s.RequestCode(ctx, "stranger@example.com", "", ""); err != nil {
 		t.Fatalf("strangers get the same response, got %v", err)
 	}
 	if _, ok := sent["stranger@example.com"]; ok {
@@ -168,7 +175,7 @@ func TestInviteModeIgnoresStrangers(t *testing.T) {
 	}
 	invited, _ := user.New("friend@example.com", "Friend", user.StatusInvited, time.Now())
 	_ = users.Create(ctx, invited)
-	if err := s.RequestCode(ctx, "friend@example.com", ""); err != nil || sent["friend@example.com"] == "" {
+	if err := s.RequestCode(ctx, "friend@example.com", "", ""); err != nil || sent["friend@example.com"] == "" {
 		t.Fatal("invited users must receive a code")
 	}
 }
@@ -176,7 +183,7 @@ func TestInviteModeIgnoresStrangers(t *testing.T) {
 func TestAttemptsAreLimited(t *testing.T) {
 	ctx := context.Background()
 	s, _, sent := service(SignupOpen)
-	_ = s.RequestCode(ctx, "ada@example.com", "")
+	_ = s.RequestCode(ctx, "ada@example.com", "", "")
 	for i := 0; i < 5; i++ {
 		if _, err := s.Verify(ctx, "ada@example.com", "999999x", "", ""); err == nil {
 			t.Fatal("wrong code accepted")
@@ -191,11 +198,11 @@ func TestCodeRequestsAreRateLimited(t *testing.T) {
 	ctx := context.Background()
 	s, _, _ := service(SignupOpen)
 	for i := 0; i < 5; i++ {
-		if err := s.RequestCode(ctx, "ada@example.com", ""); err != nil {
+		if err := s.RequestCode(ctx, "ada@example.com", "", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := s.RequestCode(ctx, "ada@example.com", ""); !errs.Is(err, errs.KindRateLimited) {
+	if err := s.RequestCode(ctx, "ada@example.com", "", ""); !errs.Is(err, errs.KindRateLimited) {
 		t.Fatalf("sixth request in an hour must be limited, got %v", err)
 	}
 }
@@ -206,8 +213,8 @@ func TestDomainMode(t *testing.T) {
 	s.policy.AllowedDomains = []string{"example.org"}
 	first, _ := user.New("first@example.com", "First", user.StatusActive, time.Now())
 	_ = users.Create(ctx, first)
-	_ = s.RequestCode(ctx, "x@example.org", "")
-	_ = s.RequestCode(ctx, "x@evil.org", "")
+	_ = s.RequestCode(ctx, "x@example.org", "", "")
+	_ = s.RequestCode(ctx, "x@evil.org", "", "")
 	if sent["x@example.org"] == "" || sent["x@evil.org"] != "" {
 		t.Fatalf("domain policy not applied: %v", sent)
 	}
@@ -220,13 +227,13 @@ func TestInviteLinkLetsStrangersSignUp(t *testing.T) {
 	_ = users.Create(ctx, first)
 
 	// Same response with a wrong token, and nothing is sent.
-	if err := s.RequestCode(ctx, "stranger@example.com", "expired-or-unknown"); err != nil {
+	if err := s.RequestCode(ctx, "stranger@example.com", "expired-or-unknown", ""); err != nil {
 		t.Fatalf("an invalid link must look like any other request, got %v", err)
 	}
 	if _, ok := sent["stranger@example.com"]; ok {
 		t.Fatal("an invalid link must not let a stranger in")
 	}
-	if err := s.RequestCode(ctx, "stranger@example.com", "valid-link"); err != nil {
+	if err := s.RequestCode(ctx, "stranger@example.com", "valid-link", ""); err != nil {
 		t.Fatal(err)
 	}
 	code := sent["stranger@example.com"]
@@ -245,9 +252,61 @@ func TestInviteLinkWorksInDomainMode(t *testing.T) {
 	s.policy.AllowedDomains = []string{"example.org"}
 	first, _ := user.New("first@example.com", "First", user.StatusActive, time.Now())
 	_ = users.Create(ctx, first)
-	_ = s.RequestCode(ctx, "x@evil.org", "")
-	_ = s.RequestCode(ctx, "y@evil.org", "valid-link")
+	_ = s.RequestCode(ctx, "x@evil.org", "", "")
+	_ = s.RequestCode(ctx, "y@evil.org", "valid-link", "")
 	if sent["x@evil.org"] != "" || sent["y@evil.org"] == "" {
 		t.Fatalf("only the invited address may sign up: %v", sent)
+	}
+}
+
+func TestStrangerCannotLockOutOwner(t *testing.T) {
+	ctx := context.Background()
+	s, _, sent := service(SignupOpen)
+	// The owner asks for a code; then someone else, on another network, asks
+	// for as many as they may and guesses wrong.
+	if err := s.RequestCode(ctx, "ada@example.com", "", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	held := sent["ada@example.com"]
+	for i := 0; i < s.policy.MaxCodesHour; i++ {
+		if err := s.RequestCode(ctx, "ada@example.com", "", "stranger"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RequestCode(ctx, "ada@example.com", "", "stranger"); !errs.Is(err, errs.KindRateLimited) {
+		t.Fatalf("the stranger's network must run out of codes, got %v", err)
+	}
+	if _, err := s.Verify(ctx, "ada@example.com", held, "", ""); err != nil {
+		t.Fatalf("newer codes must not hide the one the owner holds: %v", err)
+	}
+
+	// Wrong guesses use up every live code; the owner's network can still
+	// get a new one, and it works.
+	for i := 0; i < s.policy.MaxAttempts; i++ {
+		if _, err := s.Verify(ctx, "ada@example.com", "000000x", "", ""); !errs.Is(err, errs.KindUnauthorized) {
+			t.Fatalf("wrong code: %v", err)
+		}
+	}
+	if err := s.RequestCode(ctx, "ada@example.com", "", "owner"); err != nil {
+		t.Fatalf("the owner must still get a code: %v", err)
+	}
+	if _, err := s.Verify(ctx, "ada@example.com", sent["ada@example.com"], "", ""); err != nil {
+		t.Fatalf("the owner's new code must work: %v", err)
+	}
+}
+
+func TestCodeRequestsAreLimitedPerEmail(t *testing.T) {
+	ctx := context.Background()
+	s, _, _ := service(SignupOpen)
+	for i := 0; i < s.policy.MaxCodesEmail; i++ {
+		if err := s.RequestCode(ctx, "ada@example.com", "", fmt.Sprintf("network-%d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RequestCode(ctx, "ada@example.com", "", "another-network"); !errs.Is(err, errs.KindRateLimited) {
+		t.Fatalf("all networks together must be limited, got %v", err)
+	}
+	if err := s.RequestCode(ctx, "ben@example.com", "", "another-network"); err != nil {
+		t.Fatalf("other addresses are not affected: %v", err)
 	}
 }
