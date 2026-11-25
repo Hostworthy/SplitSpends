@@ -110,7 +110,7 @@ func toolText(t *testing.T, answer map[string]any) (string, bool) {
 func TestToolPanicIsRecovered(t *testing.T) {
 	s := sdk.NewServer(&sdk.Implementation{Name: "test", Version: "test"}, nil)
 	ts := &toolset{server: s, client: func(*sdk.CallToolRequest) *Client { return nil }, log: slog.New(slog.DiscardHandler)}
-	add(ts, "explode", "Panics.", nil, func(*tools, context.Context, *sdk.CallToolRequest, empty) (*sdk.CallToolResult, any, error) {
+	add(ts, "explode", "Explode", "Panics.", readOnly, func(*tools, context.Context, *sdk.CallToolRequest, empty) (*sdk.CallToolResult, any, error) {
 		var p *platform.Expense
 		return text(p.ID), nil, nil
 	})
@@ -468,5 +468,47 @@ func TestIDsStayInOnePathSegment(t *testing.T) {
 		if _, ok := ws.body(tc.want); !ok {
 			t.Errorf("want %s, saw %v", tc.want, ws.keys())
 		}
+	}
+}
+
+func TestToolAnnotations(t *testing.T) {
+	srv := httptest.NewServer(HTTPHandler("http://127.0.0.1:1", "test", Options{Admin: true}, nil, slog.New(slog.DiscardHandler)))
+	t.Cleanup(srv.Close)
+	status, answer := rpc(t, srv.URL, "ss_test", "tools/list", map[string]any{})
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %v", status, answer)
+	}
+	raw, _ := json.Marshal(answer["result"])
+	var result sdk.ListToolsResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	destructive := []string{"delete_expense", "admin_set_role", "admin_set_signup", "admin_disable_account", "admin_decide_request", "admin_enable_account"}
+	routine := []string{"add_expense", "record_payment", "remind_to_settle"}
+	for _, tool := range result.Tools {
+		a := tool.Annotations
+		if a == nil || a.Title == "" {
+			t.Errorf("%s: want annotations with a title, got %+v", tool.Name, a)
+			continue
+		}
+		read := strings.HasPrefix(strings.TrimPrefix(tool.Name, "admin_"), "list_") || strings.HasPrefix(strings.TrimPrefix(tool.Name, "admin_"), "get_")
+		if read && (!a.ReadOnlyHint || !a.IdempotentHint || a.OpenWorldHint == nil || *a.OpenWorldHint) {
+			t.Errorf("%s: want a read-only, idempotent, closed-world tool, got %+v", tool.Name, a)
+		}
+		if !read && a.ReadOnlyHint {
+			t.Errorf("%s: a write must not be read-only", tool.Name)
+		}
+		if slices.Contains(destructive, tool.Name) && (a.DestructiveHint == nil || !*a.DestructiveHint) {
+			t.Errorf("%s: want DestructiveHint true, got %+v", tool.Name, a)
+		}
+		if slices.Contains(routine, tool.Name) && (a.DestructiveHint == nil || *a.DestructiveHint) {
+			t.Errorf("%s: an entry that can be edited or deleted is not destructive, got %+v", tool.Name, a)
+		}
+		if tool.Name == "remind_to_settle" && (a.OpenWorldHint == nil || !*a.OpenWorldHint) {
+			t.Errorf("remind_to_settle sends an email, so it reaches the open world: %+v", a)
+		}
+	}
+	if len(result.Tools) != 20 {
+		t.Errorf("want 20 tools, got %d", len(result.Tools))
 	}
 }

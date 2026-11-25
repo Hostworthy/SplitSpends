@@ -53,25 +53,42 @@ func build(version string, opts Options, log *slog.Logger, client func(*sdk.Call
 	s := sdk.NewServer(&sdk.Implementation{Name: "splitspends", Title: "Split Spends", Version: version}, &sdk.ServerOptions{Instructions: guide})
 	ts := &toolset{server: s, client: client, log: log}
 
-	readOnly := &sdk.ToolAnnotations{ReadOnlyHint: true}
-	add(ts, "get_overview", "Who the user is, their total balances, groups and friends with balances.", readOnly, (*tools).overview)
-	add(ts, "list_groups", "List the user's groups with ids, members and the user's balance in each.", readOnly, (*tools).listGroups)
-	add(ts, "get_group", "Group details: members, every member's balance, suggested settle-up payments and recent expenses.", readOnly, (*tools).getGroup)
-	add(ts, "list_friends", "List friends with ids, emails and the balance with each.", readOnly, (*tools).listFriends)
-	add(ts, "list_expenses", "Search expenses and payments, newest first. Filter by group, friend, text or dates.", readOnly, (*tools).listExpenses)
-	add(ts, "get_expense", "Full details of one expense, including who paid and who owes what.", readOnly, (*tools).getExpense)
-	add(ts, "list_activity", "Recent activity feed.", readOnly, (*tools).listActivity)
-	add(ts, "list_categories", "Expense category ids for add_expense: the built-in ones plus the user's own custom categories.", readOnly, (*tools).listCategories)
-	add(ts, "add_expense", "Add a shared expense. Defaults: paid by the user, split equally between the user and the participants given (or, when a group is given and no participants or split are listed, the group's default split, else every group member equally).", nil, (*tools).addExpense)
-	add(ts, "record_payment", "Record that one person paid another back (settle up).", nil, (*tools).recordPayment)
-	add(ts, "remind_to_settle", "Email someone who owes the user money a friendly reminder to settle up, in one group or across everything. At most one reminder per person and group every 24 hours.", nil, (*tools).remind)
-	destructive := true
-	add(ts, "delete_expense", "Delete an expense or payment. It can be restored from the app.", &sdk.ToolAnnotations{DestructiveHint: &destructive}, (*tools).deleteExpense)
+	add(ts, "get_overview", "Overview", "Who the user is, their total balances, groups and friends with balances.", readOnly, (*tools).overview)
+	add(ts, "list_groups", "List groups", "List the user's groups with ids, members and the user's balance in each.", readOnly, (*tools).listGroups)
+	add(ts, "get_group", "Group details", "Group details: members, every member's balance, suggested settle-up payments and recent expenses.", readOnly, (*tools).getGroup)
+	add(ts, "list_friends", "List friends", "List friends with ids, emails and the balance with each.", readOnly, (*tools).listFriends)
+	add(ts, "list_expenses", "Search expenses", "Search expenses and payments, newest first. Filter by group, friend, text or dates.", readOnly, (*tools).listExpenses)
+	add(ts, "get_expense", "Expense details", "Full details of one expense, including who paid and who owes what.", readOnly, (*tools).getExpense)
+	add(ts, "list_activity", "Recent activity", "Recent activity feed.", readOnly, (*tools).listActivity)
+	add(ts, "list_categories", "List categories", "Expense category ids for add_expense: the built-in ones plus the user's own custom categories.", readOnly, (*tools).listCategories)
+	add(ts, "add_expense", "Add expense", "Add a shared expense. Defaults: paid by the user, split equally between the user and the participants given (or, when a group is given and no participants or split are listed, the group's default split, else every group member equally).", write, (*tools).addExpense)
+	add(ts, "record_payment", "Record payment", "Record that one person paid another back (settle up).", write, (*tools).recordPayment)
+	add(ts, "remind_to_settle", "Remind to settle up", "Email someone who owes the user money a friendly reminder to settle up, in one group or across everything. At most one reminder per person and group every 24 hours.", external, (*tools).remind)
+	add(ts, "delete_expense", "Delete expense", "Delete an expense or payment. It can be restored from the app.", remove, (*tools).deleteExpense)
 	if opts.Admin {
 		admin(ts)
 	}
 	return s
 }
+
+// Hints tell hosts which tools need the user's confirmation. Every tool gets
+// one of these sets, so routine writes are not flagged like the admin tools.
+var (
+	// readOnly tools only read the user's own data on this server.
+	readOnly = sdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: new(false)}
+	// write tools add an entry that can be edited or deleted in the app.
+	write = sdk.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(false)}
+	// external tools add an entry and reach someone outside the session,
+	// for example by email.
+	external = sdk.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(true)}
+	// remove tools delete something; repeating the call changes nothing more.
+	remove = sdk.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)}
+	// govern tools change who can join, sign in or administer the instance.
+	govern = sdk.ToolAnnotations{DestructiveHint: new(true), OpenWorldHint: new(false)}
+	// restore tools give back access that was taken away; repeating the
+	// call changes nothing more.
+	restore = sdk.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)}
+)
 
 // toolset is what tools are registered with: the server, how a call finds
 // its API client, and where failures are logged.
@@ -85,8 +102,9 @@ type toolset struct {
 // client. The SDK runs tool calls on goroutines of its own, outside any
 // HTTP recovery, so a panic is recovered here and becomes a tool error
 // instead of ending the process.
-func add[In any](ts *toolset, name, desc string, annotations *sdk.ToolAnnotations, h func(*tools, context.Context, *sdk.CallToolRequest, In) (*sdk.CallToolResult, any, error)) {
-	tool := &sdk.Tool{Name: name, Description: desc, Annotations: annotations}
+func add[In any](ts *toolset, name, title, desc string, hints sdk.ToolAnnotations, h func(*tools, context.Context, *sdk.CallToolRequest, In) (*sdk.CallToolResult, any, error)) {
+	hints.Title = title
+	tool := &sdk.Tool{Name: name, Title: title, Description: desc, Annotations: &hints}
 	sdk.AddTool(ts.server, tool, func(ctx context.Context, req *sdk.CallToolRequest, in In) (res *sdk.CallToolResult, out any, err error) {
 		defer func() {
 			if p := recover(); p != nil {
