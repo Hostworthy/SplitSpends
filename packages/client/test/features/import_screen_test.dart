@@ -230,7 +230,7 @@ void main() {
     expect(find.widgetWithText(OutlinedButton, 'Upload again'), findsOneWidget);
   });
 
-  testWidgets('an upload to another account on the server is not "again"', (
+  testWidgets('an upload to another account keeps Start fresh first', (
     tester,
   ) async {
     await _pump(
@@ -250,11 +250,16 @@ void main() {
     expect(
       find.text(
         'You uploaded this data to another account on this server on '
-        '${Dates.short(_uploadedAt)}.',
+        '${Dates.short(_uploadedAt)}. Its groups and expenses are already '
+        'there, in that account.',
       ),
       findsOneWidget,
     );
-    expect(find.widgetWithText(FilledButton, 'Upload'), findsOneWidget);
+    expect(
+      find.widgetWithText(FilledButton, 'Start fresh (keep local copy)'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(OutlinedButton, 'Upload'), findsOneWidget);
   });
 
   testWidgets('an upload to another server is mentioned by name', (

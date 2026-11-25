@@ -71,7 +71,9 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         normalizeServerUrl(uploaded.server) == normalizeServerUrl(server);
     final otherAccount =
         uploaded?.user != null && uploaded?.user != widget.login.me.id;
-    // Uploading to the same account again is safe but rarely wanted.
+    // Uploading to the same account again is safe but rarely wanted. The
+    // server keeps the ids of what another account received, so uploading
+    // them to this one is refused.
     final again = sameServer && !otherAccount;
     final scheme = Theme.of(context).colorScheme;
     String count(int n, String one, String many) => '$n ${n == 1 ? one : many}';
@@ -102,7 +104,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                       '${Dates.short(uploaded.at.toLocal())}.'
                 : sameServer
                 ? 'You uploaded this data to another account on this server '
-                      'on ${Dates.short(uploaded.at.toLocal())}.'
+                      'on ${Dates.short(uploaded.at.toLocal())}. Its groups '
+                      'and expenses are already there, in that account.'
                 : 'You uploaded this data to '
                       '${Uri.tryParse(uploaded.server)?.host ?? uploaded.server}'
                       ' on ${Dates.short(uploaded.at.toLocal())}.',
@@ -114,7 +117,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
           Text(_error!, style: TextStyle(color: scheme.error)),
           const SizedBox(height: 16),
         ],
-        if (again) ...[
+        if (sameServer) ...[
           FilledButton(
             key: const Key('import-skip'),
             onPressed: skip,
@@ -125,7 +128,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             key: const Key('import-upload'),
             onPressed: _busy ? null : _upload,
             icon: uploadIcon,
-            label: const Text('Upload again'),
+            label: Text(again ? 'Upload again' : 'Upload'),
           ),
         ] else ...[
           FilledButton.icon(
