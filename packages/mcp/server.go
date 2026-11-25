@@ -97,7 +97,7 @@ func HTTPHandler(apiBase, version string, hc *http.Client, log *slog.Logger) htt
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(platform.Error{Error: "Send an API token as a bearer token. Create one in Split Spends under Settings, API tokens.", Code: "UNAUTHORIZED"})
+			_ = json.NewEncoder(w).Encode(platform.Error{Error: "Send an API token as a bearer token. Create one in Split Spends under Account, API tokens.", Code: "UNAUTHORIZED"})
 			return
 		}
 		h.ServeHTTP(w, r)
@@ -134,7 +134,7 @@ func text(s string) *sdk.CallToolResult {
 func fail(err error) (*sdk.CallToolResult, any, error) {
 	var apiErr *APIError
 	if errors.As(err, &apiErr) && apiErr.Status == http.StatusUnauthorized {
-		err = errors.New("not signed in: create an API token in Split Spends under Settings, API tokens, and configure it as the bearer token")
+		err = errors.New("not signed in: create an API token in Split Spends under Account, API tokens, and configure it as the bearer token")
 	}
 	res := text("Error: " + err.Error())
 	res.IsError = true
