@@ -289,6 +289,23 @@ func (s *Service) rooms(ctx context.Context, actor uuid.UUID, people []*user.Use
 	return nil
 }
 
+// Reserve holds the group counts of people for the rest of the transaction
+// in ctx, taking them in order of id. A transaction that goes on to add the
+// same people to several groups calls it first: each group then finds the
+// counts it needs already held, so two such transactions wait for each
+// other instead of deadlocking.
+func (s *Service) Reserve(ctx context.Context, people []uuid.UUID) error {
+	sorted := slices.SortedFunc(slices.Values(people), func(a, b uuid.UUID) int {
+		return bytes.Compare(a[:], b[:])
+	})
+	for _, id := range slices.Compact(sorted) {
+		if _, err := s.repo.Joined(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // enroll adds u to g, unless they are in as many groups as one person may be.
 func (s *Service) enroll(ctx context.Context, actor uuid.UUID, g *Group, u *user.User, now time.Time) error {
 	if err := s.room(ctx, actor, u); err != nil {

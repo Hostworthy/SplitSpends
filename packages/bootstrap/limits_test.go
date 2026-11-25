@@ -434,3 +434,45 @@ func TestGroupLimitIsAtomic(t *testing.T) {
 		t.Fatalf("want Ada in %d groups, got %d, %v", group.MaxPerUser, n, err)
 	}
 }
+
+// TestImportsSharingPeopleBothFinish checks that two imports putting the
+// same two people into groups in opposite orders wait for each other
+// instead of deadlocking.
+func TestImportsSharingPeopleBothFinish(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada := env.SignIn(t, "ada@example.com", "Ada").User.ID
+	ben := env.SignIn(t, "ben@example.com", "Ben").User.ID
+	env.SignIn(t, "xia@example.com", "Xia")
+	env.SignIn(t, "yan@example.com", "Yan")
+	bundle := func(first, second string) transfer.Bundle {
+		me, one, two := uuid.New(), uuid.New(), uuid.New()
+		names := []string{"First", "Second"}
+		return transfer.Bundle{Me: me,
+			People: []transfer.Person{{ID: one, Name: first, Email: strings.ToLower(first) + "@example.com"},
+				{ID: two, Name: second, Email: strings.ToLower(second) + "@example.com"}},
+			Groups: []transfer.Group{{ID: uuid.New(), Patch: group.Patch{Name: &names[0]}, Members: []uuid.UUID{me, one}},
+				{ID: uuid.New(), Patch: group.Patch{Name: &names[1]}, Members: []uuid.UUID{me, two}}}}
+	}
+	// Ada's import puts Xia in a group, then Yan. Right before it adds
+	// Xia, Ben's import puts Yan in a group, then Xia.
+	other := make(chan error, 1)
+	var once sync.Once
+	repo := joining{repositories.NewGroups(env.DB), func() {
+		once.Do(func() {
+			meanwhile(t, env, func() {
+				_, err := env.Services.Transfer.Import(ctx, ben, bundle("Yan", "Xia"))
+				other <- err
+			})
+		})
+	}}
+	groups := group.NewService(group.Deps{Repo: repo, Users: env.Services.Users, Balances: env.Services.Balances,
+		Activity: env.Services.Activity, Notifier: env.Notifier, Quota: repositories.NewQuotas(env.DB), Tx: database.NewTx(env.DB),
+		Clock: env.Clock, BaseURL: "http://test"})
+	imports := transfer.NewService(env.Services.Users, repositories.NewFriends(env.DB), groups, env.Services.Expenses,
+		env.Services.Categories, database.NewTx(env.DB), database.NewTx(env.DB))
+	_, err := imports.Import(ctx, ada, bundle("Xia", "Yan"))
+	if late := <-other; err != nil || late != nil {
+		t.Fatalf("both imports must finish, got %v and %v", err, late)
+	}
+}
