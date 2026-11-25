@@ -27,8 +27,8 @@ func (f *fakeNotifier) LoginCode(_ context.Context, to, code string, _ time.Dura
 	return nil
 }
 func (f *fakeNotifier) Invite(context.Context, string, string) error { return nil }
-func (f *fakeNotifier) Notify(_ context.Context, n ports.Notification) {
-	f.sent = append(f.sent, n)
+func (f *fakeNotifier) Notify(_ context.Context, n ...ports.Notification) {
+	f.sent = append(f.sent, n...)
 }
 
 type recordingPusher struct {
@@ -134,6 +134,58 @@ func TestFanoutSlowRecipientDoesNotBlockOthers(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("a recipient with stalled devices held up everyone else's push")
+	}
+}
+
+// gatheringPusher holds every delivery until want of them have started or
+// its budget runs out, and records the deadline each one got and how many
+// were sent.
+type gatheringPusher struct {
+	want      int
+	mu        sync.Mutex
+	deadlines []time.Time
+	sent      int
+	all       chan struct{}
+}
+
+func (p *gatheringPusher) Notify(ctx context.Context, _ ports.Notification) (push.Report, error) {
+	deadline, _ := ctx.Deadline()
+	p.mu.Lock()
+	p.deadlines = append(p.deadlines, deadline)
+	if len(p.deadlines) == p.want {
+		close(p.all)
+	}
+	p.mu.Unlock()
+	select {
+	case <-p.all:
+		p.mu.Lock()
+		p.sent++
+		p.mu.Unlock()
+		return push.Report{Sent: 1}, nil
+	case <-ctx.Done():
+		return push.Report{}, ctx.Err()
+	}
+}
+
+// TestFanoutSyncSendsRecipientsAtOnce checks that, without a queue, the
+// recipients of one notification are sent to at the same time within one
+// budget, so the caller waits at most that budget whatever their number.
+func TestFanoutSyncSendsRecipientsAtOnce(t *testing.T) {
+	pushes := &gatheringPusher{want: 3, all: make(chan struct{})}
+	f := newFanout(&fakeNotifier{codes: map[string]string{}}, pushes, slog.New(slog.DiscardHandler), true)
+	start := time.Now()
+	f.Notify(context.Background(),
+		ports.Notification{UserID: uuid.New(), Subject: "one"},
+		ports.Notification{UserID: uuid.New(), Subject: "two"},
+		ports.Notification{UserID: uuid.New(), Subject: "three"})
+
+	if pushes.sent != 3 {
+		t.Fatalf("sent to %d of 3 recipients: they were not sent to at the same time", pushes.sent)
+	}
+	for _, d := range pushes.deadlines {
+		if !d.Equal(pushes.deadlines[0]) || d.After(start.Add(pushBudget+time.Second)) {
+			t.Fatalf("each recipient should share one budget, got deadlines %v", pushes.deadlines)
+		}
 	}
 }
 

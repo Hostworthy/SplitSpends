@@ -113,14 +113,16 @@ func (s *Service) announce(ctx context.Context, r *Request) {
 	if r.Name != "" {
 		who = r.Name + " (" + r.Email + ")"
 	}
+	var notes []ports.Notification
 	for _, u := range staff {
 		n, ok := u.Notice(user.Approvals, who+" wants to join "+s.d.AppName,
 			[]string{who + " asked to join " + s.d.AppName + ".", "Approve or decline them in Account, Administration."},
 			s.d.BaseURL+"/account/admin")
 		if ok {
-			s.d.Notifier.Notify(ctx, n)
+			notes = append(notes, n)
 		}
 	}
+	s.d.Notifier.Notify(ctx, notes...)
 }
 
 // actor loads the caller and checks they may act.

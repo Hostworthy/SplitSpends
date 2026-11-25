@@ -187,7 +187,14 @@ func (n *Notifier) Invite(ctx context.Context, to, inviter string) error {
 	return nil
 }
 
-func (n *Notifier) Notify(_ context.Context, msg ports.Notification) {
+func (n *Notifier) Notify(_ context.Context, msgs ...ports.Notification) {
+	for _, msg := range msgs {
+		n.post(msg)
+	}
+}
+
+// post sends msg now when the notifier is synchronous, else queues it.
+func (n *Notifier) post(msg ports.Notification) {
 	if msg.To == "" {
 		return
 	}

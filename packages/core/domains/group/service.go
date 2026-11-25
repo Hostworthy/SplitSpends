@@ -207,9 +207,7 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	for _, u := range invited {
 		s.users.SendInvite(ctx, u, me)
 	}
-	for _, u := range added {
-		s.notifyAdded(ctx, u, me, g)
-	}
+	s.notifyAdded(ctx, me, g, added...)
 	return s.View(ctx, actor, g.ID)
 }
 
@@ -298,22 +296,26 @@ func full() error {
 	return errs.Validation("members", fmt.Sprintf("A group can have at most %d members.", MaxMembers))
 }
 
-func (s *Service) notifyAdded(ctx context.Context, u, by *user.User, g *Group) {
+func (s *Service) notifyAdded(ctx context.Context, by *user.User, g *Group, people ...*user.User) {
 	if ports.IsQuiet(ctx) {
 		return
 	}
-	n, ok := u.Notice(user.AddedToGroup, by.Name+" added you to "+g.Name,
-		[]string{by.Name + " added you to the group “" + g.Name + "”."}, s.baseURL)
-	if !ok {
-		return
-	}
-	if n.To != "" {
-		emailed, err := s.quota.Take(ctx, "added:"+by.ID.String()+":"+u.ID.String(), MaxAddedEmails, AddedWindow, s.clock.Now())
-		if err != nil || !emailed {
-			n.To = ""
+	var notes []ports.Notification
+	for _, u := range people {
+		n, ok := u.Notice(user.AddedToGroup, by.Name+" added you to "+g.Name,
+			[]string{by.Name + " added you to the group “" + g.Name + "”."}, s.baseURL)
+		if !ok {
+			continue
 		}
+		if n.To != "" {
+			emailed, err := s.quota.Take(ctx, "added:"+by.ID.String()+":"+u.ID.String(), MaxAddedEmails, AddedWindow, s.clock.Now())
+			if err != nil || !emailed {
+				n.To = ""
+			}
+		}
+		notes = append(notes, n)
 	}
-	s.notifier.Notify(ctx, n)
+	s.notifier.Notify(ctx, notes...)
 }
 
 // Mine returns the actor's active groups with their members, without
@@ -485,7 +487,7 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 	if invited {
 		s.users.SendInvite(ctx, added, me)
 	}
-	s.notifyAdded(ctx, added, me, g)
+	s.notifyAdded(ctx, me, g, added)
 	return s.view(ctx, actor, g)
 }
 

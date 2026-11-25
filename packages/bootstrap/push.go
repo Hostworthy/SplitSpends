@@ -93,13 +93,15 @@ type pusher interface {
 const pushWorkers = 4
 
 // pushBudget bounds one push notification: listing devices and one round
-// of sends, which run together and stop after push.SendTimeout each.
+// of sends, which run together and stop after push.SendTimeout each. Without
+// a queue, it bounds all the recipients of one Notify call together.
 const pushBudget = 3 * push.SendTimeout
 
 // fanout is the ports.Notifier services use: it sends each notification by
 // email and push, so services call Notify once. Push deliveries go through
 // a bounded queue (like emails) so slow push services never hold up a
-// request; with sync set (serverless) they finish before Notify returns.
+// request; with sync set (serverless) they finish before Notify returns,
+// sent to every recipient at once.
 type fanout struct {
 	email ports.Notifier
 	push  pusher
@@ -137,27 +139,38 @@ func (f *fanout) Invite(ctx context.Context, to, inviter string) error {
 	return f.email.Invite(ctx, to, inviter)
 }
 
-func (f *fanout) Notify(ctx context.Context, n ports.Notification) {
-	if n.To != "" {
-		f.email.Notify(ctx, n)
+func (f *fanout) Notify(ctx context.Context, ns ...ports.Notification) {
+	var emails, pushes []ports.Notification
+	for _, n := range ns {
+		if n.To != "" {
+			emails = append(emails, n)
+		}
+		if f.push != nil && n.UserID != uuid.Nil {
+			pushes = append(pushes, n)
+		}
 	}
-	if f.push == nil || n.UserID == uuid.Nil {
+	if len(emails) > 0 {
+		f.email.Notify(ctx, emails...)
+	}
+	if len(pushes) == 0 {
 		return
 	}
 	if f.sync {
-		f.deliver(n)
+		f.deliver(pushes...)
 		return
 	}
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	if f.closed {
-		f.log.Warn("push.queue.closed", "kind", n.Kind)
-		return
-	}
-	select {
-	case f.queue <- n:
-	default:
-		f.log.Warn("push.queue.full", "kind", n.Kind)
+	for _, n := range pushes {
+		if f.closed {
+			f.log.Warn("push.queue.closed", "kind", n.Kind)
+			continue
+		}
+		select {
+		case f.queue <- n:
+		default:
+			f.log.Warn("push.queue.full", "kind", n.Kind)
+		}
 	}
 }
 
@@ -173,9 +186,21 @@ func (f *fanout) work() {
 	}
 }
 
-func (f *fanout) deliver(n ports.Notification) {
+// deliver sends to every recipient of ns at once, all within one budget, so
+// a caller waiting for it (serverless) waits at most pushBudget however many
+// recipients there are.
+func (f *fanout) deliver(ns ...ports.Notification) {
 	ctx, cancel := context.WithTimeout(context.Background(), pushBudget)
 	defer cancel()
+	var wg sync.WaitGroup
+	for _, n := range ns {
+		wg.Go(func() { f.send(ctx, n) })
+	}
+	wg.Wait()
+}
+
+// send delivers n to its recipient's devices and logs what went wrong.
+func (f *fanout) send(ctx context.Context, n ports.Notification) {
 	r, err := f.push.Notify(ctx, n)
 	if err != nil {
 		f.log.Error("push.deliver.failed", "kind", n.Kind, "error", err)

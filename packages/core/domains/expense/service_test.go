@@ -164,7 +164,7 @@ type quiet struct{}
 
 func (quiet) LoginCode(context.Context, string, string, time.Duration) error { return nil }
 func (quiet) Invite(context.Context, string, string) error                   { return nil }
-func (quiet) Notify(context.Context, ports.Notification)                     {}
+func (quiet) Notify(context.Context, ...ports.Notification)                  {}
 
 type direct struct{}
 

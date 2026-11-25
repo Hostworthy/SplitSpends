@@ -65,7 +65,7 @@ func (downMail) LoginCode(context.Context, string, string, time.Duration) error 
 func (downMail) Invite(context.Context, string, string) error {
 	return errors.New("connection refused")
 }
-func (downMail) Notify(context.Context, ports.Notification) {}
+func (downMail) Notify(context.Context, ...ports.Notification) {}
 
 // TestInviteReportsMailFailure checks that a failed invitation email leaves
 // the invited account in place and is logged, on both ways of inviting.
