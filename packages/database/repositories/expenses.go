@@ -24,13 +24,13 @@ func NewExpenses(db *database.DB) *Expenses { return &Expenses{db: db} }
 
 const expenseColumns = `e.id, e.group_id, e.receipt_id, e.created_by, e.updated_by, e.created_at, e.updated_at, e.deleted_at,
 	e.total, e.tax, e.tip, e.date, e.next_date, e.kind, e.description, e.category, e.currency, e.notes, e.method, e.recurrence, e.items,
-	(SELECT count(*) FROM comments c WHERE c.expense_id = e.id)`
+	COALESCE(e.anchor_day, 0), (SELECT count(*) FROM comments c WHERE c.expense_id = e.id)`
 
 func scanExpense(row pgx.Row) (*expense.Expense, error) {
 	var e expense.Expense
 	var items []byte
 	err := row.Scan(&e.ID, &e.GroupID, &e.ReceiptID, &e.CreatedBy, &e.UpdatedBy, &e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
-		&e.Total, &e.Tax, &e.Tip, &e.Date, &e.NextDate, &e.Kind, &e.Description, &e.Category, &e.Currency, &e.Notes, &e.Method, &e.Recurrence, &items, &e.CommentCount)
+		&e.Total, &e.Tax, &e.Tip, &e.Date, &e.NextDate, &e.Kind, &e.Description, &e.Category, &e.Currency, &e.Notes, &e.Method, &e.Recurrence, &items, &e.AnchorDay, &e.CommentCount)
 	if err != nil {
 		return nil, err
 	}
@@ -48,10 +48,10 @@ func (r *Expenses) Create(ctx context.Context, e *expense.Expense) error {
 		return err
 	}
 	tag, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO expenses (id, group_id, receipt_id, created_by, updated_by, created_at, updated_at, deleted_at,
-		total, tax, tip, date, next_date, kind, description, category, currency, notes, method, recurrence, items)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) ON CONFLICT (id) DO NOTHING`,
+		total, tax, tip, date, next_date, kind, description, category, currency, notes, method, recurrence, items, anchor_day)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,NULLIF($22, 0)) ON CONFLICT (id) DO NOTHING`,
 		e.ID, e.GroupID, e.ReceiptID, e.CreatedBy, e.UpdatedBy, e.CreatedAt, e.UpdatedAt, e.DeletedAt,
-		e.Total, e.Tax, e.Tip, e.Date, e.NextDate, e.Kind, e.Description, e.Category, e.Currency, e.Notes, e.Method, e.Recurrence, items)
+		e.Total, e.Tax, e.Tip, e.Date, e.NextDate, e.Kind, e.Description, e.Category, e.Currency, e.Notes, e.Method, e.Recurrence, items, e.AnchorDay)
 	if err != nil {
 		return err
 	}
@@ -86,9 +86,9 @@ func (r *Expenses) Update(ctx context.Context, e *expense.Expense) error {
 		return err
 	}
 	_, err = r.db.Q(ctx).Exec(ctx, `UPDATE expenses SET receipt_id=$2, updated_by=$3, updated_at=$4, deleted_at=$5, total=$6, tax=$7, tip=$8,
-		date=$9, next_date=$10, description=$11, category=$12, currency=$13, notes=$14, method=$15, recurrence=$16, items=$17 WHERE id=$1`,
+		date=$9, next_date=$10, description=$11, category=$12, currency=$13, notes=$14, method=$15, recurrence=$16, items=$17, anchor_day=NULLIF($18, 0) WHERE id=$1`,
 		e.ID, e.ReceiptID, e.UpdatedBy, e.UpdatedAt, e.DeletedAt, e.Total, e.Tax, e.Tip, e.Date, e.NextDate, e.Description, e.Category, e.Currency,
-		e.Notes, e.Method, e.Recurrence, items)
+		e.Notes, e.Method, e.Recurrence, items, e.AnchorDay)
 	if err != nil {
 		return err
 	}
@@ -229,7 +229,7 @@ func (r *Expenses) Claim(ctx context.Context, id uuid.UUID, day time.Time) (*exp
 }
 
 func (r *Expenses) EndSeries(ctx context.Context, id uuid.UUID, at time.Time) error {
-	_, err := r.db.Q(ctx).Exec(ctx, `UPDATE expenses SET recurrence='none', next_date=NULL, updated_at=$2 WHERE id=$1`, id, at)
+	_, err := r.db.Q(ctx).Exec(ctx, `UPDATE expenses SET recurrence='none', next_date=NULL, anchor_day=NULL, updated_at=$2 WHERE id=$1`, id, at)
 	return err
 }
 

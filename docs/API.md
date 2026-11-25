@@ -122,7 +122,7 @@ An expense lists at most 200 payers and 200 people in `splits`; an itemized expe
 
 `date` runs from `2000-01-01` up to one year after today (422 on `date` otherwise); an update that leaves it out keeps the expense's date.
 
-A recurring expense repeats on its `recurrence`: a background job books each occurrence as a new expense, and the schedule moves to the newest copy, so editing the latest expense edits the series. When a series has fallen behind, only the 12 most recent missed occurrences are booked and older ones are skipped. A series ends instead of repeating once someone in it has left the group (or, outside groups, is no longer connected to the person who created it); that is recorded as `expense.stopped`.
+A recurring expense repeats on its `recurrence`: a background job books each occurrence as a new expense, and the schedule moves to the newest copy, so editing the latest expense edits the series. Monthly and yearly series keep the day of the month they started on; in a shorter month they fall on its last day and return to their day afterwards (a series from 31 January books 28 February, then 31 March). Changing the date of the latest expense moves the series to the new day. When a series has fallen behind, only the 12 most recent missed occurrences are booked and older ones are skipped. A series ends instead of repeating once someone in it has left the group (or, outside groups, is no longer connected to the person who created it); that is recorded as `expense.stopped`.
 
 An update may send `updatedAt`: the `updatedAt` of the expense as the client last saw it, unchanged. When the expense has been changed (or deleted) since, the update is refused with 409 `CONFLICT` and nothing is saved, so one person's edit never silently replaces another's; reload the expense and edit again. Without `updatedAt` the update always replaces the current version. Updating a deleted expense is a 409 either way.
 
@@ -184,7 +184,7 @@ Delivery: the server encrypts each message (RFC 8291, `aes128gcm`) and signs it 
 | ------ | ---- | ---- | -------- |
 | GET | `/friends` | | List of `{ user: User, balances: [Balance] }` (positive: friend owes you) |
 | POST | `/friends` | `{ email?, name? }` | 201 `{ data: { user, balances } }`; with an email, creates an invited user when new and emails an invite; with only a name, creates a `placeholder` person |
-| PATCH | `/friends/{userId}` | `{ email }` | `{ data: { user, balances } }`; gives a placeholder you created an email and invites them. 404 for anyone you did not add by name; 409 when the email already has an account or the person already has an email |
+| PATCH | `/friends/{userId}` | `{ email }` | `{ data: { user, balances } }`; gives a placeholder you created an email and invites them. 404 for anyone you did not add by name; 409 when the email already has an account (what was recorded for the placeholder cannot be moved to an existing account) or the person already has an email |
 | GET | `/friends/{userId}` | | `{ data: { user, balances, groups: [{ groupId, groupName, balances }], nonGroup: [Balance] } }` |
 | DELETE | `/friends/{userId}` | | 204; 409 when balances are not settled, or when you are connected only through a group you share (leave the group instead) |
 
@@ -202,7 +202,7 @@ Each account may have up to 1000 people it added by name only (placeholders, fro
 | PATCH | `/groups/{groupId}` | `{ name?, kind?, defaultCurrency?, simplifyDebts?, emoji?, color?, archived?, defaultSplit? }` | `{ data: Group }`; `defaultSplit: null` clears it, leaving it out keeps it |
 | DELETE | `/groups/{groupId}` | | 204; 403 when the caller may not delete it; 409 when not settled |
 | POST | `/groups/{groupId}/members` | `{ email?, name? }` | 201 `{ data: Group }` (name only adds a placeholder) |
-| DELETE | `/groups/{groupId}/members/{userId}` | | 204; 409 when that member is not settled. A member may remove themselves (leave) |
+| DELETE | `/groups/{groupId}/members/{userId}` | | 204; 409 when that member is not settled. A member may remove themselves (leave). 409 when nobody who can sign in would be left (only people added by name remain): delete the group instead |
 | GET | `/groups/{groupId}/balances` | | `{ data: { members: [{ userId, balances: [Balance] }], debts: [Debt] } }` (debts are simplified when `simplifyDebts` is on) |
 | GET | `/groups/{groupId}/export` | | `text/csv` of all expenses and payments |
 | POST | `/groups/{groupId}/invites` | | 201 `{ data: Invite }` with `token` and `url` (shown once). 409 for archived groups |

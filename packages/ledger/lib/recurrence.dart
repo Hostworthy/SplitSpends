@@ -1,17 +1,27 @@
 // Dart port of expense.Recurrence.Next and the scheduling in
 // expense.Service.RunRecurring.
 
-/// The next date of a series. Month and year steps overflow like Go's
-/// `AddDate` (Jan 31 + 1 month = Mar 3 in a non-leap year).
-DateTime? nextOccurrence(String recurrence, DateTime date) {
+/// The next date of a series. Monthly and yearly series fall on [day], the
+/// day of the month the series started on (the date's own day when null),
+/// or on the last day of a shorter month: a series from 31 January books
+/// 28 February and then 31 March, like `expense.Recurrence.Next`.
+DateTime? nextOccurrence(String recurrence, DateTime date, [int? day]) {
   final d = DateTime.utc(date.year, date.month, date.day);
+  final anchor = day ?? d.day;
   return switch (recurrence) {
     'weekly' => DateTime.utc(d.year, d.month, d.day + 7),
     'biweekly' => DateTime.utc(d.year, d.month, d.day + 14),
-    'monthly' => DateTime.utc(d.year, d.month + 1, d.day),
-    'yearly' => DateTime.utc(d.year + 1, d.month, d.day),
+    'monthly' => _onDay(d.year, d.month + 1, anchor),
+    'yearly' => _onDay(d.year + 1, d.month, anchor),
     _ => null,
   };
+}
+
+/// [day] of the month, or the month's last day when it is shorter. [month]
+/// may be 13, as `DateTime.utc` allows.
+DateTime _onDay(int year, int month, int day) {
+  final last = DateTime.utc(year, month + 1, 0).day;
+  return DateTime.utc(year, month, day.clamp(1, last));
 }
 
 /// How many missed occurrences a series books at most when it has fallen
@@ -21,16 +31,18 @@ const catchUp = 12;
 
 /// The occurrences from [next] up to and including [today] (the latest
 /// [catchUp] of them, oldest first) and the first occurrence after today,
-/// where the series continues. Port of `expense.Recurrence.Missed`.
+/// where the series continues. [day] is the series' day of the month, as
+/// for [nextOccurrence]. Port of `expense.Recurrence.Missed`.
 (List<DateTime>, DateTime) missed(
   String recurrence,
   DateTime next,
-  DateTime today,
-) {
+  DateTime today, [
+  int? day,
+]) {
   final dates = <DateTime>[];
   var at = next;
   while (!at.isAfter(today)) {
-    final following = nextOccurrence(recurrence, at);
+    final following = nextOccurrence(recurrence, at, day ?? next.day);
     if (following == null) return (const [], next);
     if (dates.length == catchUp) dates.removeAt(0);
     dates.add(at);
@@ -43,6 +55,10 @@ const catchUp = 12;
 abstract interface class Recurring {
   String get recurrence;
   DateTime? get nextDate;
+
+  /// The series' day of the month (`Expense.AnchorDay` on the server);
+  /// null continues on the day of [nextDate].
+  int? get anchorDay;
   bool get deleted;
 }
 
@@ -77,7 +93,7 @@ List<RecurringStep<T>> dueSteps<T extends Recurring>(
         ..sort((a, b) => a.nextDate!.compareTo(b.nextDate!));
   return [
     for (final src in due.take(limit))
-      switch (missed(src.recurrence, src.nextDate!, today)) {
+      switch (missed(src.recurrence, src.nextDate!, today, src.anchorDay)) {
         (final dates, final next) => RecurringStep(src, dates, next),
       },
   ];

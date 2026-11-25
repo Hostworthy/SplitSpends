@@ -107,3 +107,35 @@ func TestSharedVectors(t *testing.T) {
 		}
 	}
 }
+
+func TestRecurrenceVectors(t *testing.T) {
+	raw, err := os.ReadFile("../../../../spec/vectors.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Recurrence []struct {
+			Name       string
+			Recurrence Recurrence
+			Start      string
+			Dates      []string
+		}
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Recurrence) == 0 {
+		t.Fatal("no recurrence vectors")
+	}
+	for _, c := range doc.Recurrence {
+		start := date(t, c.Start)
+		at := start
+		for i, want := range c.Dates {
+			at = c.Recurrence.Next(at, start.Day())
+			if got := at.Format(time.DateOnly); got != want {
+				t.Errorf("%s: occurrence %d is %s, want %s", c.Name, i+1, got, want)
+				break
+			}
+		}
+	}
+}

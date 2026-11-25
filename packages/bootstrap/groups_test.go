@@ -126,3 +126,50 @@ func TestDeleteGroupKeepsConcurrentExpense(t *testing.T) {
 		t.Fatalf("neither the expense nor the delete went through: %v, %v", err, deleted)
 	}
 }
+
+// TestLastMemberLeavingIsRefused checks that the last member who can sign in
+// cannot leave a group, which would leave it where nobody can open or
+// delete it, also when the last two leave at the same moment.
+func TestLastMemberLeavingIsRefused(t *testing.T) {
+	ctx := context.Background()
+	env, ada, ben, g := flat(t)
+	svc := env.Services
+	if _, err := svc.Groups.AddMember(ctx, ada, g.ID, group.Invitee{Name: "Sam"}); err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for _, who := range []uuid.UUID{ada, ben} {
+		go func() {
+			<-start
+			results <- svc.Groups.RemoveMember(ctx, who, g.ID, who)
+		}()
+	}
+	close(start)
+	left, refused := 0, 0
+	for range 2 {
+		switch err := <-results; {
+		case err == nil:
+			left++
+		case errs.Is(err, errs.KindConflict):
+			refused++
+		default:
+			t.Fatal(err)
+		}
+	}
+	if left != 1 || refused != 1 {
+		t.Fatalf("one of the last two may leave: %d left, %d refused", left, refused)
+	}
+
+	stayed := ada
+	if v, err := svc.Groups.View(ctx, ada, g.ID); err != nil || !v.HasMember(ada) {
+		stayed = ben
+	}
+	if err := svc.Groups.RemoveMember(ctx, stayed, g.ID, stayed); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("the last member who can sign in must not leave, got %v", err)
+	}
+	if err := svc.Groups.Delete(ctx, stayed, g.ID); err != nil {
+		t.Fatalf("they can delete the group instead: %v", err)
+	}
+}

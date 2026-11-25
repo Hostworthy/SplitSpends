@@ -31,7 +31,7 @@ func TestAddFriendDoesNotRevealAccount(t *testing.T) {
 		}
 	}
 	if accounts := items[platform.Account](t, s.call(t, http.MethodGet, platform.Prefix+"/admin/accounts?status=disabled", admin, nil).
-		want(t, http.StatusOK)); len(accounts.Items) != 1 || accounts.Items[0].User.Status != "disabled" {
+		want(t, http.StatusOK)); len(accounts.Items) != 1 || accounts.Items[0].Status != "disabled" {
 		t.Fatalf("administrators still see the real status, got %+v", accounts.Items)
 	}
 
@@ -41,5 +41,8 @@ func TestAddFriendDoesNotRevealAccount(t *testing.T) {
 		want(t, http.StatusConflict).failure(t)
 	if strings.Contains(e.Error, "Cy") || strings.Contains(e.Error, "Secret") {
 		t.Fatalf("the conflict names the account holder: %q", e.Error)
+	}
+	if !strings.Contains(e.Error, "cannot be moved") {
+		t.Fatalf("the conflict must say the history stays with the person added by name: %q", e.Error)
 	}
 }

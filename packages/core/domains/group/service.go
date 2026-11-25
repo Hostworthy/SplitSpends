@@ -426,12 +426,52 @@ func (s *Service) RemoveMember(ctx context.Context, actor, id, member uuid.UUID)
 		return err
 	}
 	return s.tx.Do(ctx, func(ctx context.Context) error {
+		// Locked so two members leaving at once cannot both pass the check.
+		// The members are read again after the lock: the locking statement
+		// sees them as they were before it waited.
+		if _, err := s.repo.Lock(ctx, g.ID); err != nil {
+			return err
+		}
+		g, err := s.repo.Get(ctx, g.ID)
+		if err != nil {
+			return err
+		}
+		if !g.HasMember(actor) {
+			return errs.NotFound("Group")
+		}
+		if !g.HasMember(member) {
+			return errs.NotFound("Member")
+		}
+		if err := s.keepsReachable(ctx, g, member); err != nil {
+			return err
+		}
 		if err := s.repo.RemoveMember(ctx, g.ID, member, s.clock.Now()); err != nil {
 			return err
 		}
 		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: &g.ID, Kind: activity.GroupMemberRemoved,
 			Involved: g.Members, Data: map[string]any{"groupName": g.Name, "targetName": target.Name, "targetId": target.ID.String()}})
 	})
+}
+
+// keepsReachable refuses to remove the last member who can sign in: nobody
+// could open or delete the group after that.
+func (s *Service) keepsReachable(ctx context.Context, g *Group, member uuid.UUID) error {
+	others := make([]uuid.UUID, 0, len(g.Members))
+	for _, m := range g.Members {
+		if m != member {
+			others = append(others, m)
+		}
+	}
+	people, err := s.users.List(ctx, others)
+	if err != nil {
+		return err
+	}
+	for _, u := range people {
+		if u.Status != user.StatusPlaceholder {
+			return nil
+		}
+	}
+	return errs.Conflict("You are the last member who can open this group. Delete the group instead, or add someone first.")
 }
 
 // Sheet is a group's balance sheet with member details.

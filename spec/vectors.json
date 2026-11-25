@@ -1,5 +1,5 @@
 {
- "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A split may give date (YYYY-MM-DD) and today, and values, the split values stored for each user after trimming; input description defaults to the name, and description, notes and method give the normalized result; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. Pairwise debts within one entry add up to each debtor's and each creditor's net exactly, whatever order the shares are listed in. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members (error names the failing field); when current is given, effective says whether the saved split still applies to those members. currencies and categories: the built-in catalogs, currencies sorted by code and categories in display order; the client bundles the same lists for on-device mode.",
+ "description": "Shared test vectors for split and balance rules. Go (packages/core) and Dart (packages/ledger) tests both run these. Amounts are minor units. A split may give date (YYYY-MM-DD) and today, and values, the split values stored for each user after trimming; input description defaults to the name, and description, notes and method give the normalized result; dates run from 2000-01-01 up to a year after today. Debts are sorted by currency, then amount descending, then from, then to. recurrence: each series starts on start and books dates in order; monthly and yearly series keep the start day, or use the last day of a shorter month. Pairwise debts within one entry add up to each debtor's and each creditor's net exactly, whatever order the shares are listed in. The conversions section is Go only: the server converts AI drafts read in another currency, rounding half away from zero; totals add exact values and round once. defaultSplits: each split is validated against members (error names the failing field); when current is given, effective says whether the saved split still applies to those members. currencies and categories: the built-in catalogs, currencies sorted by code and categories in display order; the client bundles the same lists for on-device mode.",
  "splits": [
   {
    "name": "equal three ways",
@@ -1772,6 +1772,58 @@
    }
   ]
  },
+ "recurrence": [
+  {
+   "name": "monthly from the 31st",
+   "recurrence": "monthly",
+   "start": "2027-01-31",
+   "dates": [
+    "2027-02-28",
+    "2027-03-31",
+    "2027-04-30",
+    "2027-05-31"
+   ]
+  },
+  {
+   "name": "monthly from the 29th through a leap February",
+   "recurrence": "monthly",
+   "start": "2028-01-29",
+   "dates": [
+    "2028-02-29",
+    "2028-03-29"
+   ]
+  },
+  {
+   "name": "monthly across the year end",
+   "recurrence": "monthly",
+   "start": "2027-12-31",
+   "dates": [
+    "2028-01-31",
+    "2028-02-29",
+    "2028-03-31"
+   ]
+  },
+  {
+   "name": "yearly from a leap day",
+   "recurrence": "yearly",
+   "start": "2028-02-29",
+   "dates": [
+    "2029-02-28",
+    "2030-02-28",
+    "2031-02-28",
+    "2032-02-29"
+   ]
+  },
+  {
+   "name": "biweekly",
+   "recurrence": "biweekly",
+   "start": "2027-01-31",
+   "dates": [
+    "2027-02-14",
+    "2027-02-28"
+   ]
+  }
+ ],
  "conversions": {
   "table": {
    "base": "USD",
