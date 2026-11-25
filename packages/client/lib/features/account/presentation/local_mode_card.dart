@@ -7,9 +7,9 @@ import 'package:splitspends/app/refresh.dart';
 import 'package:splitspends/app/repositories.dart';
 import 'package:splitspends/app/routes.dart';
 import 'package:splitspends/core/auth/session.dart';
-import 'package:splitspends/core/utils/dates.dart';
 import 'package:splitspends/core/widgets/states.dart';
 import 'package:splitspends/features/sync/domain/import_payload.dart';
+import 'package:splitspends/features/sync/presentation/save_backup.dart';
 
 final _localSummaryProvider = FutureProvider.autoDispose<ImportSummary>(
   (ref) => ref.watch(importServiceProvider).summary(),
@@ -18,21 +18,6 @@ final _localSummaryProvider = FutureProvider.autoDispose<ImportSummary>(
 /// Account card in on-device mode: where data lives, backups, connecting.
 class LocalModeCard extends ConsumerWidget {
   const LocalModeCard({super.key});
-
-  Future<void> _export(BuildContext context, WidgetRef ref) async {
-    try {
-      final bytes = await ref.read(backupServiceProvider).export();
-      final name = 'splitspends-backup-${Dates.toApi(DateTime.now())}.json';
-      await FilePicker.saveFile(
-        fileName: name,
-        bytes: bytes,
-        mimeType: 'application/json',
-        dialogTitle: 'Save backup',
-      );
-    } catch (error) {
-      if (context.mounted) showError(context, error);
-    }
-  }
 
   Future<void> _restore(BuildContext context, WidgetRef ref) async {
     final ok = await showDialog<bool>(
@@ -111,7 +96,7 @@ class LocalModeCard extends ConsumerWidget {
               runSpacing: 8,
               children: [
                 OutlinedButton.icon(
-                  onPressed: () => _export(context, ref),
+                  onPressed: () => saveBackup(context, ref),
                   icon: const Icon(Icons.download_rounded),
                   label: const Text('Export backup'),
                 ),

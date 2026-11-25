@@ -235,6 +235,11 @@ func (s *Service) expense(ctx context.Context, actor uuid.UUID, people map[uuid.
 			To: in.Splits[0].UserID, Amount: in.Total, Currency: in.Currency, Date: in.Date, Notes: in.Notes})
 		return err
 	}
+	// Devices could file an ordinary expense under the payment category,
+	// which only payments use here.
+	if in.Category == expense.PaymentCategory {
+		in.Category = ""
+	}
 	_, err = s.expenses.Create(ctx, actor, in)
 	return err
 }

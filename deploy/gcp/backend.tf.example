@@ -1,0 +1,11 @@
+# Keeps Terraform state, which holds every secret of the stack, in a private
+# Cloud Storage bucket instead of terraform.tfstate on this machine. Before
+# the first terraform init: create the bucket (uniform access, object
+# versioning on), copy this file to backend.tf and fill in the bucket.
+# Cloud Storage encrypts the state at rest and Terraform locks it while it runs.
+terraform {
+  backend "gcs" {
+    bucket = "my-terraform-state"
+    prefix = "splitspends/gcp"
+  }
+}

@@ -2,6 +2,8 @@ package group
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/activity"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/balance"
@@ -20,14 +22,23 @@ type Service struct {
 	balances *balance.Service
 	activity *activity.Service
 	notifier ports.Notifier
+	quota    ports.Quota
 	tx       ports.Tx
 	clock    clock.Clock
 	baseURL  string
 }
 
+// Someone added to groups by the same person is emailed about it at most
+// MaxAddedEmails times per AddedWindow; later additions only reach their
+// devices.
+const (
+	MaxAddedEmails = 3
+	AddedWindow    = 24 * time.Hour
+)
+
 // NewService builds a Service.
-func NewService(repo Repository, users *user.Service, balances *balance.Service, act *activity.Service, notifier ports.Notifier, tx ports.Tx, c clock.Clock, baseURL string) *Service {
-	return &Service{repo: repo, users: users, balances: balances, activity: act, notifier: notifier, tx: tx, clock: c, baseURL: baseURL}
+func NewService(repo Repository, users *user.Service, balances *balance.Service, act *activity.Service, notifier ports.Notifier, quota ports.Quota, tx ports.Tx, c clock.Clock, baseURL string) *Service {
+	return &Service{repo: repo, users: users, balances: balances, activity: act, notifier: notifier, quota: quota, tx: tx, clock: c, baseURL: baseURL}
 }
 
 // View is a group with members and the caller's balance.
@@ -66,19 +77,33 @@ func (s *Service) Member(ctx context.Context, actor, id uuid.UUID) (*Group, erro
 	return g, nil
 }
 
+// existing returns the group with a client-chosen id when it already exists
+// and the actor belongs to it, so retried creates are idempotent. An id used
+// for someone else's group is a conflict.
+func (s *Service) existing(ctx context.Context, actor uuid.UUID, id *uuid.UUID) (*View, error) {
+	if id == nil || *id == uuid.Nil {
+		return nil, nil
+	}
+	g, err := s.repo.Get(ctx, *id)
+	if errs.Is(err, errs.KindNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !g.HasMember(actor) {
+		return nil, errs.Conflict("That group id is already in use.")
+	}
+	return s.view(ctx, actor, g)
+}
+
 // Create makes a group with the actor and invitees as members.
 func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (*View, error) {
-	if in.ID != nil && *in.ID != uuid.Nil {
-		g, err := s.repo.Get(ctx, *in.ID)
-		if err == nil {
-			if g.HasMember(actor) {
-				return s.view(ctx, actor, g)
-			}
-			return nil, errs.Conflict("That group id is already in use.")
-		}
-		if !errs.Is(err, errs.KindNotFound) {
-			return nil, err
-		}
+	if v, err := s.existing(ctx, actor, in.ID); v != nil || err != nil {
+		return v, err
+	}
+	if 1+len(in.Members)+len(in.People) > MaxMembers {
+		return nil, full()
 	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
@@ -103,7 +128,7 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	if err := g.Apply(in.Patch, now); err != nil {
 		return nil, err
 	}
-	var added []*user.User
+	var added, invited []*user.User
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
 		if err := s.repo.Create(ctx, g); err != nil {
 			return err
@@ -113,9 +138,12 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		}
 		g.Members = []uuid.UUID{actor}
 		for _, inv := range in.Members {
-			u, _, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
+			u, created, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
 			if err != nil {
 				return err
+			}
+			if created {
+				invited = append(invited, u)
 			}
 			if g.HasMember(u.ID) {
 				continue
@@ -146,8 +174,17 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 		return s.activity.Record(ctx, activity.Activity{ActorID: actor, GroupID: &g.ID, Kind: activity.GroupCreated,
 			Involved: g.Members, Data: map[string]any{"groupName": g.Name}})
 	})
+	if errs.Is(err, errs.KindConflict) {
+		// A request with the same id may have saved its group first.
+		if v, err := s.existing(ctx, actor, in.ID); v != nil || err != nil {
+			return v, err
+		}
+	}
 	if err != nil {
 		return nil, err
+	}
+	for _, u := range invited {
+		s.users.SendInvite(ctx, u, me)
 	}
 	for _, u := range added {
 		if !ports.IsQuiet(ctx) {
@@ -157,12 +194,23 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (
 	return s.View(ctx, actor, g.ID)
 }
 
+func full() error {
+	return errs.Validation("members", fmt.Sprintf("A group can have at most %d members.", MaxMembers))
+}
+
 func (s *Service) notifyAdded(ctx context.Context, u, by *user.User, g *Group) {
 	n, ok := u.Notice(user.AddedToGroup, by.Name+" added you to "+g.Name,
 		[]string{by.Name + " added you to the group “" + g.Name + "”."}, s.baseURL)
-	if ok {
-		s.notifier.Notify(ctx, n)
+	if !ok {
+		return
 	}
+	if n.To != "" {
+		emailed, err := s.quota.Take(ctx, "added:"+by.ID.String()+":"+u.ID.String(), MaxAddedEmails, AddedWindow, s.clock.Now())
+		if err != nil || !emailed {
+			n.To = ""
+		}
+	}
+	s.notifier.Notify(ctx, n)
 }
 
 // Mine returns the actor's active groups with their members, without
@@ -252,20 +300,36 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, p Patch) (*Vi
 	return s.view(ctx, actor, g)
 }
 
-// Delete removes a settled group and its expenses.
+// Delete removes a settled group with all its expenses and history. Only the
+// person who created the group may, or any member once its creator has left,
+// because anyone holding an invite link can become a member. The group stays
+// locked from the check to the delete, so nothing booked meanwhile is lost,
+// and the feed entry has no group, so it outlives the group.
 func (s *Service) Delete(ctx context.Context, actor, id uuid.UUID) error {
-	g, err := s.Member(ctx, actor, id)
-	if err != nil {
-		return err
-	}
-	settled, err := s.balances.GroupSettled(ctx, g.ID)
-	if err != nil {
-		return err
-	}
-	if !settled {
-		return errs.Conflict("Settle all balances before deleting the group.")
-	}
-	return s.repo.Delete(ctx, g.ID)
+	return s.tx.Do(ctx, func(ctx context.Context) error {
+		g, err := s.repo.Lock(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !g.HasMember(actor) {
+			return errs.NotFound("Group")
+		}
+		if actor != g.CreatedBy && g.HasMember(g.CreatedBy) {
+			return errs.Forbidden("Only the person who created this group can delete it.")
+		}
+		settled, err := s.balances.GroupSettled(ctx, g.ID)
+		if err != nil {
+			return err
+		}
+		if !settled {
+			return errs.Conflict("Settle all balances before deleting the group.")
+		}
+		if err := s.activity.Record(ctx, activity.Activity{ActorID: actor, Kind: activity.GroupDeleted,
+			Involved: g.Members, Data: map[string]any{"groupName": g.Name}}); err != nil {
+			return err
+		}
+		return s.repo.Delete(ctx, g.ID)
+	})
 }
 
 // AddMember adds someone by email, inviting them if they are new.
@@ -274,16 +338,21 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 	if err != nil {
 		return nil, err
 	}
+	if len(g.Members) >= MaxMembers {
+		return nil, full()
+	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {
 		return nil, err
 	}
 	var added *user.User
+	var invited bool
 	err = s.tx.Do(ctx, func(ctx context.Context) error {
-		u, _, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
+		u, created, err := s.users.Ensure(ctx, inv.Email, inv.Name, me)
 		if err != nil {
 			return err
 		}
+		invited = created
 		if g.HasMember(u.ID) {
 			return errs.Conflict(u.Name + " is already in this group.")
 		}
@@ -298,6 +367,9 @@ func (s *Service) AddMember(ctx context.Context, actor, id uuid.UUID, inv Invite
 	if err != nil {
 		return nil, err
 	}
+	if invited {
+		s.users.SendInvite(ctx, added, me)
+	}
 	s.notifyAdded(ctx, added, me, g)
 	return s.view(ctx, actor, g)
 }
@@ -311,6 +383,9 @@ func (s *Service) Join(ctx context.Context, actor, id uuid.UUID) (*View, error) 
 	}
 	if g.HasMember(actor) {
 		return s.view(ctx, actor, g)
+	}
+	if len(g.Members) >= MaxMembers {
+		return nil, errs.Conflict(fmt.Sprintf("This group already has %d members, the most a group can have.", MaxMembers))
 	}
 	me, err := s.users.Get(ctx, actor)
 	if err != nil {

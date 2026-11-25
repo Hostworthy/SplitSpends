@@ -60,12 +60,23 @@ func (s *Service) Create(ctx context.Context, actor, groupID uuid.UUID) (*Issued
 	return &Issued{Invite: inv, Token: token, URL: s.baseURL + Path + token}, nil
 }
 
-// List returns a group's active invites, without tokens.
+// List returns a group's usable invites, without tokens.
 func (s *Service) List(ctx context.Context, actor, groupID uuid.UUID) ([]*Invite, error) {
-	if _, err := s.groups.Member(ctx, actor, groupID); err != nil {
+	g, err := s.groups.Member(ctx, actor, groupID)
+	if err != nil {
 		return nil, err
 	}
-	return s.repo.Active(ctx, groupID, s.clock.Now())
+	active, err := s.repo.Active(ctx, groupID, s.clock.Now())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*Invite, 0, len(active))
+	for _, inv := range active {
+		if g.HasMember(inv.CreatedBy) {
+			out = append(out, inv)
+		}
+	}
+	return out, nil
 }
 
 // Revoke deletes an invite so its link stops working.
@@ -83,21 +94,48 @@ func (s *Service) Revoke(ctx context.Context, actor, groupID, id uuid.UUID) erro
 	return nil
 }
 
-// find returns the usable invite for token. Unknown, revoked and expired
-// tokens give the same error so links cannot be probed.
-func (s *Service) find(ctx context.Context, token string) (*Invite, error) {
+// find returns the usable invite for token and its group. Unknown, revoked,
+// expired and orphaned tokens give the same error so links cannot be probed.
+func (s *Service) find(ctx context.Context, token string) (*Invite, *group.Group, error) {
 	missing := errs.NotFound("Invite")
 	if token == "" || len(token) > 128 {
-		return nil, missing
+		return nil, nil, missing
 	}
 	inv, err := s.repo.FindByHash(ctx, Hash(token))
 	if err != nil {
+		return nil, nil, err
+	}
+	if inv == nil {
+		return nil, nil, missing
+	}
+	g, err := s.usable(ctx, inv)
+	if err != nil {
+		return nil, nil, err
+	}
+	if g == nil {
+		return nil, nil, missing
+	}
+	return inv, g, nil
+}
+
+// usable returns the group inv lets people join, or nil when the link no
+// longer works: it expired, or the person who made it is no longer in the
+// group, so leaving or being removed also ends the links someone shared.
+func (s *Service) usable(ctx context.Context, inv *Invite) (*group.Group, error) {
+	if inv.Expired(s.clock.Now()) {
+		return nil, nil
+	}
+	g, err := s.lookup.Get(ctx, inv.GroupID)
+	if errs.Is(err, errs.KindNotFound) {
+		return nil, nil
+	}
+	if err != nil {
 		return nil, err
 	}
-	if inv == nil || inv.Expired(s.clock.Now()) {
-		return nil, missing
+	if !g.HasMember(inv.CreatedBy) {
+		return nil, nil
 	}
-	return inv, nil
+	return g, nil
 }
 
 // Valid reports whether token is a usable invite.
@@ -110,7 +148,7 @@ func (s *Service) Valid(ctx context.Context, token string) (bool, error) {
 // "" when it is not. Login uses it to let people sign up through a link, and
 // keeps the hash to check the link again with Live.
 func (s *Service) Lookup(ctx context.Context, token string) (string, error) {
-	inv, err := s.find(ctx, token)
+	inv, _, err := s.find(ctx, token)
 	if errs.Is(err, errs.KindNotFound) {
 		return "", nil
 	}
@@ -129,7 +167,8 @@ func (s *Service) Live(ctx context.Context, hash string) (bool, error) {
 	if err != nil || inv == nil {
 		return false, err
 	}
-	return !inv.Expired(s.clock.Now()), nil
+	g, err := s.usable(ctx, inv)
+	return g != nil, err
 }
 
 // Preview is the little that a link shows before joining.
@@ -140,15 +179,8 @@ type Preview struct {
 
 // Preview describes the group behind a token, for anyone holding it.
 func (s *Service) Preview(ctx context.Context, token string) (*Preview, error) {
-	inv, err := s.find(ctx, token)
+	inv, g, err := s.find(ctx, token)
 	if err != nil {
-		return nil, err
-	}
-	g, err := s.lookup.Get(ctx, inv.GroupID)
-	if err != nil {
-		if errs.Is(err, errs.KindNotFound) {
-			return nil, errs.NotFound("Invite")
-		}
 		return nil, err
 	}
 	inviter, err := s.users.Get(ctx, inv.CreatedBy)
@@ -161,7 +193,7 @@ func (s *Service) Preview(ctx context.Context, token string) (*Preview, error) {
 // Accept adds the actor to the invite's group. Accepting again, or as a
 // member, simply returns the group.
 func (s *Service) Accept(ctx context.Context, actor uuid.UUID, token string) (*group.View, error) {
-	inv, err := s.find(ctx, token)
+	inv, _, err := s.find(ctx, token)
 	if err != nil {
 		return nil, err
 	}

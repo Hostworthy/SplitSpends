@@ -57,6 +57,8 @@ type RequestRepository interface {
 	Get(ctx context.Context, id uuid.UUID) (*Request, error)
 	Save(ctx context.Context, r *Request) error
 	List(ctx context.Context, status Status) ([]*Request, error)
+	// Delete removes the request of email, if there is one.
+	Delete(ctx context.Context, email string) error
 }
 
 // Accounts are the user queries administration needs.
@@ -67,7 +69,9 @@ type Accounts interface {
 }
 
 // Credentials removes everything that lets a person in: sessions, API
-// tokens, push devices and the login codes sent to their email.
+// tokens, push devices and the login codes sent to their email. API tokens
+// are sessions of kind token, so removing a person's sessions removes them
+// too; tokens stored anywhere else must be removed here as well.
 type Credentials interface {
 	Revoke(ctx context.Context, userID uuid.UUID, email string) error
 }

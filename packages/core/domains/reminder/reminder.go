@@ -18,6 +18,10 @@ import (
 // the same person in the same scope (one group, or everything).
 const Window = 24 * time.Hour
 
+// MaxPerPerson is how many reminders one sender may send the same person per
+// Window across all scopes, so sharing many groups does not multiply them.
+const MaxPerPerson = 3
+
 // Reminder is one nudge from FromID to ToID, optionally about one group.
 type Reminder struct {
 	ID      uuid.UUID

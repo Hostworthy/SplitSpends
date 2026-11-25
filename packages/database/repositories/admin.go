@@ -94,8 +94,13 @@ func (r *SignupRequests) List(ctx context.Context, status admin.Status) ([]*admi
 	return collect(rows, scanRequest)
 }
 
-// Credentials implements admin.Credentials: it deletes a person's sessions,
-// API tokens, push devices and login codes.
+func (r *SignupRequests) Delete(ctx context.Context, email string) error {
+	_, err := r.db.Q(ctx).Exec(ctx, `DELETE FROM signup_requests WHERE lower(email) = lower($1)`, email)
+	return err
+}
+
+// Credentials implements admin.Credentials: it deletes a person's sessions
+// (API tokens are sessions of kind token), push devices and login codes.
 type Credentials struct{ db *database.DB }
 
 // NewCredentials builds Credentials.

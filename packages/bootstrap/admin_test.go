@@ -10,6 +10,7 @@ import (
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/admin"
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/user"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
+	"github.com/google/uuid"
 )
 
 // TestAdministration walks through roles, sign-up modes, approvals and
@@ -145,6 +146,30 @@ func TestAdministration(t *testing.T) {
 	if _, _, err := login("ben@example.com", ""); err == nil {
 		t.Fatal("a disabled account must not sign in")
 	}
+
+	// Disabling removes the address from requests to join and login codes.
+	if err := svc.Auth.RequestCode(ctx, "dan@else.org", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Admin.Disable(ctx, ada.ID, dan.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"signup_requests", "login_challenges"} {
+		var left int
+		if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE lower(email) = 'dan@else.org'`).Scan(&left); err != nil {
+			t.Fatal(err)
+		}
+		if left != 0 {
+			t.Fatalf("%s still holds a disabled account's address %d times", table, left)
+		}
+	}
+	approved, err := svc.Admin.Requests(ctx, ada.ID, "approved")
+	must(err)
+	for _, r := range approved {
+		if r.Email == "dan@else.org" {
+			t.Fatalf("approved requests still list a disabled account: %+v", r)
+		}
+	}
 	if _, err := svc.Admin.Enable(ctx, ada.ID, ben.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -200,5 +225,121 @@ func TestDisabledAccountCannotUseEarlierCode(t *testing.T) {
 	}
 	if codes != 0 {
 		t.Fatalf("disabling must remove the account's login codes, %d left", codes)
+	}
+}
+
+// TestLastAdminConcurrent runs administrator changes that would each leave
+// one administrator at the same time: exactly one goes through, and the
+// server always keeps an active administrator.
+func TestLastAdminConcurrent(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	svc := env.Services
+	for _, tc := range []struct {
+		name string
+		want errs.Kind
+		act  func(a, b uuid.UUID) (func() error, func() error)
+	}{
+		{"demote each other", errs.KindForbidden, func(a, b uuid.UUID) (func() error, func() error) {
+			return func() error { _, err := svc.Admin.SetRole(ctx, a, b, "user"); return err },
+				func() error { _, err := svc.Admin.SetRole(ctx, b, a, "user"); return err }
+		}},
+		{"step down together", errs.KindConflict, func(a, b uuid.UUID) (func() error, func() error) {
+			return func() error { _, err := svc.Admin.SetRole(ctx, a, a, "manager"); return err },
+				func() error { _, err := svc.Admin.SetRole(ctx, b, b, "manager"); return err }
+		}},
+		{"disable each other", errs.KindForbidden, func(a, b uuid.UUID) (func() error, func() error) {
+			return func() error { _, err := svc.Admin.Disable(ctx, a, b); return err },
+				func() error { _, err := svc.Admin.Disable(ctx, b, a); return err }
+		}},
+	} {
+		for run := range 20 {
+			if _, err := env.DB.Pool.Exec(ctx, `TRUNCATE users, login_challenges CASCADE`); err != nil {
+				t.Fatal(err)
+			}
+			ada := env.SignIn(t, "ada@example.com", "Ada").User
+			ben := env.SignIn(t, "ben@example.com", "Ben").User
+			if _, err := svc.Admin.SetRole(ctx, ada.ID, ben.ID, "admin"); err != nil {
+				t.Fatal(err)
+			}
+			first, second := tc.act(ada.ID, ben.ID)
+			calls := []func() error{first, second}
+			done, refused := 0, 0
+			for _, err := range concurrently(2, func(i int) error { return calls[i]() }) {
+				switch {
+				case err == nil:
+					done++
+				case errs.Is(err, tc.want):
+					refused++
+				default:
+					t.Fatalf("%s, run %d: %v", tc.name, run, err)
+				}
+			}
+			var admins int
+			if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE status = 'active' AND role = 'admin'`).Scan(&admins); err != nil {
+				t.Fatal(err)
+			}
+			if done != 1 || refused != 1 || admins != 1 {
+				t.Fatalf("%s, run %d: %d done, %d refused, %d administrators left, want 1 each", tc.name, run, done, refused, admins)
+			}
+		}
+	}
+}
+
+// pendingRequest files dan's request to join in approval mode and returns
+// it, with ada as the administrator.
+func pendingRequest(t *testing.T, env *bootstraptest.Env) (*user.User, *admin.Request) {
+	t.Helper()
+	ctx := context.Background()
+	svc := env.Services
+	ada := env.SignIn(t, "ada@example.com", "Ada").User
+	if _, err := svc.Admin.UpdateSettings(ctx, ada.ID, "approval", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Auth.RequestCode(ctx, "dan@else.org", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Auth.Verify(ctx, "dan@else.org", env.Notifier.Code("dan@else.org"), "Dan", "test"); !errs.Is(err, errs.KindPending) {
+		t.Fatalf("dan must wait for approval: %v", err)
+	}
+	pending, err := svc.Admin.Requests(ctx, ada.ID, "")
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("pending = %+v, %v", pending, err)
+	}
+	return ada, pending[0]
+}
+
+func TestApprovalSurvivesModeChange(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada, request := pendingRequest(t, env)
+	if _, err := env.Services.Admin.UpdateSettings(ctx, ada.ID, "invite", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Services.Admin.Approve(ctx, ada.ID, request.ID); err != nil {
+		t.Fatal(err)
+	}
+	if dan := env.SignIn(t, "dan@else.org", "Dan").User; dan.Status != user.StatusActive {
+		t.Fatalf("an approved person must sign in after the mode changed to invite: %+v", dan)
+	}
+}
+
+func TestApproveRefusedWhenClosed(t *testing.T) {
+	ctx := context.Background()
+	env := bootstraptest.Open(t, bootstraptest.Options{})
+	ada, request := pendingRequest(t, env)
+	if _, err := env.Services.Admin.UpdateSettings(ctx, ada.ID, "closed", nil); err != nil {
+		t.Fatal(err)
+	}
+	env.Notifier.Reset()
+	if _, err := env.Services.Admin.Approve(ctx, ada.ID, request.ID); !errs.Is(err, errs.KindConflict) {
+		t.Fatalf("approving while sign-up is closed must be refused, got %v", err)
+	}
+	if sent := env.Notifier.Sent(); len(sent) != 0 {
+		t.Fatalf("nobody may be told they can sign in: %+v", sent)
+	}
+	pending, err := env.Services.Admin.Requests(ctx, ada.ID, "")
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("the request must stay pending: %+v %v", pending, err)
 	}
 }

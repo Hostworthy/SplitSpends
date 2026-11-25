@@ -42,7 +42,9 @@ A value that is too high lets clients choose the address that is rate limited; o
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
 | `SERVERLESS` | `false` | Set on Lambda, Cloud Run and similar: no in-process background jobs, emails are sent before the response returns |
-| `JOBS_SECRET` | empty | At least 32 characters. Enables `POST /internal/jobs` for an external scheduler (needed when `SERVERLESS=true`, every 15 to 60 minutes) |
+| `JOBS_SECRET` | empty | At least 32 characters. Enables `POST /internal/jobs` for an external scheduler. Required when `SERVERLESS=true` (the server refuses to start without it); call it every 15 to 60 minutes |
+| `SECRETS_ARN` | empty | ARN of an AWS Secrets Manager secret holding a JSON object of variables, such as `{"DATABASE_URL": "...", "SECRET_KEY": "..."}`. Read once at start with the function or instance role's credentials (`secretsmanager:GetSecretValue`); each key fills the variable of that name unless it is already set. `deploy/aws` uses it to keep secrets out of the Lambda configuration |
+| `AWS_ENDPOINT_URL_SECRETS_MANAGER` | AWS | Secrets Manager endpoint for `SECRETS_ARN`, for example a local emulator; defaults to the regional endpoint in the ARN |
 | `BLOB_STORE` | `local` | Where receipt images go: `local` (`DATA_DIR`), `s3` or `postgres` (in the database; good for small free-tier hosts) |
 | `S3_BUCKET` | empty | Bucket for `BLOB_STORE=s3` |
 | `S3_REGION` | `AWS_REGION` | Bucket region |
@@ -56,7 +58,8 @@ Buckets stay private: the API checks access and streams receipts itself.
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `SIGNUP_MODE` | `invite` | Starting sign-up mode until an administrator changes it in the app (Account, Administration). `open`: anyone. `invite`: the allowed list, people a member added by email, and group invite links. `approval`: anyone can ask and an administrator or manager approves them. `closed`: no new accounts. The very first account can always sign up and becomes the administrator. `domain` is still read, as `invite` with the domains below |
+| `SIGNUP_MODE` | `invite` | Starting sign-up mode until an administrator changes it in the app (Account, Administration). `open`: anyone. `invite`: the allowed list, people a member added by email, group invite links, and people an administrator or manager approved. `approval`: anyone can ask and an administrator or manager approves them. `closed`: no new accounts. The very first account can always sign up and becomes the administrator (see `ADMIN_EMAIL`). `domain` is still read, as `invite` with the domains below |
+| `ADMIN_EMAIL` | empty | The email address of the person who runs the server. While no account is active, only this address can sign in, and it becomes the administrator; nobody else can claim a new server first. Empty: whoever signs in first becomes the administrator, whatever `SIGNUP_MODE` says, and the server logs `auth.bootstrap.open` at start until someone has |
 | `SIGNUP_ALLOWED_DOMAINS` | empty | Comma-separated domains that start out on the allowed list |
 | `SESSION_TTL_DAYS` | `90` | How long app sessions last. API tokens do not expire until revoked |
 
@@ -144,4 +147,4 @@ Read by the backup service in `deploy/docker/docker-compose.yml`, not by the ser
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `BACKUP_KEEP_DAYS` | `14` | Days to keep the nightly database dumps and receipt archives in `deploy/docker/backups/`. Older ones are deleted after each successful dump |
+| `BACKUP_KEEP_DAYS` | `14` | Days to keep the nightly database dumps and receipt archives in `deploy/docker/backups/`. Older dumps are deleted after each successful dump, older archives after each successful archive |

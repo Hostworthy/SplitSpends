@@ -56,9 +56,6 @@ func run() error {
 		return err
 	}
 	defer rt.Close()
-	if !cfg.Serverless {
-		go rt.RunJobs(ctx)
-	}
 
 	mux := http.NewServeMux()
 	api := routes.New(routes.Deps{Services: rt.Services, Config: cfg, Log: log, Ping: rt.Ping, Jobs: rt.RunJobsOnce}).Routes()
@@ -74,10 +71,29 @@ func run() error {
 
 	handler := middleware.Observe(log, middleware.Security(middleware.CORS(cfg.CORSOrigins, mux)))
 	srv := &http.Server{Addr: cfg.Addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Addr)
+	if err != nil {
+		return err
+	}
 	errc := make(chan error, 1)
 	go func() {
 		log.Info("api.server.listening", "addr", cfg.Addr, "baseUrl", cfg.BaseURL, "web", cfg.WebDir != "", "mcp", cfg.MCPEnabled, "serverless", cfg.Serverless)
-		errc <- srv.ListenAndServe()
+		errc <- srv.Serve(ln)
+	}()
+	// Jobs start once the server accepts connections, and the database stays
+	// open until a run in progress has stopped.
+	jobs := make(chan struct{})
+	if cfg.Serverless {
+		close(jobs)
+	} else {
+		go func() {
+			defer close(jobs)
+			rt.RunJobs(ctx)
+		}()
+	}
+	defer func() {
+		stop()
+		<-jobs
 	}()
 	select {
 	case err := <-errc:

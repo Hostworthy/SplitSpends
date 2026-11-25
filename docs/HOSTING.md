@@ -42,11 +42,11 @@ Requires Docker, a domain name pointing at your home IP, and ports 80 and 443 fo
 
 ```bash
 git clone https://github.com/Hostworthy/SplitSpends && cd SplitSpends/deploy/docker
-cp ../.env.example .env          # set DOMAIN, BASE_URL=https://DOMAIN, POSTGRES_PASSWORD, SECRET_KEY, SMTP
+cp ../.env.example .env          # set DOMAIN, BASE_URL=https://DOMAIN, POSTGRES_PASSWORD, SECRET_KEY, ADMIN_EMAIL, SMTP
 docker compose up -d --build
 ```
 
-This runs PostgreSQL, Split Spends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly backup into `deploy/docker/backups/`: a `pg_dump` of the database (`splitspends-<date>-<time>.dump`) and an archive of the receipts kept in the `data` volume (`receipts-<date>-<time>.tar.gz`). Backups older than `BACKUP_KEEP_DAYS` (14 by default) are deleted after each successful dump. A failed run leaves no file and logs `backup.dump.failed` or `backup.receipts.failed` (`docker compose logs backup`). Your `.env` and Caddy's certificates are not in the backup; keep a copy of `.env` somewhere safe.
+This runs PostgreSQL, Split Spends, [Caddy](https://caddyserver.com) for automatic HTTPS, and a nightly backup into `deploy/docker/backups/`: a `pg_dump` of the database (`splitspends-<date>-<time>.dump`) and an archive of the receipts kept in the `data` volume (`receipts-<date>-<time>.tar.gz`). Backups older than `BACKUP_KEEP_DAYS` (14 by default) are deleted, dumps after each successful dump and receipt archives after each successful archive, so a run that fails never removes the last good copy. A failed run leaves no file and logs `backup.dump.failed` or `backup.receipts.failed` (`docker compose logs backup`). Your `.env` and Caddy's certificates are not in the backup; keep a copy of `.env` somewhere safe.
 
 The backups hold every account's email address and all expenses, readable only by root on the host. Copy them off the machine regularly (with `sudo`), and encrypt the copies.
 
@@ -77,7 +77,7 @@ The same as the homelab, on a small Linux VPS from any provider (1 vCPU and 1 GB
 
 ### Render (One Click)
 
-[Deploy to Render](https://render.com/deploy?repo=https://github.com/Hostworthy/SplitSpends) uses [`render.yaml`](../render.yaml): a free web service and a free database. After it deploys, set `BASE_URL` to the service URL and fill in the SMTP variables in the Render dashboard.
+[Deploy to Render](https://render.com/deploy?repo=https://github.com/Hostworthy/SplitSpends) uses [`render.yaml`](../render.yaml): a free web service and a free database. Render asks for `ADMIN_EMAIL` (your own address, so nobody else can claim the new server) while it sets up. After it deploys, set `BASE_URL` to the service URL and fill in the SMTP variables in the Render dashboard.
 
 Limits: free services sleep after 15 minutes without traffic (the first request takes about a minute), and Render's free database is deleted after 30 days. For anything beyond a trial, replace it with a Neon database: remove the database from the blueprint and set `DATABASE_URL`.
 
@@ -87,7 +87,7 @@ Terraform in [`deploy/gcp`](../deploy/gcp/README.md). Cloud Run's free tier cove
 
 ### AWS Lambda
 
-Terraform in [`deploy/aws`](../deploy/aws/README.md): Lambda (arm64) running the same server through the AWS Lambda Web Adapter, API Gateway, CloudFront for HTTPS and the web app, private S3 buckets for the web app and receipts, and EventBridge for scheduled jobs. Use a Neon or Supabase database (Lambda outside a VPC cannot reach a private RDS instance without a NAT gateway, which costs about 32 USD a month).
+Terraform in [`deploy/aws`](../deploy/aws/README.md): Lambda (arm64) running the same server through the AWS Lambda Web Adapter, API Gateway, CloudFront for HTTPS and the web app, private S3 buckets for the web app and receipts, EventBridge for scheduled jobs, and Secrets Manager for the server's secrets. Use a Neon or Supabase database (Lambda outside a VPC cannot reach a private RDS instance without a NAT gateway, which costs about 32 USD a month).
 
 ## Push Notifications
 
@@ -103,6 +103,7 @@ The server creates its push key on first start and keeps it in the database. If 
 
 - Always serve over HTTPS. Every option above does, except plain LAN setups.
 - Set a long random `SECRET_KEY` (`openssl rand -hex 32`) and keep it secret.
+- Set `ADMIN_EMAIL` to your own email address before the server is reachable. The first account to sign in becomes the administrator, and new HTTPS names are found by scanners within minutes. With `ADMIN_EMAIL` set, only you can create that first account. Without it, sign in yourself right after the first start; until then the server logs `auth.bootstrap.open`.
 - Keep `SIGNUP_MODE=invite` unless you really want strangers to sign up. `approval` lets anyone ask while you decide who gets in, and `closed` stops new accounts. You can change this later in the app (Account, Administration).
 - Behind a proxy or CDN, set `TRUST_PROXY` to the number of proxies in front of the server (`1` for a single reverse proxy; the shipped Docker, Cloud Run, Render and AWS setups already set it) so rate limits see real client addresses; leave it `false` when the server is directly exposed. See [Client Addresses](ENVIRONMENT.md#client-addresses).
 - Rate limits on sign-in and invite links are counted in each server instance's memory. Cloud Run and Lambda run several instances and start empty after idling, so there the limits apply per instance and are looser. Each sign-in code still stops working after a few wrong attempts.
@@ -110,4 +111,4 @@ The server creates its push key on first start and keeps it in the database. If 
 - Update regularly: pull the latest code and rebuild. Migrations run automatically on start.
 - If you enable AI, receipt images and expense text are sent to that provider. Choose one you trust, or run a local model through an OpenAI-compatible server.
 - The web app makes no third-party requests. Its engine, its Latin font and the Noto fallback fonts for emoji and other scripts are all in the repository and served by your own server (see [apps/web/README.md](../apps/web/README.md)).
-- Terraform state contains your secrets. Keep it in an encrypted, private backend.
+- Terraform state contains your secrets. Keep it in an encrypted, private backend: `deploy/aws` and `deploy/gcp` ship a `backend.tf.example` for an S3 or Cloud Storage bucket, and their READMEs set it up before the first apply.

@@ -70,7 +70,6 @@ void main() {
       RemoteExpensesRepository(api()),
       outbox,
       meId: () => 'me',
-      onQueued: () {},
     );
     const input = ExpenseInput(
       description: 'Taxi',
@@ -115,12 +114,38 @@ void main() {
     expect(await outbox.pending(), isEmpty);
   });
 
+  test('a group created offline queues and replays like expenses', () async {
+    final groups = OfflineGroupsRepository(
+      RemoteGroupsRepository(api()),
+      outbox,
+      me: () => const User(id: 'me', name: 'Me', defaultCurrency: 'EUR'),
+    );
+    await expectLater(
+      groups.create(const GroupInput(name: ' ')),
+      throwsA(predicate((e) => e.toString().contains('Give the group a name'))),
+    );
+    expect(await outbox.pending(), isEmpty);
+
+    final trip = await groups.create(const GroupInput(name: 'Trip'));
+    expect(trip.defaultCurrency, 'EUR');
+    final op = (await outbox.pending()).single;
+    expect(
+      (op.method, op.path, op.label),
+      ('POST', '/groups', 'Create “Trip”'),
+    );
+    expect((op.body! as Map)['id'], trip.id);
+
+    online = true;
+    final result = await outbox.flush(api());
+    expect(result.sent, 1);
+    expect(seen, ['POST /api/v1/groups']);
+  });
+
   test('invalid input is rejected before it reaches the queue', () async {
     final repo = OfflineExpensesRepository(
       RemoteExpensesRepository(api()),
       outbox,
       meId: () => 'me',
-      onQueued: () {},
     );
     await expectLater(
       repo.create(
@@ -136,6 +161,63 @@ void main() {
       throwsA(predicate((e) => e.toString().contains('add up to the total'))),
     );
     expect(await outbox.pending(), isEmpty);
+  });
+
+  test('undo after a queued delete keeps the expense', () async {
+    var deleted = false;
+    final client = ApiClient(
+      serverUrl: 'http://server.test',
+      token: 't',
+      cache: _Cache(),
+      httpClient: MockClient((request) async {
+        if (!online) throw http.ClientException('offline');
+        final path = request.url.path;
+        if (request.method == 'DELETE') deleted = true;
+        if (path.endsWith('/restore')) deleted = false;
+        return http.Response(
+          jsonEncode({
+            'data': {
+              'id': 'e0',
+              'description': 'Rent',
+              'currency': 'EUR',
+              'total': 1000,
+              'date': '2026-11-01',
+              'deleted': deleted,
+            },
+          }),
+          request.method == 'DELETE' ? 204 : 200,
+        );
+      }),
+    );
+    final repo = OfflineExpensesRepository(
+      RemoteExpensesRepository(client),
+      outbox,
+      meId: () => 'me',
+    );
+    online = true;
+    await repo.get('e0');
+
+    online = false;
+    await repo.delete('e0');
+    online = true;
+    final restored = await repo.restore('e0');
+    expect(restored.deleted, isFalse);
+    expect(deleted, isFalse, reason: 'the delete has not been sent yet');
+
+    final result = await outbox.flush(client);
+    expect(result.sent, 2);
+    expect(deleted, isFalse);
+    expect(await outbox.pending(), isEmpty);
+
+    // Offline, Undo is queued too, behind the delete.
+    online = false;
+    await repo.delete('e0');
+    expect((await repo.restore('e0')).deleted, isFalse);
+    expect(
+      [for (final op in await outbox.pending()) op.method],
+      ['DELETE', 'POST'],
+    );
+    expect((await repo.get('e0')).deleted, isFalse);
   });
 
   group('offline reads show queued writes', () {
@@ -208,13 +290,11 @@ void main() {
         RemoteExpensesRepository(client),
         outbox,
         meId: () => 'me',
-        onQueued: () {},
       );
       groups = OfflineGroupsRepository(
         RemoteGroupsRepository(client),
         outbox,
         me: () => const User(id: 'me', name: 'Me'),
-        onQueued: () {},
       );
       // Seen once while online, so the API client has cached copies.
       online = true;

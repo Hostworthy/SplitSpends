@@ -1,3 +1,5 @@
+import 'package:characters/characters.dart';
+
 import 'package:splitspends/core/models/json.dart';
 
 /// A person in SplitSpends (yourself, a friend or a group member).
@@ -65,8 +67,9 @@ class User {
         .where((p) => p.isNotEmpty)
         .toList();
     if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
-    return (parts.first.substring(0, 1) + parts.last.substring(0, 1))
+    // Whole characters, so an emoji or accented letter is never cut in half.
+    if (parts.length == 1) return parts.first.characters.first.toUpperCase();
+    return (parts.first.characters.first + parts.last.characters.first)
         .toUpperCase();
   }
 

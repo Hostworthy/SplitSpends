@@ -1,0 +1,15 @@
+# Keeps Terraform state, which holds every secret of the stack, in a private
+# S3 bucket instead of terraform.tfstate on this machine. Before the first
+# terraform init: create the bucket (versioning on, public access blocked),
+# copy this file to backend.tf and fill in the bucket and region.
+# use_lockfile needs Terraform 1.10 or later; on older versions replace it
+# with dynamodb_table = "<a table with a LockID string key>".
+terraform {
+  backend "s3" {
+    bucket       = "my-terraform-state"
+    key          = "splitspends/aws.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}

@@ -121,14 +121,28 @@ func (r *Groups) Create(ctx context.Context, g *group.Group) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Q(ctx).Exec(ctx, `INSERT INTO groups (id, created_by, archived_at, created_at, updated_at, simplify_debts, name, kind, default_currency, emoji, color, default_split)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+	tag, err := r.db.Q(ctx).Exec(ctx, `INSERT INTO groups (id, created_by, archived_at, created_at, updated_at, simplify_debts, name, kind, default_currency, emoji, color, default_split)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO NOTHING`,
 		g.ID, g.CreatedBy, g.ArchivedAt, g.CreatedAt, g.UpdatedAt, g.SimplifyDebts, g.Name, g.Kind, g.DefaultCurrency, g.Emoji, g.Color, split)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errs.Conflict("That group id is already in use.")
+	}
+	return nil
 }
 
 func (r *Groups) Get(ctx context.Context, id uuid.UUID) (*group.Group, error) {
 	g, err := scanGroup(r.db.Q(ctx).QueryRow(ctx, `SELECT `+groupColumns+` FROM groups g WHERE g.id=$1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, errs.NotFound("Group")
+	}
+	return g, err
+}
+
+func (r *Groups) Lock(ctx context.Context, id uuid.UUID) (*group.Group, error) {
+	g, err := scanGroup(r.db.Q(ctx).QueryRow(ctx, `SELECT `+groupColumns+` FROM groups g WHERE g.id=$1 FOR UPDATE OF g`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, errs.NotFound("Group")
 	}

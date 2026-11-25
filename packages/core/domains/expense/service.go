@@ -2,8 +2,8 @@ package expense
 
 import (
 	"context"
+	"errors"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -67,6 +67,23 @@ func (s *Service) load(ctx context.Context, actor, id uuid.UUID) (*Expense, *gro
 	if err != nil {
 		return nil, nil, err
 	}
+	return s.visible(ctx, actor, e)
+}
+
+// lock is load for a change, inside the caller's transaction. The row stays
+// locked until the change is saved, so the checks made on it still hold and
+// concurrent changes apply one after the other instead of overwriting each
+// other.
+func (s *Service) lock(ctx context.Context, actor, id uuid.UUID) (*Expense, *group.Group, error) {
+	e, err := s.repo.Lock(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	return s.visible(ctx, actor, e)
+}
+
+// visible returns e and its group if the actor may see it.
+func (s *Service) visible(ctx context.Context, actor uuid.UUID, e *Expense) (*Expense, *group.Group, error) {
 	if e.GroupID == nil {
 		if !e.Involves(actor) {
 			return nil, nil, errs.NotFound("Expense")
@@ -81,6 +98,17 @@ func (s *Service) load(ctx context.Context, actor, id uuid.UUID) (*Expense, *gro
 		return nil, nil, errs.NotFound("Expense")
 	}
 	return e, g, nil
+}
+
+// editable checks that the actor may change an expense they can see. People
+// who left a group keep seeing the expenses they were part of, but only
+// current members change a group's expenses, since that moves the balances
+// of everyone still in it.
+func editable(actor uuid.UUID, g *group.Group) error {
+	if g != nil && !g.HasMember(actor) {
+		return errs.NotFound("Expense")
+	}
+	return nil
 }
 
 // authorize checks that the actor may book an expense with these participants.
@@ -117,6 +145,12 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 	if !ok {
 		return nil, errs.Validation("splits", "You can only split non-group expenses with friends.")
 	}
+	if ok, err = s.linked(ctx, shares); err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errs.Validation("splits", "Outside a group, everyone who owes money must be friends with the people they owe it to.")
+	}
 	if !slices.ContainsFunc(shares, func(sh Share) bool { return sh.UserID == actor }) {
 		return nil, errs.Validation("splits", "You must be part of an expense outside a group.")
 	}
@@ -124,7 +158,7 @@ func (s *Service) authorize(ctx context.Context, actor uuid.UUID, groupID *uuid.
 }
 
 // members reports whether everyone in shares still belongs to g. Booking,
-// restoring and repeating an expense all require it.
+// deleting, restoring and repeating an expense all require it.
 func members(g *group.Group, shares []Share) bool {
 	for _, sh := range shares {
 		if !g.HasMember(sh.UserID) {
@@ -144,6 +178,27 @@ func (s *Service) connected(ctx context.Context, actor uuid.UUID, shares []Share
 		ok, err := s.connections.Connected(ctx, actor, sh.UserID)
 		if err != nil || !ok {
 			return false, err
+		}
+	}
+	return true, nil
+}
+
+// linked reports whether everyone who gets money back from an expense
+// outside groups is connected to everyone who owes it, since those are the
+// pairs the expense leaves owing each other.
+func (s *Service) linked(ctx context.Context, shares []Share) (bool, error) {
+	for _, c := range shares {
+		if c.Paid <= c.Owed {
+			continue
+		}
+		for _, d := range shares {
+			if d.Paid >= d.Owed {
+				continue
+			}
+			ok, err := s.connections.Connected(ctx, c.UserID, d.UserID)
+			if err != nil || !ok {
+				return false, err
+			}
 		}
 	}
 	return true, nil
@@ -196,22 +251,48 @@ func (s *Service) record(ctx context.Context, actor uuid.UUID, kind activity.Kin
 }
 
 // existing returns the expense with a client-chosen id when it already
-// exists and the actor may see it, so retried creates are idempotent.
-func (s *Service) existing(ctx context.Context, actor uuid.UUID, id *uuid.UUID) (*Expense, error) {
+// exists and the actor may see it, so retried creates are idempotent. A retry
+// asks for the same kind of expense in the same group; an id used for
+// anything else is a conflict.
+func (s *Service) existing(ctx context.Context, actor uuid.UUID, id *uuid.UUID, kind Kind, groupID *uuid.UUID) (*Expense, error) {
 	if id == nil || *id == uuid.Nil {
 		return nil, nil
 	}
-	e, _, err := s.load(ctx, actor, *id)
-	if err == nil {
-		return e, nil
+	e, err := s.repo.Get(ctx, *id)
+	if errs.Is(err, errs.KindNotFound) {
+		return nil, nil
 	}
-	if !errs.Is(err, errs.KindNotFound) {
+	if err != nil {
 		return nil, err
 	}
-	if _, err := s.repo.Get(ctx, *id); err == nil {
+	if _, _, err := s.visible(ctx, actor, e); err != nil {
+		if errs.Is(err, errs.KindNotFound) {
+			return nil, errs.Conflict("That expense id is already in use.")
+		}
+		return nil, err
+	}
+	if e.Kind != kind || (e.GroupID == nil) != (groupID == nil) || (groupID != nil && *e.GroupID != *groupID) {
 		return nil, errs.Conflict("That expense id is already in use.")
 	}
-	return nil, nil
+	return e, nil
+}
+
+// insert saves a new expense and its activity. When a request with the same
+// client-chosen id saved its expense first, insert returns that one instead;
+// it returns nil when e was saved.
+func (s *Service) insert(ctx context.Context, actor uuid.UUID, e *Expense, g *group.Group, kind activity.Kind, extra map[string]any) (*Expense, error) {
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.repo.Create(ctx, e); err != nil {
+			return err
+		}
+		return s.record(ctx, actor, kind, e, g, extra)
+	})
+	if errs.Is(err, errs.KindConflict) {
+		if prior, err := s.existing(ctx, actor, &e.ID, e.Kind, e.GroupID); prior != nil || err != nil {
+			return prior, err
+		}
+	}
+	return nil, err
 }
 
 func newID(id *uuid.UUID) uuid.UUID {
@@ -244,7 +325,7 @@ func (s *Service) currency(ctx context.Context, actor uuid.UUID, groupID *uuid.U
 
 // Create books a new expense.
 func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expense, error) {
-	if e, err := s.existing(ctx, actor, in.ID); e != nil || err != nil {
+	if e, err := s.existing(ctx, actor, in.ID, KindExpense, in.GroupID); e != nil || err != nil {
 		return e, err
 	}
 	var err error
@@ -265,14 +346,8 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expen
 	}
 	e := &Expense{ID: newID(in.ID), GroupID: in.GroupID, Kind: KindExpense, CreatedBy: actor, CreatedAt: now}
 	s.build(e, n, actor, now)
-	err = s.tx.Do(ctx, func(ctx context.Context) error {
-		if err := s.repo.Create(ctx, e); err != nil {
-			return err
-		}
-		return s.record(ctx, actor, activity.ExpenseCreated, e, g, nil)
-	})
-	if err != nil {
-		return nil, err
+	if prior, err := s.insert(ctx, actor, e, g, activity.ExpenseCreated, nil); prior != nil || err != nil {
+		return prior, err
 	}
 	s.notify(ctx, actor, e, g, false)
 	return e, nil
@@ -280,37 +355,50 @@ func (s *Service) Create(ctx context.Context, actor uuid.UUID, in Input) (*Expen
 
 // Update replaces an expense. The group cannot change.
 func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in Input) (*Expense, error) {
-	e, _, err := s.load(ctx, actor, id)
-	if err != nil {
-		return nil, err
-	}
-	if e.DeletedAt != nil {
-		return nil, errs.Conflict("Restore the expense before editing it.")
-	}
-	if e.Kind == KindPayment {
-		in.Method, in.Category = MethodExact, PaymentCategory
-	}
-	in.GroupID = e.GroupID
-	if in.Currency == "" {
-		in.Currency = e.Currency
-	}
-	if in.Date == "" {
-		in.Date = e.Date.Format(time.DateOnly)
-	}
-	n, err := Normalize(in, clock.Today(s.clock))
-	if err != nil {
-		return nil, err
-	}
-	if err := s.category(ctx, actor, n.Category, e.Category); err != nil {
-		return nil, err
-	}
-	g, err := s.authorize(ctx, actor, e.GroupID, n.Shares, in.ReceiptID)
-	if err != nil {
-		return nil, err
-	}
-	now := s.clock.Now()
-	s.build(e, n, actor, now)
-	err = s.tx.Do(ctx, func(ctx context.Context) error {
+	var e *Expense
+	var g *group.Group
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		var err error
+		if e, g, err = s.lock(ctx, actor, id); err != nil {
+			return err
+		}
+		if err := editable(actor, g); err != nil {
+			return err
+		}
+		if e.DeletedAt != nil {
+			return errs.Conflict("Restore the expense before editing it.")
+		}
+		// Clients see updatedAt to the second, so that is what is compared.
+		if in.UpdatedAt != nil && !e.UpdatedAt.Truncate(time.Second).Equal(in.UpdatedAt.Truncate(time.Second)) {
+			return errs.Conflict("Someone else changed this expense. Reload it and try again.")
+		}
+		in.GroupID = e.GroupID
+		if in.Currency == "" {
+			in.Currency = e.Currency
+		}
+		if in.Date == "" {
+			in.Date = e.Date.Format(time.DateOnly)
+		}
+		var n *Normalized
+		if e.Kind == KindPayment {
+			p, err := repayment(in)
+			if err != nil {
+				return err
+			}
+			n, err = payment(p, clock.Today(s.clock))
+			if err != nil {
+				return err
+			}
+		} else if n, err = Normalize(in, clock.Today(s.clock)); err != nil {
+			return err
+		}
+		if err := s.category(ctx, actor, n.Category, e.Category); err != nil {
+			return err
+		}
+		if g, err = s.authorize(ctx, actor, e.GroupID, n.Shares, in.ReceiptID); err != nil {
+			return err
+		}
+		s.build(e, n, actor, s.clock.Now())
 		if err := s.repo.Update(ctx, e); err != nil {
 			return err
 		}
@@ -344,31 +432,45 @@ func (s *Service) List(ctx context.Context, f Filter) ([]*Expense, int, error) {
 }
 
 func (s *Service) setDeleted(ctx context.Context, actor, id uuid.UUID, deleted bool) (*Expense, error) {
-	e, g, err := s.load(ctx, actor, id)
-	if err != nil {
-		return nil, err
-	}
-	if (e.DeletedAt != nil) == deleted {
-		return e, nil
-	}
-	if !deleted && g != nil && !members(g, e.Shares) {
-		return nil, errs.Conflict("Someone in this expense has left the group, so it cannot be restored.")
-	}
-	now := s.clock.Now()
-	kind := activity.ExpenseRestored
-	e.DeletedAt = nil
-	if deleted {
-		kind = activity.ExpenseDeleted
-		e.DeletedAt = &now
-	}
-	e.UpdatedBy, e.UpdatedAt = actor, now
-	err = s.tx.Do(ctx, func(ctx context.Context) error {
+	var e *Expense
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		var g *group.Group
+		var err error
+		if e, g, err = s.lock(ctx, actor, id); err != nil {
+			return err
+		}
+		if err := editable(actor, g); err != nil {
+			return err
+		}
+		if (e.DeletedAt != nil) == deleted {
+			return nil
+		}
+		// Leaving requires a settled balance, so deleting or restoring an
+		// expense of someone who has left would give them a balance in a
+		// group they can no longer act in.
+		if g != nil && !members(g, e.Shares) {
+			if deleted {
+				return errs.Conflict("Someone in this expense has left the group, so it cannot be deleted.")
+			}
+			return errs.Conflict("Someone in this expense has left the group, so it cannot be restored.")
+		}
+		now := s.clock.Now()
+		kind := activity.ExpenseRestored
+		e.DeletedAt = nil
+		if deleted {
+			kind = activity.ExpenseDeleted
+			e.DeletedAt = &now
+		}
+		e.UpdatedBy, e.UpdatedAt = actor, now
 		if err := s.repo.Update(ctx, e); err != nil {
 			return err
 		}
 		return s.record(ctx, actor, kind, e, g, nil)
 	})
-	return e, err
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
 }
 
 // Delete soft-deletes an expense.
@@ -382,25 +484,18 @@ func (s *Service) Restore(ctx context.Context, actor, id uuid.UUID) (*Expense, e
 	return s.setDeleted(ctx, actor, id, false)
 }
 
-// PaymentInput records money changing hands.
-type PaymentInput struct {
-	ID       *uuid.UUID
-	GroupID  *uuid.UUID
-	From     uuid.UUID
-	To       uuid.UUID
-	Amount   int64
-	Currency string
-	Date     string
-	Notes    string
-}
-
 // RecordPayment books a settle-up payment.
 func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in PaymentInput) (*Expense, error) {
-	if e, err := s.existing(ctx, actor, in.ID); e != nil || err != nil {
+	if e, err := s.existing(ctx, actor, in.ID, KindPayment, in.GroupID); e != nil || err != nil {
 		return e, err
 	}
-	if in.From == in.To || in.From == uuid.Nil || in.To == uuid.Nil {
-		return nil, errs.Validation("toUserId", "Choose two different people.")
+	var err error
+	if in.Currency, err = s.currency(ctx, actor, in.GroupID, in.Currency); err != nil {
+		return nil, err
+	}
+	n, err := payment(in, clock.Today(s.clock))
+	if err != nil {
+		return nil, err
 	}
 	if in.GroupID == nil && actor != in.From && actor != in.To {
 		return nil, errs.Validation("fromUserId", "You must be part of a payment outside a group.")
@@ -412,21 +507,6 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	if people[in.From] == nil || people[in.To] == nil {
 		return nil, errs.Validation("toUserId", "Unknown person.")
 	}
-	if in.Currency, err = s.currency(ctx, actor, in.GroupID, in.Currency); err != nil {
-		return nil, err
-	}
-	n, err := Normalize(Input{
-		GroupID: in.GroupID, Description: "Payment", Currency: in.Currency, Total: in.Amount, Date: in.Date,
-		Category: PaymentCategory, Notes: in.Notes, Method: MethodExact,
-		Payers: []Payer{{UserID: in.From, Amount: in.Amount}},
-		Splits: []SplitInput{{UserID: in.To, Value: strconv.FormatInt(in.Amount, 10)}},
-	}, clock.Today(s.clock))
-	if err != nil {
-		if de, ok := errs.As(err); ok && de.Field == "total" {
-			de.Field = "amount"
-		}
-		return nil, err
-	}
 	g, err := s.authorize(ctx, actor, in.GroupID, n.Shares, nil)
 	if err != nil {
 		return nil, err
@@ -435,14 +515,8 @@ func (s *Service) RecordPayment(ctx context.Context, actor uuid.UUID, in Payment
 	e := &Expense{ID: newID(in.ID), GroupID: in.GroupID, Kind: KindPayment, CreatedBy: actor, CreatedAt: now}
 	s.build(e, n, actor, now)
 	extra := map[string]any{"fromName": people[in.From].Name, "toName": people[in.To].Name}
-	err = s.tx.Do(ctx, func(ctx context.Context) error {
-		if err := s.repo.Create(ctx, e); err != nil {
-			return err
-		}
-		return s.record(ctx, actor, activity.PaymentCreated, e, g, extra)
-	})
-	if err != nil {
-		return nil, err
+	if prior, err := s.insert(ctx, actor, e, g, activity.PaymentCreated, extra); prior != nil || err != nil {
+		return prior, err
 	}
 	if to := people[in.To]; !ports.IsQuiet(ctx) && to.ID != actor {
 		n, ok := to.Notice(user.PaymentReceived, people[in.From].Name+" paid you "+money.Format(e.Total, e.Currency),
@@ -510,6 +584,9 @@ func (s *Service) Comment(ctx context.Context, actor, id uuid.UUID, body string)
 	if err != nil {
 		return nil, err
 	}
+	if err := editable(actor, g); err != nil {
+		return nil, err
+	}
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return nil, errs.Validation("body", "Write a comment first.")
@@ -540,7 +617,9 @@ func (s *Service) DeleteComment(ctx context.Context, actor, id uuid.UUID) error 
 }
 
 // RunRecurring creates due copies of recurring expenses. The schedule moves
-// to the newest copy so editing the latest expense edits the series.
+// to the newest copy so editing the latest expense edits the series. A series
+// that fails is skipped, so it never holds up the others; it stays due and is
+// tried again on the next run. The error joins a *Skipped for each one.
 func (s *Service) RunRecurring(ctx context.Context) (int, error) {
 	today := clock.Today(s.clock)
 	due, err := s.repo.Due(ctx, today, 100)
@@ -548,6 +627,7 @@ func (s *Service) RunRecurring(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	created := 0
+	var skipped []error
 	for _, d := range due {
 		var n int
 		err := s.tx.Do(ctx, func(ctx context.Context) error {
@@ -556,12 +636,23 @@ func (s *Service) RunRecurring(ctx context.Context) (int, error) {
 			return err
 		})
 		if err != nil {
-			return created, err
+			skipped = append(skipped, &Skipped{ID: d.ID, Err: err})
+			continue
 		}
 		created += n
 	}
-	return created, nil
+	return created, errors.Join(skipped...)
 }
+
+// Skipped is a recurring expense RunRecurring could not repeat.
+type Skipped struct {
+	ID  uuid.UUID
+	Err error
+}
+
+func (s *Skipped) Error() string { return "expense.recurring.skipped: " + s.Err.Error() }
+
+func (s *Skipped) Unwrap() error { return s.Err }
 
 // repeat books the missed occurrences of one series inside the caller's
 // transaction and returns how many it booked. The row is claimed first, so
@@ -585,6 +676,10 @@ func (s *Service) repeat(ctx context.Context, id uuid.UUID, today time.Time) (in
 		ok = members(g, src.Shares)
 	} else if ok, err = s.connected(ctx, src.CreatedBy, src.Shares); err != nil {
 		return 0, err
+	} else if ok {
+		if ok, err = s.linked(ctx, src.Shares); err != nil {
+			return 0, err
+		}
 	}
 	// Copies never bill someone who has left the group or is no longer
 	// connected; the series ends and the activity feed says why.

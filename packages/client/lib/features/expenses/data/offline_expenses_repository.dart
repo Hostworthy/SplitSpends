@@ -13,49 +13,17 @@ import 'package:splitspends/features/expenses/domain/optimistic.dart';
 /// cached copies offline) with the queued writes laid over them, so a
 /// change shows up as soon as it is made.
 class OfflineExpensesRepository implements ExpensesRepository {
-  OfflineExpensesRepository(
-    this._remote,
-    this._outbox, {
-    required this.meId,
-    required this.onQueued,
-  });
+  OfflineExpensesRepository(this._remote, this._outbox, {required this.meId});
 
   final ExpensesRepository _remote;
   final Outbox _outbox;
   final String Function() meId;
-
-  /// Lets the app refresh its "waiting to sync" state.
-  final void Function() onQueued;
 
   static const _uuid = Uuid();
 
   DateTime get _today {
     final n = DateTime.now();
     return DateTime.utc(n.year, n.month, n.day);
-  }
-
-  /// Runs [online] unless writes are already waiting; on a network failure
-  /// (or when queueing) stores the request and returns [offline].
-  Future<T> _write<T>({
-    required Future<T> Function() online,
-    required T Function() offline,
-    required String method,
-    required String path,
-    Object? body,
-    required String label,
-  }) async {
-    // Validate first so bad input never reaches the queue.
-    final result = offline();
-    if ((await _outbox.pending()).isEmpty) {
-      try {
-        return await online();
-      } on ApiError catch (error) {
-        if (!error.isNetwork) rethrow;
-      }
-    }
-    await _outbox.add(method, path, body: body, label: label);
-    onQueued();
-    return result;
   }
 
   @override
@@ -189,7 +157,7 @@ class OfflineExpensesRepository implements ExpensesRepository {
   @override
   Future<Expense> create(ExpenseInput input) {
     final withId = input.withId(input.id ?? _uuid.v4());
-    return _write(
+    return _outbox.write(
       online: () => _remote.create(withId),
       offline: () => optimisticExpense(
         withId,
@@ -205,7 +173,7 @@ class OfflineExpensesRepository implements ExpensesRepository {
   }
 
   @override
-  Future<Expense> update(String id, ExpenseInput input) => _write(
+  Future<Expense> update(String id, ExpenseInput input) => _outbox.write(
     online: () => _remote.update(id, input),
     offline: () =>
         optimisticExpense(input, id: id, meId: meId(), today: _today),
@@ -216,7 +184,7 @@ class OfflineExpensesRepository implements ExpensesRepository {
   );
 
   @override
-  Future<void> delete(String id) => _write<void>(
+  Future<void> delete(String id) => _outbox.write<void>(
     online: () => _remote.delete(id),
     offline: () {},
     method: 'DELETE',
@@ -224,8 +192,19 @@ class OfflineExpensesRepository implements ExpensesRepository {
     label: 'Delete an expense',
   );
 
+  /// Queued like [delete] when writes wait, so it replays after a queued
+  /// delete of the same expense instead of before it.
   @override
-  Future<Expense> restore(String id) => _remote.restore(id);
+  Future<Expense> restore(String id) async {
+    final known = await get(id);
+    return _outbox.write(
+      online: () => _remote.restore(id),
+      offline: () => known.copyWith(deleted: false, pending: true),
+      method: 'POST',
+      path: '/expenses/$id/restore',
+      label: 'Restore an expense',
+    );
+  }
 
   @override
   Future<List<Comment>> comments(String id) => _remote.comments(id);
@@ -250,7 +229,7 @@ class OfflineExpensesRepository implements ExpensesRepository {
     String? notes,
   }) {
     final paymentId = id ?? _uuid.v4();
-    return _write(
+    return _outbox.write(
       online: () => _remote.recordPayment(
         id: paymentId,
         groupId: groupId,

@@ -73,6 +73,17 @@ func (s *Service) signup(ctx context.Context) (Signup, error) {
 	return s.gate.Signup(ctx)
 }
 
+// Unclaimed reports whether whoever signs in next, with any address, becomes
+// the administrator: no account is active and the policy names no
+// administrator email.
+func (s *Service) Unclaimed(ctx context.Context) (bool, error) {
+	if s.policy.AdminEmail != "" {
+		return false, nil
+	}
+	n, err := s.users.Count(ctx)
+	return n == 0, err
+}
+
 // CodeTTL returns how long login codes stay valid.
 func (s *Service) CodeTTL() time.Duration { return s.policy.CodeTTL }
 
@@ -87,8 +98,24 @@ const (
 
 // decide applies the sign-up rules to email, which may hold the invite link
 // stored under link. Active accounts always sign in and disabled ones never
-// do; the very first account bootstraps the server whatever the mode.
+// do; the very first account bootstraps the server whatever the mode, and
+// must be the administrator email when the policy names one. It
+// must run inside Tx.Do: while no account is active it holds the users lock
+// until the transaction ends, so the account it lets in is created before
+// anyone else is decided, and only one becomes the administrator.
 func (s *Service) decide(ctx context.Context, email, link string) (decision, error) {
+	count, err := s.users.Count(ctx)
+	if err != nil {
+		return deny, err
+	}
+	if count == 0 {
+		if err := s.users.Lock(ctx); err != nil {
+			return deny, err
+		}
+		if count, err = s.users.Count(ctx); err != nil {
+			return deny, err
+		}
+	}
 	existing, err := s.users.FindByEmail(ctx, email)
 	if err != nil {
 		return deny, err
@@ -104,11 +131,10 @@ func (s *Service) decide(ctx context.Context, email, link string) (decision, err
 			return allow, nil
 		}
 	}
-	count, err := s.users.Count(ctx)
-	if err != nil {
-		return deny, err
-	}
 	if count == 0 {
+		if s.policy.AdminEmail != "" && email != s.policy.AdminEmail {
+			return deny, nil
+		}
 		return allow, nil
 	}
 	cfg, err := s.signup(ctx)
@@ -132,8 +158,9 @@ func (s *Service) decide(ctx context.Context, email, link string) (decision, err
 		}
 		return approval, nil
 	}
-	// Invite mode: the allowed list, people someone added by email, and
-	// holders of a group invite link.
+	// Invite mode: the allowed list, people someone added by email, holders
+	// of a group invite link, and people an administrator or manager
+	// approved, also when they asked to join in approval mode.
 	if cfg.Allows(email) || existing != nil {
 		return allow, nil
 	}
@@ -143,11 +170,18 @@ func (s *Service) decide(ctx context.Context, email, link string) (decision, err
 			return allow, err
 		}
 	}
+	if s.gate != nil {
+		ok, err := s.gate.Approved(ctx, email)
+		if err != nil || ok {
+			return allow, err
+		}
+	}
 	return deny, nil
 }
 
-// RequestCode emails a login code. It returns nil for disallowed emails too,
-// so callers cannot probe which addresses have accounts. invite is an
+// RequestCode emails a login code. Disallowed emails get the same answer,
+// count toward the same limits and are sent nothing, so callers cannot probe
+// which addresses may sign in. invite is an
 // optional group invite token that lets a new person sign up. client is the
 // caller's network address; the hourly limit counts per network as well as
 // per email, so requests from elsewhere do not use up the owner's share.
@@ -177,14 +211,18 @@ func (s *Service) RequestCode(ctx context.Context, rawEmail, invite, client stri
 			}
 		}
 		d, err := s.decide(ctx, email, link)
-		if err != nil || d == deny {
+		if err != nil {
 			return err
 		}
-		if code, err = newCode(); err != nil {
-			return err
-		}
+		// A refused request is recorded too, without a code, so the limits
+		// treat every address the same.
 		c := &Challenge{ID: uuid.New(), Email: email, ExpiresAt: now.Add(s.policy.CodeTTL), CreatedAt: now, Client: client, Invite: link}
-		c.CodeHash = hashCode(s.policy.Secret, c.ID, email, code)
+		if d != deny {
+			if code, err = newCode(); err != nil {
+				return err
+			}
+			c.CodeHash = hashCode(s.policy.Secret, c.ID, email, code)
+		}
 		return s.challenges.Create(ctx, c)
 	})
 	if err != nil || code == "" {

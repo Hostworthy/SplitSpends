@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Hostworthy/SplitSpends/packages/bootstrap/bootstraptest"
+	"github.com/Hostworthy/SplitSpends/packages/core/domains/auth"
 	"github.com/Hostworthy/SplitSpends/packages/core/shared/errs"
 )
 
@@ -110,5 +111,48 @@ func TestCodeRequestsUnderConcurrency(t *testing.T) {
 	}
 	if codes != 5 || limited != 15 {
 		t.Fatalf("%d codes and %d refusals, want 5 and 15", codes, limited)
+	}
+}
+
+// TestFirstAdminIsUnique verifies two first sign-ins at once on an empty
+// closed server: one becomes the administrator, the other is refused.
+func TestFirstAdminIsUnique(t *testing.T) {
+	ctx := context.Background()
+	cfg := bootstraptest.Defaults()
+	cfg.SignupMode = auth.SignupClosed
+	env := bootstraptest.Open(t, bootstraptest.Options{Config: cfg})
+	for run := range 20 {
+		if _, err := env.DB.Pool.Exec(ctx, `TRUNCATE users, login_challenges CASCADE`); err != nil {
+			t.Fatal(err)
+		}
+		emails := []string{fmt.Sprintf("ada%d@example.com", run), fmt.Sprintf("ben%d@example.com", run)}
+		for _, email := range emails {
+			if err := env.Services.Auth.RequestCode(ctx, email, "", ""); err != nil {
+				t.Fatal(err)
+			}
+			if env.Notifier.Code(email) == "" {
+				t.Fatalf("run %d: no code for %s on an empty server", run, email)
+			}
+		}
+		results := concurrently(2, func(i int) error {
+			_, err := env.Services.Auth.Verify(ctx, emails[i], env.Notifier.Code(emails[i]), "", "test")
+			return err
+		})
+		refused := 0
+		for _, err := range results {
+			switch {
+			case errs.Is(err, errs.KindForbidden):
+				refused++
+			case err != nil:
+				t.Fatalf("run %d: verify: %v", run, err)
+			}
+		}
+		var users, admins int
+		if err := env.DB.Pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE role = 'admin') FROM users`).Scan(&users, &admins); err != nil {
+			t.Fatal(err)
+		}
+		if users != 1 || admins != 1 || refused != 1 {
+			t.Fatalf("run %d: %d accounts, %d administrators and %d refusals, want 1 each", run, users, admins, refused)
+		}
 	}
 }

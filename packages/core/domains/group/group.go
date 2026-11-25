@@ -31,6 +31,9 @@ func (k Kind) valid() bool {
 	return false
 }
 
+// MaxMembers is how many people a group can have, the creator included.
+const MaxMembers = 100
+
 var colorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 // Group is a set of people who share expenses.
@@ -151,9 +154,13 @@ func (g *Group) HasMember(id uuid.UUID) bool {
 
 // Repository persists groups and memberships.
 type Repository interface {
+	// Create returns errs.Conflict when the id is taken.
 	Create(ctx context.Context, g *Group) error
 	// Get returns errs.NotFound when missing; Members is filled.
 	Get(ctx context.Context, id uuid.UUID) (*Group, error)
+	// Lock is Get inside the caller's transaction, with the group row locked
+	// until it ends, so nothing can be added to the group meanwhile.
+	Lock(ctx context.Context, id uuid.UUID) (*Group, error)
 	Update(ctx context.Context, g *Group) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	// ForUser lists the user's groups with Members filled.

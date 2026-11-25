@@ -26,11 +26,23 @@ variable "signup_mode" {
   description = "Starting sign-up mode: open, invite, approval or closed (administrators can change it in the app)."
   type        = string
   default     = "invite"
+  validation {
+    # domain is still accepted by the server as invite with signup_allowed_domains.
+    condition     = contains(["open", "invite", "approval", "closed", "domain"], var.signup_mode)
+    error_message = "signup_mode must be open, invite, approval or closed."
+  }
+}
+
+variable "admin_email" {
+  description = "Your email address: only it can create the first account, which becomes the administrator. Empty lets whoever signs in first take it."
+  type        = string
+  default     = ""
 }
 
 variable "signup_allowed_domains" {
-  type    = string
-  default = ""
+  description = "Comma-separated email domains that start out on the sign-up allowed list, for example example.com. Empty for none."
+  type        = string
+  default     = ""
 }
 
 variable "smtp" {
@@ -72,6 +84,16 @@ variable "web_dir" {
   default     = "../../apps/web/build/web"
 }
 
+variable "max_concurrency" {
+  description = "Most requests the function serves at once, or null to leave it unreserved. Each execution environment opens up to DATABASE_MAX_CONNS (3) database connections, so keep max_concurrency x 3 below your database's connection limit. AWS keeps at least 10 executions unreserved per account, so an account whose concurrency quota is 10 (common on new accounts) cannot reserve any."
+  type        = number
+  default     = null
+  validation {
+    condition     = var.max_concurrency == null || try(var.max_concurrency >= 1 && floor(var.max_concurrency) == var.max_concurrency, false)
+    error_message = "max_concurrency must be a whole number of at least 1, or null."
+  }
+}
+
 variable "lambda_web_adapter_layer" {
   description = "ARN of the AWS Lambda Web Adapter layer for arm64 in your region. See https://github.com/awslabs/aws-lambda-web-adapter."
   type        = string
@@ -79,7 +101,7 @@ variable "lambda_web_adapter_layer" {
 }
 
 variable "jobs_schedule" {
-  description = "How often recurring expenses and cleanup run."
+  description = "How often recurring expenses and cleanup run, as an EventBridge schedule expression."
   type        = string
   default     = "rate(30 minutes)"
 }

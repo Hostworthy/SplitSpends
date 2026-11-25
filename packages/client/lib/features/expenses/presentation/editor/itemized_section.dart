@@ -56,7 +56,6 @@ class ItemizedSection extends ConsumerWidget {
             children: [
               Expanded(
                 child: AmountField(
-                  key: ValueKey('tax-${form.currency}'),
                   currency: form.currency,
                   label: 'Tax',
                   initial: form.tax == 0 ? null : form.tax,
@@ -66,7 +65,6 @@ class ItemizedSection extends ConsumerWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: AmountField(
-                  key: ValueKey('tip-${form.currency}'),
                   currency: form.currency,
                   label: 'Tip',
                   initial: form.tip == 0 ? null : form.tip,
