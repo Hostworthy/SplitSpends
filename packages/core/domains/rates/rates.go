@@ -7,6 +7,7 @@ package rates
 
 import (
 	"math/big"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -30,9 +31,17 @@ type Amount struct {
 	Minor    int64
 }
 
-// New validates raw decimal rates (for example "0.912") and keeps the
-// currencies SplitSpends supports. Invalid or non-positive values are
-// dropped rather than failing the whole table.
+// Rates come from a provider the host configures, so values outside this
+// band are treated as broken rather than converted. Every supported currency
+// is within a factor of a million of every other.
+var (
+	minRate = big.NewRat(1, 1_000_000_000)
+	maxRate = big.NewRat(1_000_000_000, 1)
+)
+
+// New validates raw decimal rates (for example "0.912" or "1.5e-3") and
+// keeps the currencies SplitSpends supports. Invalid values, fractions and
+// rates outside 1e-9 to 1e9 are dropped rather than failing the whole table.
 func New(base string, raw map[string]string) (Table, bool) {
 	b, ok := money.Lookup(base)
 	if !ok {
@@ -44,8 +53,9 @@ func New(base string, raw map[string]string) (Table, bool) {
 		if !ok || c.Code == b.Code {
 			continue
 		}
-		r, ok := new(big.Rat).SetString(strings.TrimSpace(text))
-		if !ok || r.Sign() <= 0 {
+		text = strings.TrimSpace(text)
+		r, ok := new(big.Rat).SetString(text)
+		if !ok || strings.Contains(text, "/") || r.Cmp(minRate) < 0 || r.Cmp(maxRate) > 0 {
 			continue
 		}
 		t.Rates[c.Code] = r
@@ -76,18 +86,20 @@ func (t Table) Codes() []string {
 }
 
 // Convert returns a in minor units of to, rounded half away from zero. It
-// reports false when either currency is unknown or has no rate.
+// reports false when either currency is unknown or has no rate, or when the
+// result does not fit in int64.
 func (t Table) Convert(a Amount, to string) (int64, bool) {
 	v, ok := t.exact(a, to)
 	if !ok {
 		return 0, false
 	}
-	return round(v), true
+	return round(v)
 }
 
 // Total converts every amount to to and adds them exactly, rounding once at
 // the end so the total does not drift with the number of currencies. Missing
-// lists the currencies that could not be converted (and were left out).
+// lists the currencies that could not be converted (and were left out). When
+// the total does not fit in int64, it is 0 and every currency is missing.
 func (t Table) Total(amounts []Amount, to string) (total int64, missing []string) {
 	sum := new(big.Rat)
 	seen := map[string]bool{}
@@ -103,8 +115,18 @@ func (t Table) Total(amounts []Amount, to string) (total int64, missing []string
 		}
 		sum.Add(sum, v)
 	}
+	if total, ok := round(sum); ok {
+		sort.Strings(missing)
+		return total, missing
+	}
+	missing = nil
+	for _, a := range amounts {
+		if code := strings.ToUpper(a.Currency); !slices.Contains(missing, code) {
+			missing = append(missing, code)
+		}
+	}
 	sort.Strings(missing)
-	return round(sum), missing
+	return 0, missing
 }
 
 // exact is a converted to minor units of to, before rounding:
@@ -145,18 +167,28 @@ func (t Table) exact(a Amount, to string) (*big.Rat, bool) {
 // denominator is a product of 2s and 5s (always true for parsed decimals),
 // otherwise to 12 places.
 func Decimal(r *big.Rat) string {
-	places := 12
 	d := new(big.Int).Set(r.Denom())
-	for k := 0; k <= 40; k++ {
-		if new(big.Int).Rem(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(k)), nil), d).Sign() == 0 {
-			places = k
+	twos, fives := 0, 0
+	for d.Bit(0) == 0 {
+		d.Rsh(d, 1)
+		twos++
+	}
+	five, rem := big.NewInt(5), new(big.Int)
+	for {
+		q, m := new(big.Int).QuoRem(d, five, rem)
+		if m.Sign() != 0 {
 			break
 		}
+		d = q
+		fives++
 	}
-	return r.FloatString(places)
+	if d.Cmp(big.NewInt(1)) != 0 {
+		return r.FloatString(12)
+	}
+	return r.FloatString(max(twos, fives))
 }
 
-func round(v *big.Rat) int64 {
+func round(v *big.Rat) (int64, bool) {
 	num := new(big.Int).Abs(v.Num())
 	den := v.Denom()
 	q, rem := new(big.Int).QuoRem(num, den, new(big.Int))
@@ -166,7 +198,10 @@ func round(v *big.Rat) int64 {
 	if v.Sign() < 0 {
 		q.Neg(q)
 	}
-	return q.Int64()
+	if !q.IsInt64() {
+		return 0, false
+	}
+	return q.Int64(), true
 }
 
 func abs(n int) int {

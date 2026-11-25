@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math/big"
 
 	"github.com/Hostworthy/SplitSpends/packages/core/domains/rates"
 	"github.com/Hostworthy/SplitSpends/packages/database"
@@ -32,12 +31,12 @@ func (r *Rates) Latest(ctx context.Context) (*rates.Table, error) {
 	if err := json.Unmarshal(raw, &values); err != nil {
 		return nil, err
 	}
-	t.Rates = make(map[string]*big.Rat, len(values))
-	for code, v := range values {
-		if q, ok := new(big.Rat).SetString(v); ok {
-			t.Rates[code] = q
-		}
+	// Stored values pass the same checks as fetched ones.
+	valid, ok := rates.New(t.Base, values)
+	if !ok {
+		return nil, nil
 	}
+	t.Base, t.Rates = valid.Base, valid.Rates
 	return &t, nil
 }
 

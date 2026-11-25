@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"math/big"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,8 +91,33 @@ func TestNewDropsInvalidRates(t *testing.T) {
 	}
 }
 
+func TestNewDropsImplausibleRates(t *testing.T) {
+	table, ok := New("USD", map[string]string{"EUR": "1e30", "GBP": "1e-50", "JPY": "1/3", "INR": "83.2", "KWD": "1e-9", "VND": "1e9"})
+	if !ok {
+		t.Fatal("table rejected")
+	}
+	if got := table.Codes(); !reflect.DeepEqual(got, []string{"INR", "KWD", "USD", "VND"}) {
+		t.Fatalf("codes = %v", got)
+	}
+}
+
+func TestConvertOverflowReportsFalse(t *testing.T) {
+	table, ok := New("USD", map[string]string{"VND": "1e9"})
+	if !ok {
+		t.Fatal("table rejected")
+	}
+	if v, ok := table.Convert(Amount{Currency: "USD", Minor: math.MaxInt64 / 2}, "VND"); ok {
+		t.Fatalf("convert = %d, want no conversion", v)
+	}
+	big := []Amount{{Currency: "USD", Minor: math.MaxInt64}, {Currency: "USD", Minor: math.MaxInt64}}
+	if total, missing := table.Total(big, "USD"); total != 0 || !reflect.DeepEqual(missing, []string{"USD"}) {
+		t.Fatalf("total = %d %v, want 0 [USD]", total, missing)
+	}
+}
+
 func TestDecimal(t *testing.T) {
-	for in, want := range map[string]string{"0.912": "0.912", "1e2": "100", "159.07": "159.07", "1.5e-3": "0.0015"} {
+	long := "0." + strings.Repeat("123456789", 5)
+	for in, want := range map[string]string{"0.912": "0.912", "1e2": "100", "159.07": "159.07", "1.5e-3": "0.0015", long: long, "1e-45": "0." + strings.Repeat("0", 44) + "1"} {
 		r, _ := new(big.Rat).SetString(in)
 		if got := Decimal(r); got != want {
 			t.Errorf("Decimal(%s) = %s, want %s", in, got, want)
