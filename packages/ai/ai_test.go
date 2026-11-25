@@ -1,11 +1,15 @@
 package ai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -272,6 +276,53 @@ func TestProviderAnswers(t *testing.T) {
 				if got.Merchant != "Market" || got.Total != "11.00" || len(got.Items) != 1 || got.Items[0].Quantity != 2 {
 					t.Fatalf("parsed receipt wrong: %+v", got)
 				}
+			}
+		})
+	}
+}
+
+// TestProviderErrorsKeepContentOut checks that what a provider answers,
+// which can echo the receipt or the prompt, never reaches an error message,
+// and that a refused request carries its status as data.
+func TestProviderErrorsKeepContentOut(t *testing.T) {
+	const secret = "SECRET-RECEIPT-TEXT"
+	openai := func(url string) error {
+		_, err := NewOpenAICompatible(url, "key", "m").ReadReceipt(context.Background(), receiptInput())
+		return err
+	}
+	claude := func(url string) error {
+		_, err := anthropicAt(url).ReadReceipt(context.Background(), receiptInput())
+		return err
+	}
+	for _, tc := range []struct {
+		name   string
+		read   func(url string) error
+		status int
+		body   string
+		want   int // the status the error carries; 0 for none
+	}{
+		{"openai rejected", openai, http.StatusBadRequest, `{"error":{"message":"bad input: ` + secret + `"}}`, http.StatusBadRequest},
+		{"openai bad key", openai, http.StatusUnauthorized, `{"error":{"message":"` + secret + `"}}`, http.StatusUnauthorized},
+		{"openai failed", openai, http.StatusBadGateway, `<html>` + secret + `</html>`, http.StatusBadGateway},
+		{"openai invalid answer", openai, http.StatusOK, `{"result":"` + secret + `"}`, 0},
+		{"openai not JSON", openai, http.StatusOK, secret, 0},
+		{"anthropic rejected", claude, http.StatusBadRequest, `{"type":"error","error":{"type":"invalid_request_error","message":"` + secret + `"}}`, http.StatusBadRequest},
+		{"anthropic bad key", claude, http.StatusUnauthorized, `{"type":"error","error":{"type":"authentication_error","message":"` + secret + `"}}`, http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url, _ := provider(t, tc.status, tc.body)
+			err := tc.read(url)
+			if err == nil || strings.Contains(err.Error(), secret) {
+				t.Fatalf("the provider's answer must stay out of the error, got %v", err)
+			}
+			var r *rejection
+			if got := errors.As(err, &r); got != (tc.want != 0) || (got && r.Status != tc.want) {
+				t.Fatalf("want status %d carried by the error, got %v", tc.want, err)
+			}
+			var logged bytes.Buffer
+			slog.New(slog.NewTextHandler(&logged, nil)).Error("middleware.error.internal", "error", err)
+			if strings.Contains(logged.String(), secret) || (tc.want != 0 && !strings.Contains(logged.String(), "status="+strconv.Itoa(tc.want))) {
+				t.Fatalf("the log line must carry the status and no content: %s", logged.String())
 			}
 		})
 	}
