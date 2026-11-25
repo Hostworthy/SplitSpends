@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
   # The Android emulator job is slow (about 15 minutes), so it only runs when
-  # started by hand: Actions, CI, Run workflow.
+  # started by hand (Actions, CI, Run workflow) and on the weekly schedule.
   workflow_dispatch:
   # The release workflow runs these checks on the tagged commit first.
   workflow_call:
@@ -168,7 +168,7 @@ jobs:
 
   android:
     name: android emulator
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     services:
@@ -232,7 +232,9 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
           disable-animations: true
           working-directory: apps/apk
-          script: ../../scripts/ci/device-test.sh --dart-define=SPLITSPENDS_TEST_SERVER=http://10.0.2.2:8080 --dart-define=SPLITSPENDS_TEST_CODES=http://10.0.2.2:8099
+          script: |
+            ../../scripts/ci/device-test.sh --dart-define=SPLITSPENDS_TEST_SERVER=http://10.0.2.2:8080 --dart-define=SPLITSPENDS_TEST_CODES=http://10.0.2.2:8099
+            ../../scripts/ci/release-smoke.sh build/app/outputs/flutter-apk/app-release.apk
       - name: The upload reached the server
         run: python3 scripts/ci/codes.py server.log --check device-test@example.com Cabin
       - name: Server log
@@ -242,5 +244,7 @@ jobs:
         if: failure() || cancelled()
         with:
           name: device-logcat
-          path: device-logcat.txt
+          path: |
+            device-logcat.txt
+            apps/apk/release-logcat.txt
           if-no-files-found: ignore

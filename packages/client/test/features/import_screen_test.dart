@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -6,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:sembast/sembast_memory.dart';
 
 import 'package:splitspends/app/repositories.dart';
+import 'package:splitspends/core/api/api_error.dart';
 import 'package:splitspends/core/models/json.dart';
 import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/core/storage/local_ledger.dart';
@@ -104,6 +107,96 @@ void main() {
     final uploaded = (await service.summary()).uploaded;
     expect(uploaded?.server, 'http://splitspends.test');
     expect(uploaded?.at, DateTime.utc(2026, 11, 20, 10));
+  });
+
+  group('upload', () {
+    Future<Database> seeded() async {
+      final db = await databaseFactoryMemory.openDatabase(
+        'test-${DateTime.now().microsecondsSinceEpoch}',
+      );
+      await Stores.meta.record('profile').put(db, {
+        'id': 'local',
+        'name': 'Ada',
+      });
+      await Stores.people.record('p1').put(db, {
+        'id': 'p1',
+        'name': 'Sam',
+        'createdAt': '2026-11-20T10:00:00Z',
+      });
+      await Stores.groups.record('g1').put(db, {
+        'id': 'g1',
+        'name': 'Camping',
+        'defaultCurrency': 'EUR',
+        'memberIds': ['local', 'p1'],
+      });
+      return db;
+    }
+
+    test('rewrites people ids with the ones the server returns', () async {
+      final db = await seeded();
+      final sent = <http.Request>[];
+      final service = ImportService(
+        LocalLedger(() async => db),
+        MockClient((request) async {
+          sent.add(request);
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'people': {'local': 'server-ada', 'p1': 'server-sam'},
+              },
+            }),
+            200,
+          );
+        }),
+      );
+
+      await service.upload(serverUrl: 'http://splitspends.test', token: 'tok');
+
+      expect(sent.single.url.path, '/api/v1/import');
+      expect(sent.single.headers['Authorization'], 'Bearer tok');
+      expect(await Stores.people.findKeys(db), ['server-sam']);
+      expect((await Stores.groups.record('g1').get(db))?['memberIds'], [
+        'server-ada',
+        'server-sam',
+      ]);
+      expect(
+        (await Stores.meta.record('profile').get(db) as Map?)?['id'],
+        'server-ada',
+      );
+      expect(
+        (await service.summary()).uploaded?.server,
+        'http://splitspends.test',
+      );
+    });
+
+    test('a failed upload keeps the local copy as it was', () async {
+      final db = await seeded();
+      final service = ImportService(
+        LocalLedger(() async => db),
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode({'error': 'Something broke.', 'code': 'INTERNAL'}),
+            500,
+          ),
+        ),
+      );
+
+      await expectLater(
+        service.upload(serverUrl: 'http://splitspends.test', token: 'tok'),
+        throwsA(isA<ApiError>()),
+      );
+
+      expect(await Stores.people.findKeys(db), ['p1']);
+      expect((await Stores.groups.record('g1').get(db))?['memberIds'], [
+        'local',
+        'p1',
+      ]);
+      expect(
+        (await Stores.meta.record('profile').get(db) as Map?)?['id'],
+        'local',
+      );
+      expect((await service.summary()).uploaded, isNull);
+    });
   });
 
   testWidgets('a second sign-in after an upload says the data was uploaded', (

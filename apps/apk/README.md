@@ -12,7 +12,7 @@ flutter build appbundle         # for Google Play
 
 The APK lands in `build/app/outputs/flutter-apk/app-release.apk`; install it with `adb install` or by opening it on the phone.
 
-The CI workflow, started by hand from the Actions tab, builds the release APK and runs the app on an Android emulator; download the APK from the `splitspends-apk` artifact of the CI run. See [Testing](../../docs/DEV.md#testing) to run the device test yourself.
+The CI workflow, weekly or started by hand from the Actions tab, builds the release APK and runs the app on an Android emulator; download the APK from the `splitspends-apk` artifact of the CI run. See [Testing](../../docs/DEV.md#testing) to run the device test yourself.
 
 ## Release Signing
 

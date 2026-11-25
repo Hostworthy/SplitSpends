@@ -16,7 +16,7 @@ To stop anyone tagging by mistake, add a tag ruleset for `v*` (Settings, Rules, 
 | --- | --- | --- |
 | Server and MCP binaries for Linux (amd64, arm64), macOS (amd64, arm64) and Windows (amd64) | Ubuntu | `main.version` is the tag, so `splitspends version` prints it; `THIRD_PARTY_NOTICES.txt` holds the licences of the Go modules linked in (`scripts/release/notices.sh`) |
 | Web app (`splitspends-web-<tag>.tar.gz`) | Ubuntu | Serve with `WEB_DIR` |
-| Android APK | Ubuntu | Signed with your upload key when the secrets below exist; otherwise named `-debug-signed.apk` and signed with a key the runner generates for that run |
+| Android APK | Ubuntu | Signed with your upload key when the secrets below exist; otherwise named `-debug-signed.apk` and signed with a key the runner generates for that run. Installed and started on an Android emulator before it is uploaded |
 | iOS app (`-unsigned.ipa`) | macOS | Unsigned until an Apple Developer account is set up; install with Xcode, AltStore or Sideloadly |
 | Container image `ghcr.io/hostworthy/splitspends:<tag>` | Ubuntu | linux/amd64; includes the server and the web app, with the third-party notices in `/usr/share/doc/splitspends`; its `HEALTHCHECK` runs `splitspends health`, which exits 1 unless `/health` answers 200 |
 | `SHA256SUMS` | | Checksums of every file |

@@ -332,6 +332,83 @@ void main() {
     },
   );
 
+  group('PushActions', () {
+    ProviderContainer actions(_FakePlatform platform, _FakeRepository repo) {
+      final container = ProviderContainer(
+        overrides: [
+          sessionProvider.overrideWith(_ConnectedSession.new),
+          pushPlatformProvider.overrideWithValue(platform),
+          pushRepositoryProvider.overrideWithValue(repo),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('disable removes only this device and unsubscribes', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final repo = _FakeRepository()
+        ..devices.addAll([
+          _device('d1', 'https://push.example.com/other'),
+          _device('d2', _keys.endpoint),
+        ]);
+
+      await actions(platform, repo).read(pushActionsProvider).disable();
+
+      expect(repo.devices.map((d) => d.id), ['d1']);
+      expect(platform.subscribed, isNull);
+    });
+
+    test('disable without a subscription leaves the server alone', () async {
+      final platform = _FakePlatform();
+      final repo = _FakeRepository()
+        ..devices.add(_device('d1', 'https://push.example.com/other'));
+
+      await actions(platform, repo).read(pushActionsProvider).disable();
+
+      expect(repo.devices, hasLength(1));
+    });
+
+    test('removing another device keeps push on here', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final other = _device('d1', 'https://push.example.com/other');
+      final repo = _FakeRepository()..devices.add(other);
+
+      await actions(
+        platform,
+        repo,
+      ).read(pushActionsProvider).remove(other, here: false);
+
+      expect(repo.devices, isEmpty);
+      expect(platform.subscribed, isNotNull);
+    });
+
+    test('removing this device turns push off here', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final mine = _device('d1', _keys.endpoint);
+      final repo = _FakeRepository()..devices.add(mine);
+
+      await actions(
+        platform,
+        repo,
+      ).read(pushActionsProvider).remove(mine, here: true);
+
+      expect(repo.devices, isEmpty);
+      expect(platform.subscribed, isNull);
+    });
+
+    test('forget removes this device and never throws', () async {
+      final platform = _FakePlatform(subscribed: _keys);
+      final repo = _FakeRepository()
+        ..devices.add(_device('d1', _keys.endpoint));
+
+      await actions(platform, repo).read(pushActionsProvider).forget();
+
+      expect(repo.devices, isEmpty);
+      expect(platform.subscribed, isNull);
+    });
+  });
+
   testWidgets('a 401 sign-out unsubscribes this device', (tester) async {
     tester.view.physicalSize = const Size(420, 2000);
     tester.view.devicePixelRatio = 1;

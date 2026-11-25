@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:sembast/sembast.dart' hide Finder;
 
 import 'package:splitspends/app/app.dart';
 import 'package:splitspends/app/routes.dart';
@@ -13,16 +14,68 @@ import 'package:splitspends/core/auth/local_store.dart';
 import 'package:splitspends/core/auth/session.dart';
 import 'package:splitspends/core/storage/local_db.dart';
 import 'package:splitspends/core/sync/outbox.dart';
+import 'package:splitspends/features/push/domain/push_device.dart';
+import 'package:splitspends/features/push/platform/push_platform.dart';
+import 'package:splitspends/features/push/presentation/providers.dart';
 
 import '../helpers.dart';
 
 const _server = 'http://splitspends.test';
 const _owner = (server: _server, user: 'u1');
 
+const _keys = PushKeys(
+  endpoint: 'https://push.example.com/abc',
+  p256dh: 'BPk',
+  auth: 'au',
+  platform: 'web',
+);
+
+/// A device subscribed to push until [unsubscribe] is called.
+class _Platform implements PushPlatform {
+  PushKeys? subscribed = _keys;
+
+  @override
+  String? get unsupportedReason => null;
+
+  @override
+  bool get usesDistributors => false;
+
+  @override
+  Future<List<Distributor>> distributors() async => const [];
+
+  @override
+  Future<PushKeys?> current() async => subscribed;
+
+  @override
+  Future<PushKeys> subscribe({required String vapidKey, Distributor? via}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> unsubscribe() async => subscribed = null;
+
+  @override
+  void watch(void Function(PushKeys keys) onChange) {}
+}
+
 /// Answers every read with an empty or minimal body; `/me` with [me], or
-/// 401 when [me] is null.
-http.Client _api({Map<String, Object?>? me}) => MockClient((request) async {
+/// 401 when [me] is null. The push device list holds this device. Every
+/// request is added to [log].
+http.Client _api({Map<String, Object?>? me, List<String>? log}) => MockClient((
+  request,
+) async {
   final path = request.url.path;
+  log?.add('${request.method} $path');
+  if (path.endsWith('/me/push-subscriptions')) {
+    return http.Response(
+      jsonEncode({
+        'items': [
+          {'id': 'd1', 'platform': 'web', 'endpoint': _keys.endpoint},
+        ],
+        'total': 1,
+      }),
+      200,
+    );
+  }
   if (path.endsWith('/me')) {
     return me == null
         ? http.Response(
@@ -55,8 +108,9 @@ http.Client _api({Map<String, Object?>? me}) => MockClient((request) async {
 Future<ProviderContainer> _start(
   WidgetTester tester,
   MemoryLocalStore store,
-  http.Client api,
-) async {
+  http.Client api, {
+  PushPlatform? push,
+}) async {
   tester.view.physicalSize = const Size(420, 2000);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -67,6 +121,7 @@ Future<ProviderContainer> _start(
         localStoreProvider.overrideWithValue(store),
         memoryDatabase(),
         httpClientProvider.overrideWithValue(api),
+        if (push != null) pushPlatformProvider.overrideWithValue(push),
       ],
       child: const SplitSpendsApp(),
     ),
@@ -91,6 +146,47 @@ Future<void> _pumpUntil(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  testWidgets('signing out ends the session and clears what it left here', (
+    tester,
+  ) async {
+    final store = MemoryLocalStore(
+      serverUrl: _server,
+      token: 'tok',
+      appMode: AppMode.connected.name,
+    );
+    final log = <String>[];
+    final push = _Platform();
+    final container = await _start(
+      tester,
+      store,
+      _api(me: {'id': 'u1', 'name': 'Ada', 'defaultCurrency': 'EUR'}, log: log),
+      push: push,
+    );
+    final db = await pumpFuture(
+      tester,
+      container.read(databaseProvider.future),
+    );
+    expect(await pumpFuture(tester, Stores.cache.count(db)), isPositive);
+
+    GoRouter.of(tester.element(find.byType(Scaffold).first)).go(Routes.account);
+    await settle(tester);
+    await tester.tap(find.text('Sign out'));
+    await settle(tester);
+
+    expect(find.text('Sign out anyway?'), findsNothing);
+    expect(log, contains('DELETE /api/v1/me/push-subscriptions/d1'));
+    expect(log, contains('POST /api/v1/auth/logout'));
+    expect(push.subscribed, isNull);
+    expect(store.token, isNull);
+    expect(store.appMode, isNull);
+    expect(await pumpFuture(tester, Stores.cache.count(db)), 0);
+    expect(
+      await pumpFuture(tester, Stores.meta.record('accountProfile').get(db)),
+      isNull,
+    );
+    expect(find.text('Use on this device'), findsOneWidget);
+  });
+
   testWidgets('signing out with unsynced changes asks first', (tester) async {
     final store = MemoryLocalStore(
       serverUrl: _server,
