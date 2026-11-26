@@ -11,7 +11,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/wneessen/go-mail v0.8.2
-	golang.org/x/net v0.62.0
+	golang.org/x/net v0.63.0
 )
 
 require (
